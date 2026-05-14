@@ -64,6 +64,9 @@ TRACKER_OPEN_STATUSES = (
 TRACKER_CLOSED_STATUSES = (
     'resolved', 'closed', 'cancelled', 'deferred', 'not_resolved')
 
+# Список тикетов helpdesk: только эти источники (users.tracker_tickets.source)
+TRACKER_HELPDESK_LIST_SOURCES = ('lk', 'ks', 'abs')
+
 # Вкладка «Закрытые» в блоке инцидентов на профиле абонента (без «отложен»)
 PROFILE_INCIDENT_CLOSED_STATUSES = (
     'closed', 'cancelled', 'not_resolved', 'resolved')

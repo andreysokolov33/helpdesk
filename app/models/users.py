@@ -10,18 +10,18 @@ Base = declarative_base()
 metadata = Base.metadata
 
 
-class AbsUsers(Base):
-    __tablename__ = 'abs_users'
+class SkystreamUsers(Base):
+    __tablename__ = 'skystream_users'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='abs_users_pkey'),
-        UniqueConstraint('login', name='abs_users_login_key'),
-        Index('ix_users_login_lower', unique=True),
-        Index('ix_users_role', 'role'),
+        PrimaryKeyConstraint('id', name='skystream_users_pkey'),
+        UniqueConstraint('login', name='skystream_users_login_key'),
         {'schema': 'users'}
     )
 
     id = mapped_column(BigInteger)
     login = mapped_column(Text, nullable=False)
+    email = mapped_column(Text)
+    full_name = mapped_column(Text)
     password_hash = mapped_column(Text, nullable=False)
     role = mapped_column(Text, nullable=False,
                          server_default=text("'user'::text"))
@@ -33,14 +33,56 @@ class AbsUsers(Base):
         DateTime(True), nullable=False, server_default=text('now()'))
     updated_at = mapped_column(
         DateTime(True), nullable=False, server_default=text('now()'))
-    email = mapped_column(Text)
-    full_name = mapped_column(Text)
     last_login_at = mapped_column(DateTime(True))
     level = mapped_column(Integer)
     authored_reset_actions: Mapped[List['ResetTrafficAction']] = relationship(
         'ResetTrafficAction',
         back_populates='author'
     )
+
+
+class SkystreamProjects(Base):
+    __tablename__ = 'skystream_projects'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='projects_pkey'),
+        UniqueConstraint('project_key', name='projects_project_key_key'),
+        {'schema': 'users'}
+    )
+
+    id = mapped_column(BigInteger)
+    name = mapped_column('name', Text, nullable=False)
+    project_key = mapped_column(Text, nullable=False)
+    description = mapped_column(Text)
+    is_active = mapped_column(Boolean, nullable=False, server_default=text('true'))
+    created_at = mapped_column(
+        DateTime(True), nullable=False, server_default=text('now()'))
+    updated_at = mapped_column(
+        DateTime(True), nullable=False, server_default=text('now()'))
+
+
+class SkystreamUserProjectAccess(Base):
+    __tablename__ = 'skystream_user_project_access'
+    __table_args__ = (
+        PrimaryKeyConstraint('user_id', 'project_id', name='user_project_access_pkey'),
+        ForeignKeyConstraint(
+            ['user_id'], ['users.skystream_users.id'],
+            name='user_project_access_user_id_fkey',
+        ),
+        ForeignKeyConstraint(
+            ['project_id'], ['users.skystream_projects.id'],
+            name='user_project_access_project_id_fkey',
+        ),
+        {'schema': 'users'}
+    )
+
+    user_id = mapped_column(BigInteger, primary_key=True)
+    project_id = mapped_column(BigInteger, primary_key=True)
+    can_login = mapped_column(Boolean, nullable=False, server_default=text('true'))
+    can_admin = mapped_column(Boolean, nullable=False, server_default=text('false'))
+    granted_at = mapped_column(
+        DateTime(True), nullable=False, server_default=text('now()'))
+    granted_by = mapped_column(BigInteger)
+    expires_at = mapped_column(DateTime(True))
 
 
 class CheckJurBalance(Base):
@@ -813,10 +855,10 @@ class UsersLkTokens(Base):
 class AbsLoginHistory(Base):
     __tablename__ = 'abs_login_history'
     __table_args__ = (
-        ForeignKeyConstraint(['user_id'], ['users.abs_users.id'],
+        ForeignKeyConstraint(['user_id'], ['users.skystream_users.id'],
                              ondelete='RESTRICT', name='abs_login_history_user_id_fkey'),
         ForeignKeyConstraint(
-            ['user_id'], ['users.abs_users.id'], name='fk_login_history_user'),
+            ['user_id'], ['users.skystream_users.id'], name='fk_login_history_user'),
         PrimaryKeyConstraint('id', name='abs_login_history_pkey'),
         {'schema': 'users'}
     )
@@ -833,7 +875,7 @@ class AbsLoginHistory(Base):
 class AbsUserTokens(Base):
     __tablename__ = 'abs_user_tokens'
     __table_args__ = (
-        ForeignKeyConstraint(['user_id'], ['users.abs_users.id'],
+        ForeignKeyConstraint(['user_id'], ['users.skystream_users.id'],
                              ondelete='CASCADE', name='abs_user_tokens_user_id_fkey'),
         PrimaryKeyConstraint('id', name='abs_user_tokens_pkey'),
         UniqueConstraint('refresh_jti', 'is_revoked',
@@ -1007,7 +1049,7 @@ class TrackerTicketExecutors(Base):
     __table_args__ = (
         ForeignKeyConstraint(['ticket_id'], ['users.tracker_tickets.id'],
                              ondelete='CASCADE', name='fk_tracker_ticket_executors_ticket'),
-        ForeignKeyConstraint(['abs_user_id'], ['users.abs_users.id'],
+        ForeignKeyConstraint(['abs_user_id'], ['users.skystream_users.id'],
                              ondelete='CASCADE', name='fk_tracker_ticket_executors_abs_user'),
         PrimaryKeyConstraint('ticket_id', 'abs_user_id', name='tracker_ticket_executors_pkey'),
         Index('idx_tracker_ticket_executors_ticket_id', 'ticket_id'),
@@ -1313,7 +1355,7 @@ class OperatorFavorite(Base):
     # ID инженера (ссылка на системного пользователя)
     operator_id = mapped_column(
         BigInteger,
-        ForeignKey('users.abs_users.id', ondelete='CASCADE'),
+        ForeignKey('users.skystream_users.id', ondelete='CASCADE'),
         nullable=False
     )
 
@@ -1345,11 +1387,11 @@ class ResetTrafficAction(Base):
     who: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, comment='Кто выполнил сброс')
     author_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey(
-        'users.abs_users.id', ondelete='SET NULL'), nullable=True)
+        'users.skystream_users.id', ondelete='SET NULL'), nullable=True)
 
     # Relationships (опционально)
     user = relationship('User', back_populates='reset_traffic_actions')
-    author = relationship('AbsUsers', back_populates='authored_reset_actions')
+    author = relationship('SkystreamUsers', back_populates='authored_reset_actions')
 
 
 class WhiteIpAddress(Base):

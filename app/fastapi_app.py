@@ -24,6 +24,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.api.v1.routers.auth.router import router as auth_router
+from app.api.v1.routers.helpdesk.tracker import router as helpdesk_tracker_router
 from app.config import BASE_DIR, settings
 from app.core.validation_i18n import localize_validation_errors
 from app.database import engine, redis_client
@@ -210,6 +211,7 @@ def create_app() -> FastAPI:
         return "ready"
 
     app.include_router(auth_router, prefix="/api", tags=["Auth"])
+    app.include_router(helpdesk_tracker_router, prefix="/api")
     app.include_router(web_router, tags=["Web"])
 
     logger.info("Helpdesk app created")

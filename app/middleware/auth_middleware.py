@@ -12,7 +12,11 @@ from starlette.datastructures import Headers
 from fastapi import Response
 # Твои импорты — проверь корректность путей
 from app.core.auth_utils import decode_jwt_token, create_token
-from app.api.v1.routers.auth.dao import OssUserTokensDAO as AbsUserTokensDAO, AbsUsersDAO
+from app.api.v1.routers.auth.dao import (
+    OssUserTokensDAO as AbsUserTokensDAO,
+    SkystreamUserProjectAccessDAO,
+    SkystreamUsersDAO,
+)
 from app.config import settings
 from app.database import redis_client, async_session_maker
 
@@ -227,9 +231,13 @@ class AuthMiddleware:
                     return None, None
 
                 # 3. Проверяем существование и активность пользователя
-                user = await AbsUsersDAO.find_one_or_none(db, id=user_id)
+                user = await SkystreamUsersDAO.find_one_or_none(db, id=user_id)
                 if not user or not user.get("is_active"):
                     logger.warning(f"REFRESH: User {user_id} is inactive or does not exist")
+                    return None, None
+
+                if not await SkystreamUserProjectAccessDAO.user_can_login_helpdesk(db, int(user_id)):
+                    logger.warning(f"REFRESH: User {user_id} has no helpdesk project access")
                     return None, None
 
                 user_data = {
@@ -328,11 +336,13 @@ class AuthMiddleware:
     async def _get_user_cached(self, user_id: int) -> Optional[dict]:
         cache_key = f"operator:{user_id}"
         try:
-            cached = await self._redis_get(cache_key)
-            if cached: return json.loads(cached)
-            
             async with async_session_maker() as db:
-                user = await AbsUsersDAO.find_one_or_none(db, id=user_id)
+                if not await SkystreamUserProjectAccessDAO.user_can_login_helpdesk(db, user_id):
+                    return None
+                cached = await self._redis_get(cache_key)
+                if cached:
+                    return json.loads(cached)
+                user = await SkystreamUsersDAO.find_one_or_none(db, id=user_id)
                 if user and user.get("is_active"):
                     # ДОБАВЛЯЕМ fullname И ДРУГИЕ НУЖНЫЕ ПОЛЯ ЗДЕСЬ
                     data = {

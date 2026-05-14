@@ -136,7 +136,7 @@ class JurContractList(Base):
 
 
 class NoteHistory(Base):
-    """Заметки по организации (oss.note_history). FK на users.abs_users в DDL не объявляем в ORM."""
+    """Заметки по организации (oss.note_history). FK на users.skystream_users в DDL не объявляем в ORM."""
 
     __tablename__ = 'note_history'
     __table_args__ = (
@@ -310,8 +310,8 @@ class TariffConstructorPlan(Base):
 class OssUserTokens(Base):
     """Таблица JWT-токенов OSS пользователей (oss.oss_user_tokens).
 
-    FK к users.abs_users намеренно не объявлен в ORM — он существует в DDL,
-    но users.abs_users живёт в отдельном MetaData, что вызывает NoReferencedTableError.
+    FK к users.skystream_users намеренно не объявлен в ORM — он существует в DDL,
+    но users.skystream_users живёт в отдельном MetaData, что вызывает NoReferencedTableError.
     """
     __tablename__ = 'oss_user_tokens'
     __table_args__ = (
@@ -352,7 +352,7 @@ class UserLogsType(Base):
 
 
 class UserLog(Base):
-    """Журнал действий oss.user_logs (FK в DDL на abs_users и user_logs_type)."""
+    """Журнал действий oss.user_logs (FK в DDL на skystream_users и user_logs_type)."""
 
     __tablename__ = "user_logs"
     __table_args__ = {"schema": "oss"}

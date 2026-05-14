@@ -151,12 +151,12 @@ class UserCommentsDAO(BaseDAO):
                 cls.model.id,
                 cls.model.data.label("message"),
                 cls.model.datum.label("created_at"),
-                AbsUsers.full_name.label("author_name"),
+                SkystreamUsers.full_name.label("author_name"),
             )
             .select_from(cls.model)
             .join(
-                AbsUsers,
-                cls.model.id_author == AbsUsers.id,
+                SkystreamUsers,
+                cls.model.id_author == SkystreamUsers.id,
                 isouter=True,  # LEFT JOIN
             )
             .where(cls.model.id_user == id_user)
@@ -726,10 +726,10 @@ class TariffDatelecomDAO(BaseDAO):
     model = TariffDatelecom
 
 
-### ABS пользователи
+### Пользователи skystream (users.skystream_users)
 
-class AbsUsersDAO(BaseDAO):
-    model = AbsUsers
+class SkystreamUsersDAO(BaseDAO):
+    model = SkystreamUsers
 
     @classmethod
     async def find_all(

@@ -1,0 +1,331 @@
+================================================================================
+СПРАВКА: данные и таблицы для /helpdesk/tickets и /helpdesk/tickets/{ticket_id}
+Проект: abs-flask. Код: app/web/routers/main.py, app/api/v1/routers/helpdesk/tickets.py,
+        app/api/v1/routers/helpdesk/router.py, app/static/js/helpdesk_tickets.js,
+        app/static/js/helpdesk_ticket*.js, app/constants.py, app/models/users.py
+================================================================================
+
+0. ОБЩАЯ СХЕМА
+-------------
+- Страницы HTML отдаёт веб-слой (FastAPI Jinja): список — helpdesk_tickets.html,
+  карточка тикета — helpdesk_ticket.html.
+- Список тикетов (секции 1 и 3 боковой панели) наполняется с фронта запросом
+  GET /api/v1/helpdesk/tracker/list → бэкенд: get_tracker_tickets → get_tickets().
+- На той же URL /helpdesk/tickets для секций 2 и 4 показывается ДРУГАЯ сущность —
+  инциденты из аналитики: GET /api/v1/statistics/analyze (или .../closed).
+  Это не users.tracker_tickets; в этом файле ниже только трекер-тикеты.
+- Карточка /helpdesk/tickets/{id}: сервер рендерит шаблон с контекстом из
+  formate_ticket_data() — без отдельного JSON для «шапки» тикета на первом
+  заходе; чат догружается/ведётся через API в зависимости от chatMode.
+
+Схема БД по умолчанию: users.* для тикетов/сообщений; справочники и станции —
+  wifitochka, stations, partner, oss, monitoring — только там, где явно join.
+
+
+1. СПИСОК ТИКЕТОВ (/helpdesk/tickets, секции 1 и 3)
+---------------------------------------------------
+
+1.1. Главная таблица
+  users.tracker_tickets  (алиас tt)
+  Ключевые поля для списка и фильтров:
+  - id, title, status, date_of_create, date_of_close, updated_at
+  - user_id — абонент (если object_type = 'user')
+  - assigned_to — основной исполнитель (FK логически на users.abs_users.id)
+  - closed_by
+  - category_id → users.ticket_categories
+  - priority (nullable; если NULL — в запросах берётся COALESCE(tt.priority, tc.priority))
+  - source (NULL трактуется как 'call_center' в фильтрах/отображении)
+  - person_type (skystream | user | partner | tech …) — тип «заявителя»/контекста
+  - object_type ('user' | 'station' | 'other') — к чему привязан тикет
+  - station_id, hotspot_id, vno — когда объект станция или нужны борт/VNO
+  - support_line — линия ТП: в SQL-выражениях 1 = КС, 2 = инженеры, 3 = партнёр
+    (в ORM-модели может оставаться старый check только 1,2 — ориентироваться на код)
+  - author — кто создал (для фильтров call_center/abs и пр.)
+  - sla_deadline, sla_paused_at
+
+1.2. JOIN’ы списка (get_tickets)
+  - users.ticket_categories tc ON tc.id = tt.category_id
+  - users.ticket_categories tc_parent ON tc.parent_id = tc_parent.id
+    Категория в списке: COALESCE(tc_parent.name, tc.name, '—'); отдельно parent/child.
+  - users.tracker_tickets_ratings ttr ON ttr.ticket_id = tt.id
+    (рейтинг в закрытом списке; колонки rating, comment)
+  - users.user u ON u.id = tt.user_id AND COALESCE(tt.object_type,'user')='user'
+  - users.user_details ud — только если в фильтрах передан user_name (поиск по ФИО)
+  - users.abs_users au_author ON au_author.id = tt.author
+    AND COALESCE(tt.person_type,'user')='skystream'  (для представлений call_center/abs)
+  - wifitochka.ip_group ig — станция: либо tt.station_id при object_type='station',
+    либо u.id_grp для абонента
+  - stations.station_forms sf ON sf.station_id = ig.id  (имя станции приоритетнее ig.name)
+  - users.abs_users au_assigned ON au_assigned.id = tt.assigned_to
+  - users.abs_users au_closed ON au_closed.id = tt.closed_by  (режим closed)
+
+1.3. Дополнительные запросы после списка (обогащение строк)
+  - Станции: повторный SELECT по wifitochka.ip_group + stations.station_forms для
+    ticket_station_id из строк (если основной join не дал имя).
+  - stations.hotspot (id, name) для hotspot_id.
+  - wifitochka.virtual_network_operator (id, name) для vno.
+
+1.4. Статусы
+  Не отдельная таблица-справочник: строковое поле tt.status (enum в БД users.tracker_status).
+  Константы открытых/закрытых:
+  - TRACKER_OPEN_STATUSES, TRACKER_CLOSED_STATUSES — app/constants.py
+  Человекочитаемые подписи для UI: STATUS_DISPLAY (тот же файл).
+  Режим списка:
+  - «Открытые» (по умолчанию): tt.status IN (TRACKER_OPEN_STATUSES)
+  - «Закрытые» (closed=true): tt.status IN (TRACKER_CLOSED_STATUSES) или один статус
+  - all_statuses=true: без фильтра по статусу (профиль абонента и т.д.)
+
+1.5. Источник (тип канала обращения)
+  Поле tt.source; в фильтрах часто COALESCE(tt.source,'call_center').
+  Подписи для UI: SOURCE_DISPLAY в constants.py (lk, partner, abs, tech, call_center, ks, …).
+
+1.6. Исполнитель
+  tt.assigned_to + LEFT JOIN users.abs_users au_assigned (full_name).
+  Представление «participant»: дополнительно EXISTS на users.tracker_ticket_executors.
+
+1.7. Непрочитанность в списке (has_unread, сортировки, секции)
+  Два независимых канала сообщений (см. раздел 3). Тикет «непрочитан» для трекера, если:
+  A) Почта абонента (users.user_mail):
+     - Письмо от абонента: um.id_user_from = tt.user_id
+     - Привязка к тикету: um.ticket_id = tt.id ИЛИ связь через users.tracker_ticket_mail_links
+       (l.ticket_id = tt.id AND l.user_mail_id = um.id)
+     - Прочтение сотрудником: НЕ EXISTS записи в users.user_mail_reads с нужным msg_id.
+     - Если известен current_user_id и тикет назначен на него — для «своих» тикетов
+       проверяют read с фильтром r.user_id = current_user_id; иначе «не прочитал никто
+       из сотрудников» (без user_id в EXISTS — зависит от ветки запроса в коде).
+  B) Внутренний чат трекера (users.tracker_messages):
+     - m.ticket_id = tt.id, person_type партнёра/техника: COALESCE(m.person_type,'skystream')
+       IN ('partner','tech')
+     - «Прочитано сотрудниками» = EXISTS users.tracker_messages_reads r JOIN
+       users.abs_users au ON au.id=r.user_id AND au.role IN ('engineer','support')
+  Для представления «Непрочитанные» (view=unread) сортировка может использовать
+  MIN(m.created_at) по тем же непрочитанным partner/tech сообщениям.
+
+1.8. Секции и представления (section / view) — логика WHERE
+  section=3: только partner/tech (COALESCE(tt.source,'call_center') IN ('partner','tech')),
+    плюс под-представления unread / unassigned / mine / no_technician / waiting_parts /
+    recently_updated.
+  section=1: view unread, unassigned, mine, participant, important (EXISTS
+    monitoring.top_active_subscribers по tt.user_id), juridical (u.is_juridical = 2),
+    call_center, call_ks, waiting_response (user_mail без user_mail_reads у всех),
+    lk, abs, partner, tech, deferred, recently_updated, closed (через closed=true).
+  Фильтры query-параметров: user_id, source, support_line (кс→1, иначе в коде 2 — без
+    партнёрской линии в фильтре), priority, status, category_id, q, station, assigned_to,
+    closed_by, rating, hotspot_id, vno, даты создания/закрытия, sort_by/sort_order.
+
+1.9. Статистика по линиям в ответе списка (открытые)
+  COUNT GROUP BY tt.support_line при тех же фильтрах (без фильтра по линии),
+  маппинг в подписи «инженеры» / «кс» / «partner».
+
+1.10. Кэш
+  Список и счётчики боковой панели кэшируются в Redis (ключи helpdesk_tracker_list:*,
+  helpdesk_sidebar_counts:* и др.) — для повторной реализации не обязательно.
+
+1.11. Параметры GET /api/v1/helpdesk/tracker/list (основные)
+  Закрытость: closed=true | false; all_statuses=true (без фильтра по статусу, например
+    профиль абонента) + опционально incidents_scope=active|closed.
+  Пагинация: page, per_page (на сервере лимит урезается при delta-режиме).
+  Поллинг: since=ISO datetime — в WHERE добавляется
+    (date_of_create >= since OR COALESCE(updated_at, date_of_create) >= since),
+    offset сбрасывается в 0.
+  Боковая панель: section (int), view (str) — см. 1.8.
+  Фильтры: user_id, user_name, support_line (строка «кс»|другое), priority, category_id,
+    station, q, assigned_to, unassigned, closed_by, rating, hotspot_id, vno, status,
+    source, date_create_*, date_close_*, sort_by, sort_order.
+
+1.12. Ответ get_tickets (логическая структура)
+  total, items[] (поля из SELECT + нормализация station/hotspot/vno имён),
+  stats.by_line при открытом списке, has_unread на строке (открытые),
+  при since: unchanged, unread_ticket_ids (для подсветки строк).
+
+1.13. Сортировки открытого списка (по умолчанию, без своих sort_by)
+  - role support: непрочитанные первыми → support_line ASC → приоритет → давность
+    updated_at ASC (чем дольше без обновления, тем выше в группе).
+  - engineer: блоки по «мои непрочитанные / любые непрочитанные / без исполнителя /
+    остальное» → приоритет → updated_at ASC.
+  - view=unread: MIN(created_at) непрочитанного partner/tech сообщения ASC.
+  Закрытые: обычно tt.id DESC или сорт по датам закрытия/времени решения.
+
+
+2. КАРТОЧКА ТИКЕТА (/helpdesk/tickets/{ticket_id})
+-------------------------------------------------
+
+2.1. Загрузка «шапки» и метаданных — get_ticket_data()
+  FROM users.tracker_tickets tt
+  JOIN категории: users.ticket_categories tc, tc_parent (как в списке)
+  Рейтинг: users.tracker_tickets_ratings ttr
+  Абонент: users.user u (+ для юрлиц oss.jur_client_list jcl)
+  Исполнитель/закрыл: users.abs_users au_assigned, au_closed
+  Партнёр/автор для partner/tech: partner.diler, partner.technicians, stations.station_forms
+    (partner_id / partner_name выводятся из станции или author в зависимости от source)
+
+2.2. Поле «Взят в работу» (assigned_at в UI)
+  Не отдельная колонка в tracker_tickets. Сейчас в коде:
+  SELECT TO_CHAR(start_time, ...) FROM users.tracker_ticket_line_history
+  WHERE ticket_id = :id ORDER BY id DESC LIMIT 1
+  Последняя строка может быть событием (support_line NULL) — тогда на экран попадёт
+  время события, а не начала сегмента на линии. Для новой системы логичнее брать
+  последнюю строку с support_line IS NOT NULL или отдельную колонку assigned_at.
+
+2.2a. Линии ТП (числа в БД ↔ подписи)
+  В tracker_tickets.support_line и в сегментах line_history:
+  - 1 — КС (контактный сервис)
+  - 2 — инженеры (2-я линия)
+  - 3 — партнёрская линия (в SQL CASE в списке отображается как 'partner')
+  В JSON списка поле support_line может быть строкой: 'кс' | 'инженеры' | 'partner'.
+
+2.3. Дополнительные исполнители
+  users.tracker_ticket_executors e JOIN users.abs_users au
+  Список ticket_executors + ticket_executor_ids (assigned_to + executors).
+
+2.4. Техники партнёра на тикете
+  users.tracker_ticket_technicians JOIN partner.technicians
+
+2.5. Категории в выпадашке на карточке
+  SELECT из users.ticket_categories WHERE is_active AND source = :cat_source
+  cat_source = 'partner' если source IN ('partner','tech'), иначе 'lk'.
+  Дерево parent_id строится в Python.
+
+2.6. Режим чата (window chatMode в шаблоне)
+  - 'mail' — если source НЕ в ('ks','partner','tech','incidents','abs')
+  - 'tracker' — для ks, partner, tech, incidents, abs
+  От этого зависят подключаемые JS-модули и API (см. раздел 3).
+
+
+3. СООБЩЕНИЯ В ТЕЛЕ ТИКЕТА
+--------------------------
+
+3.1. Два хранилища
+  (1) Переписка «абонент ↔ поддержка» в старом чате писем:
+      users.user_mail (поля id, id_user_from, id_user_to, text, date, ticket_id,
+      person_type, user_id, file_new, …)
+      Связь many-to-many тикет↔письмо: users.tracker_ticket_mail_links (ticket_id, user_mail_id)
+  (2) Чат трекера (КС/партнёр/техника/engineer в одной ленте):
+      users.tracker_messages (ticket_id, author_id, body, created_at, person_type, …)
+      Вложения: users.tracker_message_attachments (msg_id)
+
+3.2. Что отдаётся в HTML с сервера (formate_ticket_data)
+  - users_messages: get_user_messages_for_ticket()
+      Сначала SELECT из user_mail WHERE ticket_id = :id ORDER BY date, id
+      Если пусто и есть subscriber_id — fallback: по tracker_ticket_mail_links
+      собираются min/max user_mail_id и выбираются письма BETWEEN id AND id с участием
+      subscriber_id в (id_user_from, id_user_to).
+      Вложения: get_attachments_for_messages → users.user_mail_attachments (msg_id)
+  - engineer_chat: get_helpdesk_messages_for_ticket() — только users.tracker_messages
+      для данного ticket_id (это «внутренняя» лента в шаблоне; основной UX для
+      tracker-режима идёт через API пагинации в helpdesk_ticket_ks.js).
+
+3.3. API при chatMode === 'tracker'
+  База: /api/v1/helpdesk/tracker/{ticket_id}/chat (пагинация before_id/after_id)
+  Прочтение: POST .../tracker/{ticket_id}/chat/read с телом { message_ids: [...] }
+    → INSERT users.tracker_messages_reads (msg_id, user_id, person_type='skystream', read_time)
+    ON CONFLICT DO NOTHING; берутся только «чужие» сообщения (не свои skystream).
+  Поллинг прочтений: GET .../chat/reads?msg_ids=...
+
+3.4. API при chatMode === 'mail'
+  База: /api/v1/helpdesk/chats/{chat_id}/messages?...&ticket_id= для привязки к тикету
+  Прочтение: POST .../chats/{chat_id}/messages/read → users.user_mail_reads
+    (реализация mark_as_read в users_chats.py — INSERT с person_type).
+
+3.5. Как понять «тикет прочитан» с точки зрения списка/бейджей
+  Для инженеров/support нет одного флага на тикете. Логика производная:
+  - нет непрочитанных входящих от абонента в user_mail (см. user_mail_reads), И
+  - нет непрочитанных partner/tech сообщений в tracker_messages (см. tracker_messages_reads
+    с ролью engineer/support).
+  Отдельно навбар может считать другие агрегаты (get_helpdesk_nav_unread_tickets_count).
+
+3.6. Прочтение абонентом (галочки «прочитано» в mail-режиме)
+  users.user_mail_reads с person_type = 'user', плюс легаси-поле user_mail.read.
+  Детали в users_chats при сборке has_read / subscriber_read_at.
+
+
+4. ИСТОРИЯ ТИКЕТА И ЛИНИИ ТП (ВРЕМЕННАЯ ШКАЛА)
+----------------------------------------------
+
+4.1. Таблица сегментов и событий
+  users.tracker_ticket_line_history
+  Поля: id, ticket_id, support_line (NULL для «чистых» событий без сегмента),
+  start_time, end_time, changed_by, event_type, payload (jsonb), state ('active' |
+  'waiting_client' — пауза «ждём клиента» на той же линии).
+
+4.2. Семантика сегментов (support_line IS NOT NULL)
+  Новый сегмент открывается при смене линии: фоновая assign_new_line_history():
+  - update_last_row — закрывает предыдущий сегмент (end_time=now) по последнему id
+    с support_line IS NOT NULL
+  - INSERT новой строки с новым support_line, start_time=now
+  - add_event line_changed с payload { from_line, to_line [, assigned_engineer_id] }
+  Закрытие тикета: update_last_row + add_event closed.
+  Переоткрытие: add новый сегмент с текущим support_line из тикета + status_changed.
+  Смена «ждём клиента» без смены линии: TrackerTicketLineHistoryDAO.transition_state —
+  закрывает сегмент и открывает новый с тем же support_line и новым state.
+
+4.3. Событийные строки (support_line IS NULL)
+  Типы event_type, которые фигурируют в коде таймлайна/обработчиков:
+  - created — начальный статус в payload.status
+  - closed — закрытие; payload.status
+  - line_changed — смена линии; payload.from_line, to_line [, assigned_engineer_id]
+  - status_changed — payload.status (+ иногда trigger, напр. client_reply)
+  - executor_added / executor_removed — payload.abs_user_id
+  - category_changed — payload.category_id
+  - priority_changed — payload.priority
+  Событийные строки участвуют в общей ленте get_ticket_history_data; расчёт wall-clock
+  времени «на линии» использует только сегменты support_line IS NOT NULL.
+
+4.4. Страница «Жизненный цикл» /helpdesk/tickets/history/{id}
+  Данные из get_ticket_history_data(): та же line_history + tracker_messages +
+  вычисления SLA (users.tracker_sla_config), поля first_response_at, sla_deadline
+  из tracker_tickets, склейка timeline в Python.
+
+4.5. Синхронизация с ответами в чате (SLA)
+  operator_replied_sla_update / client_replied_sla_update — обновляют tracker_tickets
+  и состояние сегментов line_history (waiting_client ↔ active).
+
+
+5. СПРАВОЧНИКИ И ВСПОМОГАТЕЛЬНЫЕ ТАБЛИЦЫ
+----------------------------------------
+  users.ticket_categories — категории (parent_id, source lk|partner, priority по умолчанию,
+    complexity L1/L2, support_line в модели; в продукте может расходиться с маппингом 1/2/3)
+  users.tracker_sla_config — правила SLA по support_line и priority
+  users.tracker_tickets_ratings — оценка тикета (rating, comment)
+  monitoring.top_active_subscribers — фильтр «важные абоненты» в списке
+
+
+6. ЧТО НЕ ЯВЛЯЕТСЯ tracker_tickets, НО РЯДОМ НА UI
+-------------------------------------------------
+  Секции 2/4 списка /helpdesk/tickets: API statistics/analyze — сущность инцидентов
+  (monitoring.incidents и связанные таблицы в модуле статистики), ссылки ведут на
+  /helpdesk/incidents/{id} с тем же шаблоном helpdesk_ticket.html, но другой
+  formate_incident_data().
+
+
+7. СВОДНАЯ ТАБЛИЦА: сущность → таблицы
+--------------------------------------
+  Список тикетов:     tracker_tickets, ticket_categories, tracker_tickets_ratings,
+                      user, user_details?, abs_users (author, assigned, closed),
+                      ip_group, station_forms, (+ подзапросы user_mail, mail_links,
+                      tracker_messages, reads для has_unread)
+  Счётчики sidebar:  в основном те же + тяжёлые EXISTS по mail/messages (см. tickets.py)
+  Шапка тикета:      tracker_tickets + joins как в get_ticket_data + line_history
+                      (assigned_at) + executors + technicians + ratings
+  Чат абонента:      user_mail, tracker_ticket_mail_links, user_mail_attachments,
+                      user_mail_reads
+  Чат трекера:       tracker_messages, tracker_message_attachments,
+                      tracker_messages_reads
+  История/аналитика: tracker_ticket_line_history, tracker_sla_config, поля SLA в
+                      tracker_tickets; сообщения для шкалы — tracker_messages
+
+
+8. КРАТКИЙ ЧЕКЛИСТ ДЛЯ РЕАЛИЗАЦИИ С НУЛЯ
+----------------------------------------
+  [ ] tracker_tickets — ядро: статус, линия, назначение, категория, источник, SLA-поля
+  [ ] ticket_categories + опционально parent_id
+  [ ] user_mail + ticket_id и/или tracker_ticket_mail_links
+  [ ] user_mail_reads (per user / person_type)
+  [ ] tracker_messages + tracker_messages_reads
+  [ ] tracker_ticket_line_history — сегменты времени на линии + event rows
+  [ ] tracker_ticket_executors — соисполнители
+  [ ] Константы открытых/закрытых статусов и маппинг подписей
+  [ ] Два API-потока чата или единый с типом сообщения
+  [ ] Явная модель «непрочитано для дежурного» (два канала или объединение)
+
+Конец файла.

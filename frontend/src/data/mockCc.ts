@@ -67,6 +67,14 @@ export const MOCK_NOTIFS = [
   { id: 300, name: "Иванова О.Н.", topic: "Сменить тариф", ago: "12 мин назад" },
 ];
 
+/** Непрочитанные в колокольчике (заготовка под API). */
+export function getBellUnreadCount(): number {
+  return MOCK_NOTIFS.length;
+}
+
+/** Бейдж вкладки «Чат» (заготовка под API). */
+export const NAV_CHATS_TAB_UNREAD = 5;
+
 export const MOCK_KB_SECTIONS: { title: string; items: { title: string; body: string }[] }[] = [
   {
     title: "Тарифы",

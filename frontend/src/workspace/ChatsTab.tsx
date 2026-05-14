@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT } from "@/data/mockCc";
-
-const ALL = [...MOCK_TICKETS_URGENT, ...MOCK_TICKETS_OPEN];
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { fetchOpenTrackerTickets, trackerApiRowToTicketRow, type TrackerTicketListItem } from "@/api/tracker";
+import { formatTicketUpdatedLocal, formatWorkDurationSince } from "@/utils/ticketFormat";
+import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT, type TicketRow } from "@/data/mockCc";
 
 type ChatMsg = { id: string; side: "cl" | "ag" | "note"; text: string; time: string };
 
@@ -14,8 +14,28 @@ const initialMsgs: ChatMsg[] = [
 export default function ChatsTab() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const idParam = Number(params.get("id")) || 301;
-  const ticket = useMemo(() => ALL.find((t) => t.id === idParam) ?? ALL[0], [idParam]);
+  const location = useLocation();
+  const idParam = Number(params.get("id")) || 0;
+  const ALL: TicketRow[] = useMemo(() => [...MOCK_TICKETS_URGENT, ...MOCK_TICKETS_OPEN], []);
+
+  const navState = location.state as { ticketRow?: TicketRow } | null;
+  const stateTicket = navState?.ticketRow;
+
+  const ticket = useMemo(() => {
+    const fromMock = ALL.find((t) => t.id === idParam);
+    if (fromMock) return fromMock;
+    if (stateTicket && stateTicket.id === idParam) return stateTicket;
+    if (idParam)
+      return {
+        id: idParam,
+        name: "Тикет",
+        topic: "Откройте тикет из списка — данные не загружены",
+        status: "work",
+        time: "—",
+        dot: "i2",
+      } as TicketRow;
+    return ALL[0];
+  }, [ALL, idParam, stateTicket]);
   const sub = useMemo(
     () => MOCK_SUBSCRIBERS.find((s) => ticket.name.includes(s.n.split(" ")[0])) ?? MOCK_SUBSCRIBERS[2],
     [ticket.name],
@@ -42,13 +62,50 @@ export default function ChatsTab() {
     return MOCK_KB.filter((k) => k.t.toLowerCase().includes(q) || k.k.includes(q));
   }, [kbFilter]);
 
-  function openChat(tid: number) {
-    navigate(`/chats?id=${tid}`);
+  const [listRows, setListRows] = useState<TrackerTicketListItem[]>([]);
+  const [listTotal, setListTotal] = useState(0);
+  const [listPage, setListPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState("");
+  const [nowPulse, setNowPulse] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!listMode) return;
+    const id = window.setInterval(() => setNowPulse(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, [listMode]);
+
+  useEffect(() => {
+    if (!listMode) return;
+    let cancelled = false;
+    (async () => {
+      setListLoading(true);
+      setListError("");
+      try {
+        const data = await fetchOpenTrackerTickets({ page: listPage, per_page: perPage, closed: false });
+        if (cancelled) return;
+        setListRows(data.items);
+        setListTotal(data.total);
+      } catch (e) {
+        if (!cancelled) setListError(e instanceof Error ? e.message : "Ошибка загрузки");
+      } finally {
+        if (!cancelled) setListLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listMode, listPage, perPage]);
+
+  function openChatFromApi(row: TrackerTicketListItem) {
+    const tr = trackerApiRowToTicketRow(row);
+    navigate(`/chats?id=${row.id}`, { state: { ticketRow: tr } });
     setListMode(false);
   }
 
   function back() {
-    navigate("/chats");
+    navigate("/chats", { replace: true, state: {} });
     setListMode(true);
   }
 
@@ -86,29 +143,138 @@ export default function ChatsTab() {
   }
 
   if (listMode) {
+    const totalPages = Math.max(1, Math.ceil(listTotal / perPage));
     return (
       <div className="tp on">
         <div className="pg">
-          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Диалоги</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {ALL.map((t) => (
-              <button type="button" key={t.id} className="tl" onClick={() => openChat(t.id)}>
-                <div className="tln">#{t.id}</div>
-                <div
-                  className="tld"
-                  style={{
-                    background:
-                      t.dot === "red" ? "var(--red)" : t.dot === "wn" ? "var(--wn)" : "var(--i2)",
+          <div className="ch-list-head">
+            <div>
+              <div className="ch-list-title">Тикеты</div>
+            </div>
+            <div className="ch-list-toolbar">
+              <label className="ch-per-label">
+                На странице
+                <select
+                  className="ch-per-select"
+                  value={perPage}
+                  onChange={(e) => {
+                    setPerPage(Number(e.target.value));
+                    setListPage(1);
                   }}
-                />
-                <div className="tlnm">{t.name}</div>
-                <div className="tltp">{t.topic}</div>
-                <span className={`tag ${t.status === "new" ? "tn" : t.status === "wait" ? "tw" : "tk"}`}>
-                  {t.status === "new" ? "Новая" : t.status === "wait" ? "Ожидание" : "В работе"}
-                </span>
-                <div className="tlt">{t.time}</div>
-              </button>
-            ))}
+                >
+                  {[10, 20, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          {listError ? <div className="ch-list-err">{listError}</div> : null}
+          {listLoading ? <div className="ch-list-loading">Загрузка…</div> : null}
+
+          <div className="ch-table-wrap">
+            <div className="ch-list-meta-row ch-list-thead">
+              <span>Тикет</span>
+              <span>Статус</span>
+              <span>В работе</span>
+              <span>Исполнитель</span>
+              <span>Обновлён</span>
+            </div>
+
+            <div className="ch-list-body">
+              {listRows.map((row) => (
+                <div
+                  key={row.id}
+                  className="ch-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openChatFromApi(row)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openChatFromApi(row);
+                    }
+                  }}
+                >
+                  <div className="ch-row-main">
+                    <div className="ch-row-head">
+                      <span className="ch-row-id">#{row.id}</span>
+                      <span
+                        className={
+                          row.object_type === "user" && (row.subscriber_is_juridical ?? 0) === 2
+                            ? "ch-row-title ch-row-title--jur"
+                            : "ch-row-title"
+                        }
+                        title={row.title}
+                      >
+                        {row.title}
+                      </span>
+                    </div>
+                    {row.object_type === "user" && row.subscriber_profile_user_id != null && (row.subscriber_name || "").trim() ? (
+                      <Link
+                        className="ch-row-userlink"
+                        to={`/users/${row.subscriber_profile_user_id}`}
+                        title={row.subscriber_name ?? undefined}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {row.subscriber_name}
+                      </Link>
+                    ) : null}
+                    {row.category_label ? (
+                      <span className="ch-row-cat" title={row.category_label}>
+                        {row.category_label}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className={`ch-status ch-status--${row.status}`}>{row.status_label}</span>
+                  <span className="ch-muted ch-mono">{formatWorkDurationSince(row.date_of_create, nowPulse)}</span>
+                  <div className="ch-exec-cell">
+                    <span
+                      className={`ch-line ch-line--${
+                        row.support_line === 1 || row.support_line === 2 || row.support_line === 3
+                          ? row.support_line
+                          : "o"
+                      }`}
+                    >
+                      {row.support_line_label}
+                    </span>
+                    {row.assignee_is_viewer ? <span className="ch-you-pill">Вы</span> : null}
+                  </div>
+                  <span className="ch-muted ch-time ch-mono">
+                    {formatTicketUpdatedLocal(row.updated_at || row.date_of_create)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {!listLoading && listRows.length === 0 && !listError ? (
+            <div className="ch-list-empty">Нет открытых тикетов</div>
+          ) : null}
+
+          <div className="ch-pager">
+            <button
+              type="button"
+              className="ch-page-btn"
+              disabled={listPage <= 1 || listLoading}
+              onClick={() => setListPage((p) => Math.max(1, p - 1))}
+            >
+              Назад
+            </button>
+            <span className="ch-page-info">
+              Стр. {listPage} / {totalPages} · всего {listTotal}
+            </span>
+            <button
+              type="button"
+              className="ch-page-btn"
+              disabled={listPage >= totalPages || listLoading}
+              onClick={() => setListPage((p) => p + 1)}
+            >
+              Вперёд
+            </button>
           </div>
         </div>
       </div>
@@ -165,7 +331,7 @@ export default function ChatsTab() {
               {msgs.map((m) => (
                 <div key={m.id} className={`msg ${m.side === "cl" ? "cl" : "me"}`}>
                   <div className={`mav ${m.side === "cl" ? "cl" : m.side === "note" ? "cl" : "ag"}`}>
-                    {m.side === "cl" ? ticket.name[0] : m.side === "note" ? "З" : "КЦ"}
+                    {m.side === "cl" ? (ticket.name?.trim()?.[0] ?? "?") : m.side === "note" ? "З" : "КЦ"}
                   </div>
                   <div className="mc2">
                     {m.side === "note" ? (

@@ -7,7 +7,12 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from user_agents import parse as parse_ua
 
-from app.api.v1.routers.auth.dao import AbsUsersDAO, OssUserTokensDAO, SubscriberDAO
+from app.api.v1.routers.auth.dao import (
+    OssUserTokensDAO,
+    SkystreamUserProjectAccessDAO,
+    SkystreamUsersDAO,
+    SubscriberDAO,
+)
 from app.api.v1.routers.auth.schemas import LoginRequest
 from app.core.auth_utils import create_token, decode_jwt_token
 from app.database import background_db_session, get_db
@@ -84,27 +89,34 @@ async def authenticate_user(
     login: str,
     password: str,
     ip: str | None,
-) -> dict | None:
-    user = await AbsUsersDAO.find_by_lower_login(db, login=login)
+) -> tuple[dict | None, str | None]:
+    """Возвращает (user, None) при успехе; (None, reason) при отказе (reason для ответа API)."""
+    user = await SkystreamUsersDAO.find_by_lower_login(db, login=login)
     if not user:
         await incr_failed_attempts(login)
-        return None
+        return None, None
 
     if not user.get("is_active"):
         await incr_failed_attempts(login)
-        return None
+        return None, None
 
     stored_hash = user.get("password_hash")
     if not stored_hash:
         await incr_failed_attempts(login)
-        return None
+        return None, None
 
     if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
         await incr_failed_attempts(login)
         logger.debug(f"User {user['id']} failed login: wrong password")
-        return None
+        return None, None
 
-    return user
+    uid = int(user["id"])
+    if not await SkystreamUserProjectAccessDAO.user_can_login_helpdesk(db, uid):
+        await incr_failed_attempts(login)
+        logger.info(f"User {uid} login denied: no helpdesk project access")
+        return None, "no_project_access"
+
+    return user, None
 
 
 @router.post("/login")
@@ -124,7 +136,13 @@ async def login(
             detail=f"Превышено количество попыток. Попробуйте через {time_left}.",
         )
 
-    user = await authenticate_user(db, data.login, data.password, real_ip)
+    user, auth_err = await authenticate_user(db, data.login, data.password, real_ip)
+
+    if auth_err == "no_project_access":
+        raise HTTPException(
+            status_code=403,
+            detail="Нет доступа к этому порталу для вашей учётной записи.",
+        )
 
     if not user:
         subscriber = await SubscriberDAO.find_by_lower_login(db, data.login)
@@ -171,7 +189,7 @@ async def login(
         refresh_expires_at=refresh_expire,
     )
 
-    await AbsUsersDAO.update(db, filter_by={"id": user_id}, last_login_at=func.now())
+    await SkystreamUsersDAO.update(db, filter_by={"id": user_id}, last_login_at=func.now())
 
     bg_task.add_task(_record_login_history, user_id=user_id, ip=real_ip, success=True)
 

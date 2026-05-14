@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     JWT_ACCESS_EXPIRE_MINUTES: int = Field(60, ge=1, le=24 * 60, description="Срок access JWT (мин.)")
     JWT_REFRESH_EXPIRE_DAYS: int = Field(30, ge=1, le=365, description="Срок refresh JWT (дн.)")
 
+    HELPDESK_SKYSTREAM_PROJECT_ID: int = Field(
+        3,
+        ge=1,
+        description="ID записи в users.skystream_projects для этого портала (авторизация по skystream_user_project_access)",
+    )
+    HELPDESK_PROJECT_KEY: str = Field(
+        "helpdesk",
+        description="Альтернативный ключ проекта; вместе с HELPDESK_SKYSTREAM_PROJECT_ID задаёт допустимый проект для входа",
+    )
+
     HOST: str = Field("0.0.0.0", description="Bind host")
     PORT: int = Field(8015, ge=1, le=65535, description="Bind port")
     WEB_CONCURRENCY: int = Field(4, ge=1, le=64, description="Воркеры Gunicorn / подсказка для деплоя")

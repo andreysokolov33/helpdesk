@@ -2,19 +2,23 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, desc, select, update
+from sqlalchemy import and_, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.dao.base import BaseDAO
 from app.models.oss import OssUserTokens
-from app.models.users import AbsUsers
+from app.models.users import SkystreamProjects
+from app.models.users import SkystreamUserProjectAccess
+from app.models.users import SkystreamUsers
 from app.models.users import User as AbsSubscriber
 from app.utils.model_utils import _model_to_dict
 
 
-class AbsUsersDAO(BaseDAO[AbsUsers]):
-    """DAO для таблицы users.abs_users (служебные пользователи)."""
-    model = AbsUsers
+class SkystreamUsersDAO(BaseDAO[SkystreamUsers]):
+    """DAO для таблицы users.skystream_users."""
+
+    model = SkystreamUsers
 
     @classmethod
     async def find_by_lower_login(cls, session: AsyncSession, login: str) -> Optional[Dict[str, Any]]:
@@ -25,8 +29,43 @@ class AbsUsersDAO(BaseDAO[AbsUsers]):
         return _model_to_dict(result.scalar_one_or_none())
 
 
+class SkystreamUserProjectAccessDAO(BaseDAO[SkystreamUserProjectAccess]):
+    """Сопоставление пользователя skystream и проекта (users.skystream_user_project_access)."""
+
+    model = SkystreamUserProjectAccess
+
+    @classmethod
+    async def user_can_login_helpdesk(cls, session: AsyncSession, user_id: int) -> bool:
+        """Активная строка доступа: can_login, проект helpdesk, проект активен, срок не истёк."""
+        now = datetime.now(timezone.utc)
+        pid = settings.HELPDESK_SKYSTREAM_PROJECT_ID
+        pkey = settings.HELPDESK_PROJECT_KEY
+
+        stmt = (
+            select(cls.model.user_id)
+            .join(SkystreamProjects, SkystreamProjects.id == cls.model.project_id)
+            .where(
+                cls.model.user_id == user_id,
+                cls.model.can_login.is_(True),
+                SkystreamProjects.is_active.is_(True),
+                or_(
+                    SkystreamProjects.id == pid,
+                    SkystreamProjects.project_key == pkey,
+                ),
+                or_(
+                    cls.model.expires_at.is_(None),
+                    cls.model.expires_at > now,
+                ),
+            )
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+
 class SubscriberDAO(BaseDAO[AbsSubscriber]):
     """DAO для таблицы users.user (абоненты ЛК)."""
+
     model = AbsSubscriber
 
     @classmethod
@@ -40,6 +79,7 @@ class SubscriberDAO(BaseDAO[AbsSubscriber]):
 
 class OssUserTokensDAO(BaseDAO[OssUserTokens]):
     """DAO для таблицы oss.oss_user_tokens."""
+
     model = OssUserTokens
 
     @classmethod

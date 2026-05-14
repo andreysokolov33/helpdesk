@@ -122,7 +122,7 @@ class PaysBills(Base):
     date = mapped_column(BigInteger)
     vno = mapped_column(BigInteger)
     id_grp = mapped_column(BigInteger)
-    created_by = mapped_column(BigInteger, comment='Кто внёс запись (users.abs_users.id)')
+    created_by = mapped_column(BigInteger, comment='Кто внёс запись (users.skystream_users.id)')
     create_date = mapped_column(DateTime(True), comment='Момент зачисления (timestamptz)')
 
 
