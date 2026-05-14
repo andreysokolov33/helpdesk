@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>403 — Доступ запрещён</title>
+    <link rel="stylesheet" href="/static/css/base.css">
+    <style>
+        .error-page {
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            padding: 20px;
+            background: var(--bg);
+        }
+
+        .error-card {
+            max-width: 540px;
+            width: 100%;
+            text-align: center;
+            padding: 52px 36px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .error-code {
+            font-size: 120px;
+            font-weight: 800;
+            line-height: 1;
+            margin: 0 0 16px;
+            color: var(--danger);
+            user-select: none;
+        }
+
+        .error-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 12px;
+            color: var(--text);
+        }
+
+        .error-text {
+            font-size: 16px;
+            color: var(--muted);
+            margin: 0 0 36px;
+            line-height: 1.6;
+        }
+
+        .error-actions {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 480px) {
+            .error-code { font-size: 96px; }
+            .error-card { padding: 40px 24px; }
+            .error-title { font-size: 24px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="error-page">
+    <div class="error-card">
+        <h1 class="error-code">403</h1>
+        <h2 class="error-title">Доступ запрещён</h2>
+        <p class="error-text">
+            У вас недостаточно прав для просмотра этой страницы.<br>
+            Если вам нужен доступ — обратитесь к инженерам или администратору системы.
+        </p>
+
+        <div class="error-actions">
+            <a href="/" class="primary-btn">На главную</a>
+            <button onclick="history.back()" class="icon-btn" style="background:var(--panel-2);">
+                Вернуться назад
+            </button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

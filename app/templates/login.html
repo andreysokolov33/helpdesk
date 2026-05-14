@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="description" content="OSS - Система управления для инженеров Wifitochka">
+    <meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=0'>
+    <title>Авторизация | OSS</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/login.css') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', path='images/favicon_black.ico') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/toastr.min.css') }}">
+    <!-- CSRF-токен для защиты (можно заменить на динамический при необходимости) -->
+    <meta name="csrf-token" content="static-csrf-token-placeholder">
+</head>
+<body>
+    <div class="container">
+        <div class="card-signin">
+            <div class="card-body pb-2">
+                <img src="{{ url_for('static', path='images/Logo_white.svg') }}" class="img-fluid" alt="Wifitochka Logo">
+                
+                <h5 class="card-title">
+                    <strong>OSS</strong> — Система управления сетью<br>
+                    <span style="font-size: 14px; font-weight: 500;">Внутренний портал для инженеров</span>
+                </h5>
+
+                <!-- Сообщения об ошибках будут отображаться здесь через JS -->
+                <div id="flash-container"></div>
+
+                <!-- Форма без action — обрабатывается через JS -->
+                <form method="post" id="login-form">
+                    <input type="hidden" id="next-input" value="{{ next or '/' }}">
+                    <div class="form-label-group">
+                        <input 
+                            type="text" 
+                            id="username" 
+                            name="username" 
+                            class="form-control" 
+                            placeholder="Логин" 
+                            required 
+                            autofocus 
+                            autocomplete="username"
+                        >
+                        <label for="username">Логин</label>
+                    </div>
+                    
+                    <div class="form-label-group">
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            class="form-control" 
+                            placeholder="Пароль" 
+                            required 
+                            autocomplete="current-password"
+                        >
+                        <label for="password">Пароль</label>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button id="loginButton" class="btn" type="submit">
+                            Войти в систему
+                        </button>
+                    </div>
+                </form>
+                
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', path='js/api.js') }}"></script>
+    <script src="{{ url_for('static', path='js/library/jquery-3.7.1.js') }}"></script>
+    <script src="{{ url_for('static', path='js/library/toastr.min.js') }}"></script>
+    <script>
+        function showFlashMessage(message, category) {
+            const container = document.getElementById('flash-container');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flask-flash-message ${category === 'danger' || category === 'error' ? 'danger' : category === 'success' ? 'success' : ''}`;
+            messageDiv.textContent = message;
+            container.innerHTML = ''; // Очищаем предыдущие сообщения
+            container.appendChild(messageDiv);
+
+            // Автоскрытие для не-ошибок
+            if (category !== 'danger' && category !== 'error') {
+                setTimeout(() => hideFlashMessage(messageDiv), 5000);
+            }
+        }
+
+        function hideFlashMessage(element) {
+            if (element && element.parentNode) {
+                element.style.opacity = '0';
+                element.style.transform = 'translateY(-10px)';
+                setTimeout(() => element.remove(), 300);
+            }
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const next = document.getElementById('next-input').value || '/';
+            const button = document.getElementById('loginButton');
+
+            // Клиентская валидация
+            if (!username || username.length < 2) {
+                showFlashMessage('Логин должен содержать минимум 2 символа', 'warning');
+                document.getElementById('username').focus();
+                return;
+            }
+            
+            if (!password || password.length < 3) {
+                showFlashMessage('Пароль должен содержать минимум 3 символа', 'warning');
+                document.getElementById('password').focus();
+                return;
+            }
+
+            // Индикация загрузки
+            button.disabled = true;
+            button.textContent = 'Обработка...';
+
+            try {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+                const response = await apiFetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ login: username, password: password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Успешный вход — редирект на целевую страницу
+                    window.location.href = next;
+                } else {
+                    // Обработка ошибок от FastAPI
+                    let errorMsg = 'Ошибка авторизации';
+                    if (typeof data.detail === 'string') {
+                        errorMsg = data.detail;
+                    } else if (Array.isArray(data.detail)) {
+                        // Ошибки валидации (422)
+                        errorMsg = data.detail.map(err => 
+                            typeof err === 'object' ? err.msg || String(err) : String(err)
+                        ).join('; ');
+                    } else if (data.detail) {
+                        errorMsg = String(data.detail);
+                    }
+
+                    const category = response.status === 403 ? 'danger' : 'warning';
+                    showFlashMessage(errorMsg, category);
+                }
+            } catch (err) {
+                console.error('Login network error:', err);
+                showFlashMessage('Ошибка сети. Проверьте подключение к интернету.', 'danger');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Войти в систему';
+            }
+        });
+
+        // Фокус на логин при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            const usernameInput = document.getElementById('username');
+            if (usernameInput && !usernameInput.value) {
+                usernameInput.focus();
+            }
+
+            // Обработка ссылок в тексте (как было)
+            const messages = document.querySelectorAll('.flask-flash-message');
+            messages.forEach(msg => {
+                const text = msg.textContent || msg.innerText;
+                if (text.includes('lk.wifitochka.ru')) {
+                    msg.innerHTML = text.replace(
+                        'lk.wifitochka.ru',
+                        '<a href="https://lk.wifitochka.ru" class="pretty-link" target="_blank" rel="noopener">lk.wifitochka.ru</a>'
+                    );
+                }
+            });
+        });
+
+        // Валидация в реальном времени
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        
+        usernameInput.addEventListener('blur', function() {
+            const value = this.value.trim();
+            if (value && value.length < 2) {
+                this.style.borderColor = '#ff1300';
+            } else {
+                this.style.borderColor = '';
+            }
+        });
+        
+        passwordInput.addEventListener('blur', function() {
+            const value = this.value;
+            if (value && value.length < 3) {
+                this.style.borderColor = '#ff1300';
+            } else {
+                this.style.borderColor = '';
+            }
+        });
+    </script>
+</body>
+</html>

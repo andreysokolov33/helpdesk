@@ -1,0 +1,429 @@
+/* === ABS Login Page Styles === */
+@font-face {
+    font-family: 'Manrope';
+    src: url('/static/fonts/Manrope-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Manrope';
+    src: url('/static/fonts/Manrope-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: linear-gradient(135deg, #0a1e36 0%, #0f2742 50%, #143050 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+body::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        radial-gradient(circle at 20% 50%, rgba(255, 19, 0, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(102, 126, 234, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, rgba(20, 48, 80, 0.3) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+body::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 2px,
+            rgba(255, 255, 255, 0.02) 2px,
+            rgba(255, 255, 255, 0.02) 4px
+        );
+    pointer-events: none;
+}
+
+.container {
+    width: 100%;
+    max-width: 460px;
+    position: relative;
+    z-index: 1;
+}
+
+.card-signin {
+    background: rgba(15, 39, 66, 0.95);
+    border-radius: 24px;
+    box-shadow: 
+        0 20px 60px rgba(0, 0, 0, 0.6),
+        0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px);
+    overflow: hidden;
+    animation: slideUp 0.5s ease-out;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card-body {
+    padding: 48px 40px 40px;
+}
+
+.card-body .img-fluid {
+    max-width: 180px;
+    height: auto;
+    display: block;
+    margin: 0 auto 32px;
+    filter: drop-shadow(0 4px 12px rgba(255, 255, 255, 0.1)) brightness(1.1);
+}
+
+.card-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #ffffff;
+    text-align: center;
+    margin-bottom: 32px;
+    line-height: 1.5;
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(20, 48, 80, 0.8) 0%, rgba(15, 39, 66, 0.6) 100%);
+    border-radius: 12px;
+    border-left: 4px solid #ff1300;
+    box-shadow: 
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.card-title span {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.card-title a {
+    color: #64b5f6;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.card-title a:hover {
+    color: #8bc7ff;
+    text-decoration: underline;
+}
+
+/* Flash Messages */
+.flask-flash-message {
+    padding: 14px 18px;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    font-weight: 500;
+    text-align: center;
+    font-size: 14px;
+    animation: fadeIn 0.3s ease-out;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.flask-flash-message {
+    background: linear-gradient(135deg, rgba(255, 152, 0, 0.2) 0%, rgba(255, 183, 77, 0.15) 100%);
+    color: #ffcc80;
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+.flask-flash-message.danger {
+    background: linear-gradient(135deg, rgba(255, 19, 0, 0.25) 0%, rgba(255, 82, 82, 0.15) 100%);
+    color: #ff8a80;
+    border: 1px solid rgba(255, 19, 0, 0.4);
+    backdrop-filter: blur(10px);
+}
+
+.flask-flash-message.success {
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.25) 0%, rgba(129, 199, 132, 0.15) 100%);
+    color: #a5d6a7;
+    border: 1px solid rgba(76, 175, 80, 0.4);
+    backdrop-filter: blur(10px);
+}
+
+.flask-flash-message.info {
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.25) 0%, rgba(100, 181, 246, 0.15) 100%);
+    color: #90caf9;
+    border: 1px solid rgba(33, 150, 243, 0.4);
+    backdrop-filter: blur(10px);
+}
+
+/* Form Styles */
+#login-form {
+    margin-top: 8px;
+}
+
+.form-label-group {
+    position: relative;
+    margin-bottom: 24px;
+}
+
+.form-label-group input {
+    width: 100%;
+    height: 56px;
+    padding: 20px 18px 8px;
+    font-size: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    background: rgba(20, 48, 80, 0.5);
+    transition: all 0.3s ease;
+    font-family: 'Manrope', sans-serif;
+    font-weight: 500;
+    color: #ffffff;
+    backdrop-filter: blur(10px);
+}
+
+.form-label-group input:focus {
+    outline: none;
+    border-color: #ff1300;
+    box-shadow: 
+        0 0 0 4px rgba(255, 19, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    background: rgba(20, 48, 80, 0.7);
+}
+
+.form-label-group input::placeholder {
+    color: transparent;
+}
+
+.form-label-group label {
+    position: absolute;
+    left: 18px;
+    top: 18px;
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.5);
+    pointer-events: none;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.form-label-group input:focus ~ label,
+.form-label-group input:not(:placeholder-shown) ~ label {
+    top: 8px;
+    font-size: 12px;
+    color: #ff1300;
+    font-weight: 600;
+}
+
+/* Button Styles */
+#loginButton {
+    width: 100%;
+    height: 56px;
+    background: linear-gradient(135deg, #ff1300 0%, #e61204 50%, #cc0f00 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: 'Manrope', sans-serif;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 
+        0 6px 20px rgba(255, 19, 0, 0.4),
+        0 2px 8px rgba(255, 19, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    margin-top: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: relative;
+    overflow: hidden;
+}
+
+#loginButton::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+#loginButton:hover::before {
+    left: 100%;
+}
+
+#loginButton:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        0 8px 24px rgba(255, 19, 0, 0.5),
+        0 4px 12px rgba(255, 19, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, #ff1a0d 0%, #ff1300 50%, #e61204 100%);
+}
+
+#loginButton:active {
+    transform: translateY(0);
+    box-shadow: 
+        0 4px 12px rgba(255, 19, 0, 0.4),
+        0 2px 6px rgba(255, 19, 0, 0.3),
+        inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+#loginButton:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Footer */
+.card-body .row {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.card-body .row a {
+    color: #64b5f6;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.card-body .row a:hover {
+    color: #8bc7ff;
+    text-decoration: underline;
+}
+
+.card-body .row .text-end {
+    text-align: right;
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+    body {
+        padding: 16px;
+    }
+
+    .card-body {
+        padding: 32px 24px 32px;
+    }
+
+    .card-body .img-fluid {
+        max-width: 140px;
+        margin-bottom: 24px;
+    }
+
+    .card-title {
+        font-size: 16px;
+        padding: 12px;
+        margin-bottom: 24px;
+    }
+
+    .form-label-group {
+        margin-bottom: 20px;
+    }
+
+    .form-label-group input {
+        height: 52px;
+        padding: 18px 16px 6px;
+        font-size: 15px;
+    }
+
+    .form-label-group label {
+        left: 16px;
+        top: 16px;
+        font-size: 15px;
+    }
+
+    #loginButton {
+        height: 52px;
+        font-size: 15px;
+    }
+
+    .card-body .row {
+        font-size: 12px;
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+    }
+
+    .card-body .row .text-end {
+        text-align: center;
+    }
+}
+
+/* Loading State */
+#loginButton.loading {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+
+#loginButton.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.pretty-link {
+    color: #00d4ff !important;
+    font-weight: 600;
+    text-decoration: none !important;
+    /* background: rgba(0, 212, 255, 0.15); */
+    padding: 3px 8px;
+    border-radius: 6px;
+    transition: all 0.25s ease;
+    display: inline-block;
+}
+

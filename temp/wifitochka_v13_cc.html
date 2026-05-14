@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiFi Точка — КЦ</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--f:'Manrope',system-ui,sans-serif;--nh:46px;--r:10px;--rs:7px;--a:180ms ease}
+[data-theme="light"]{--bg:#F4F4F1;--p:#FFF;--ln:#E2E2DC;--lm:#D0D0C8;--ink:#0A1E36;--i2:#3D5068;--i3:#7A8B9A;--red:#FF1300;--rdk:#D41000;--rbg:#FFF0EE;--rsf:#FFDAD6;--ok:#1B7A48;--obg:#EAF5EF;--wn:#B86E10;--wbg:#FDF3E0;--nbg:rgba(10,30,54,.06);--sh:0 2px 8px rgba(10,30,54,.08);--shl:0 8px 30px rgba(10,30,54,.12);--nvb:#FFF;--tp:#0A1E36;--tc:#fff}
+[data-theme="dark"]{--bg:#0A1E36;--p:#11283F;--ln:#1C3550;--lm:#274562;--ink:#E8EDF2;--i2:#9CB0C4;--i3:#5E7B94;--red:#FF2D1A;--rdk:#FF4433;--rbg:rgba(255,19,0,.1);--rsf:rgba(255,19,0,.18);--ok:#3FBE72;--obg:rgba(63,190,114,.1);--wn:#F0A830;--wbg:rgba(240,168,48,.1);--nbg:rgba(255,255,255,.04);--sh:0 2px 8px rgba(0,0,0,.3);--shl:0 8px 30px rgba(0,0,0,.4);--nvb:#0E2438;--tp:#E8EDF2;--tc:#0A1E36}
+html,body{height:100%;font-family:var(--f);font-size:14px;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+*{scrollbar-width:thin;scrollbar-color:var(--lm) transparent}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--lm);border-radius:3px}
+button,input,select,textarea{font-family:var(--f);color:var(--ink)}
+[data-tip]{position:relative;cursor:help}[data-tip]::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%) scale(.92);background:var(--tp);color:var(--tc);font-size:11px;font-weight:500;line-height:1.4;padding:7px 11px;border-radius:7px;white-space:normal;width:max-content;max-width:240px;pointer-events:none;opacity:0;z-index:9999;transition:opacity .15s,transform .15s;box-shadow:0 4px 14px rgba(0,0,0,.15)}[data-tip]:hover::after{opacity:1;transform:translateX(-50%) scale(1)}
+.view{display:none;height:100%}.view.active{display:flex;flex-direction:column}
+
+/* NAV */
+.nav{height:var(--nh);background:var(--nvb);border-bottom:1px solid var(--ln);display:flex;align-items:center;padding:0 16px;gap:8px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:2px;flex-shrink:0}
+.logo-wifi{font-size:14px;font-weight:800;color:var(--ink);letter-spacing:.5px}
+.logo-tochka{font-size:14px;font-weight:800;color:var(--ink);letter-spacing:.5px}
+.logo-mark{width:26px;height:26px;flex-shrink:0;margin:0 2px}
+.nr{margin-left:auto;display:flex;align-items:center;gap:4px}
+.ib{width:30px;height:30px;border-radius:var(--rs);border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;transition:background var(--a)}.ib:hover{background:var(--rbg)}.ib svg{color:var(--red)}
+.ib .dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--red);border:2px solid var(--nvb)}
+.tb{height:26px;padding:0 8px;border-radius:5px;border:1px solid var(--ln);background:var(--p);font-size:11px;font-weight:500;color:var(--i3);cursor:pointer;transition:all var(--a)}.tb:hover{color:var(--ink)}
+.ndd{position:absolute;top:36px;right:0;width:280px;background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);box-shadow:var(--shl);z-index:200;display:none;overflow:hidden}.ndd.open{display:block}
+.ndh{padding:8px 12px;border-bottom:1px solid var(--ln);font-size:10px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.5px}
+.ndi{padding:8px 12px;border-bottom:1px solid var(--ln);font-size:11px;line-height:1.5;cursor:pointer}.ndi:hover{background:var(--bg)}.ndi:last-child{border:none}
+.ndt{font-size:9px;color:var(--i3);margin-top:2px}
+
+/* TABS */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--ln);background:var(--nvb);flex-shrink:0;padding:0 16px}
+.tab{height:34px;padding:0 11px;border:none;border-bottom:2px solid transparent;background:none;font-size:12px;font-weight:500;color:var(--i3);cursor:pointer;transition:all var(--a);display:flex;align-items:center;gap:4px;margin-bottom:-1px}
+.tab:hover{color:var(--ink)}.tab.on{color:var(--red);border-bottom-color:var(--red);font-weight:700}
+.tab .c{font-size:9px;font-weight:700;background:var(--ln);color:var(--i3);padding:1px 5px;border-radius:7px}.tab.on .c{background:var(--rbg);color:var(--red)}
+.tp{display:none;flex:1;overflow-y:auto;padding:18px}.tp.on{display:block}
+.pg{display:flex;flex-direction:column;gap:12px;max-width:1300px;margin:0 auto}
+
+/* SHARED */
+.card{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:16px 18px}
+.ct{font-size:14px;font-weight:700;margin-bottom:3px}.cs2{font-size:11px;color:var(--i3);margin-bottom:10px}
+.g6{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.mc{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:14px 16px;transition:all var(--a)}.mc:hover{box-shadow:var(--sh);transform:translateY(-1px)}
+.ml{font-size:10px;color:var(--i3);margin-bottom:5px;display:flex;align-items:center;gap:3px}
+.mh{width:13px;height:13px;border-radius:50%;background:var(--nbg);color:var(--i3);font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;cursor:help}
+.mv{font-size:22px;font-weight:800;line-height:1;margin-bottom:3px;letter-spacing:-.3px}
+.mv.red{color:var(--red)}.mv.ok{color:var(--ok)}.mv.wn{color:var(--wn)}.mv.nv{color:var(--ink)}
+.md{font-size:10px;color:var(--i3)}.md .bad{color:var(--red);font-weight:600}.md .good{color:var(--ok);font-weight:600}
+.dl{display:inline-flex;font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:3px}.dl.up{background:var(--rbg);color:var(--red)}.dl.dn{background:var(--obg);color:var(--ok)}
+.tag{font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.tn{background:var(--rbg);color:var(--red)}.tw{background:var(--wbg);color:var(--wn)}.tk{background:var(--nbg);color:var(--i2)}.td{background:var(--obg);color:var(--ok)}
+.thi{background:var(--rbg);color:var(--red)}.tmi{background:var(--wbg);color:var(--wn)}.tlo{background:var(--obg);color:var(--ok)}
+.br{margin-bottom:7px}.blr{display:flex;justify-content:space-between;margin-bottom:3px}.bt2{font-size:11px}.bp{font-size:10px;font-weight:700;color:var(--i2)}
+.btr{height:5px;background:var(--nbg);border-radius:3px;overflow:hidden}.bf{height:100%;border-radius:3px}
+.bfr{background:var(--red)}.bfn{background:var(--ink)}.bfw{background:var(--wn)}.bfo{background:var(--ok)}
+.dt{width:100%;border-collapse:collapse;font-size:12px}
+.dt th{text-align:left;font-size:9px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.4px;padding:0 6px 7px 0;border-bottom:1px solid var(--ln)}
+.dt td{padding:8px 6px 8px 0;border-bottom:1px solid var(--ln);vertical-align:middle}.dt tr:last-child td{border-bottom:none}
+.lb{font-size:11px;font-weight:600;color:var(--red);cursor:pointer;background:none;border:none}.lb:hover{text-decoration:underline}
+.sw{position:relative}.si{width:100%;height:40px;border:1.5px solid var(--ln);border-radius:20px;padding:0 14px 0 36px;font-size:13px;color:var(--ink);outline:none;background:var(--p);transition:all var(--a)}.si:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(255,19,0,.06)}.si::placeholder{color:var(--i3)}
+.sic{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--i3);pointer-events:none}
+.sd{position:absolute;top:48px;left:0;right:0;background:var(--p);border:1.5px solid var(--lm);border-radius:var(--r);box-shadow:var(--shl);z-index:100;display:none;max-height:380px;overflow-y:auto}.sd.vis{display:block}
+.ssc{padding:7px 12px;font-size:9px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.5px;background:var(--bg);border-bottom:1px solid var(--ln)}
+.si2{padding:10px 14px;display:flex;align-items:flex-start;gap:10px;cursor:pointer;border-bottom:1px solid var(--ln);transition:background var(--a)}.si2:last-child{border:none}.si2:hover{background:var(--bg)}
+.sav{width:28px;height:28px;border-radius:50%;background:var(--nbg);border:1.5px solid var(--ln);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--i2);flex-shrink:0;margin-top:1px}.sav.kb{background:var(--rbg);color:var(--red);border-color:var(--rsf)}
+.sn{font-size:12px;font-weight:600}.sm{font-size:10px;color:var(--i3);line-height:1.4;margin-top:1px}
+.kbc{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:20px;box-shadow:var(--sh);display:none;position:relative;margin:0 0 12px}.kbc.vis{display:block}
+.kbc-t{font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.kbc-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--rbg);color:var(--red)}
+.kbc-b{font-size:12px;line-height:1.8;color:var(--i2)}.kbc-b ol{padding-left:18px;margin:6px 0}.kbc-b li{margin-bottom:3px}.kbc-b strong{color:var(--ink);font-weight:700}
+.kbc-x{position:absolute;top:10px;right:10px;width:26px;height:26px;border-radius:5px;border:1px solid var(--ln);background:var(--p);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--i3)}.kbc-x:hover{background:var(--rbg);color:var(--red)}
+.tl{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--rs);padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all var(--a)}.tl:hover{border-color:var(--lm);transform:translateX(2px)}
+.tln{font-size:11px;font-weight:700;color:var(--i3);width:36px}.tld{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.tlnm{font-size:12px;font-weight:600;flex:1}.tltp{font-size:11px;color:var(--i2);flex:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tlt{font-size:10px;color:var(--i3);white-space:nowrap}
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--red);display:inline-block;animation:p 1.5s infinite}@keyframes p{0%,100%{opacity:1}50%{opacity:.3}}
+.ug{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:12px 14px;cursor:pointer;transition:all var(--a);position:relative;overflow:hidden}.ug::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red)}.ug:hover{border-color:var(--rsf);box-shadow:var(--sh);transform:translateY(-2px)}
+
+/* CHAT */
+.tbar{height:42px;background:var(--nvb);border-bottom:1px solid var(--ln);display:flex;align-items:center;padding:0 12px;gap:6px;flex-shrink:0}
+.tbk{height:26px;padding:0 8px;border-radius:5px;border:1px solid var(--ln);background:var(--p);font-size:11px;color:var(--i3);cursor:pointer}.tbk:hover{background:var(--bg);color:var(--ink)}
+.ttl{font-size:13px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tid{font-size:11px;color:var(--i3)}
+.tacts{display:flex;gap:4px;margin-left:auto}
+.tb3{height:26px;padding:0 8px;border-radius:5px;border:1px solid var(--ln);background:var(--p);font-size:11px;font-weight:600;cursor:pointer;color:var(--i2);white-space:nowrap}.tb3:hover{background:var(--bg)}
+.tb3.cls{border-color:var(--red);color:var(--red)}.tb3.cls:hover{background:var(--rbg)}
+.tb3.kbo{color:var(--red)}.tb3.kbo:hover{background:var(--rbg)}
+.tbody{flex:1;display:flex;overflow:hidden;position:relative}
+.czone{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.cscrl{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.dsep{text-align:center;font-size:10px;color:var(--i3);display:flex;align-items:center;gap:8px}.dsep::before,.dsep::after{content:'';flex:1;height:1px;background:var(--ln)}
+.msg{display:flex;gap:7px;max-width:75%}.msg.me{align-self:flex-end;flex-direction:row-reverse}.msg.cl{align-self:flex-start}
+.mav{width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}.mav.cl{background:var(--nbg);color:var(--i2)}.mav.ag{background:var(--red);color:#fff}
+.mc2{display:flex;flex-direction:column;gap:2px}.msg.me .mc2{align-items:flex-end}
+.bbl{padding:9px 13px;border-radius:13px;font-size:12px;line-height:1.6}.bbl.cl{background:var(--p);border:1.5px solid var(--ln);border-bottom-left-radius:4px}.bbl.ag{background:var(--red);color:#fff;border-bottom-right-radius:4px}
+.bbl.nt{background:var(--wbg);border:1.5px dashed var(--wn);border-radius:8px;font-size:11px}
+.ntb{font-size:9px;font-weight:700;color:var(--wn);margin-bottom:2px}.mtm{font-size:9px;color:var(--i3);padding:0 3px}
+.comp{background:var(--p);border-top:1px solid var(--ln);flex-shrink:0}
+.ctbs{display:flex;border-bottom:1px solid var(--ln)}.ct2{flex:1;height:28px;border:none;background:none;font-size:10px;font-weight:600;color:var(--i3);cursor:pointer;border-bottom:2px solid transparent}.ct2.on{color:var(--ink);border-bottom-color:var(--red)}.ct2.nt2.on{color:var(--wn);border-bottom-color:var(--wn)}
+.cq{padding:6px 10px;display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--ln);align-items:center}.cql{font-size:8px;color:var(--i3)}
+.chip{height:22px;padding:0 7px;border-radius:11px;border:1px solid var(--ln);background:var(--p);font-size:10px;color:var(--i2);cursor:pointer;transition:all var(--a)}.chip:hover{border-color:var(--red);color:var(--red);background:var(--rbg)}
+.crow{display:flex;align-items:flex-end;gap:5px;padding:7px 10px}
+.cf{flex:1;min-height:34px;max-height:70px;resize:none;border:1.5px solid var(--ln);border-radius:8px;padding:7px 10px;font-size:12px;color:var(--ink);background:var(--bg);outline:none;line-height:1.5}.cf:focus{border-color:var(--red);background:var(--p)}.cf.nm{border-color:var(--wn);background:var(--wbg)}
+.cat{width:32px;height:32px;border-radius:7px;border:1px solid var(--ln);background:var(--p);color:var(--i3);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}.cat:hover{border-color:var(--red);color:var(--red)}
+.csb{width:32px;height:32px;border-radius:7px;border:none;background:var(--red);color:#fff;font-size:14px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}.csb.ns{background:var(--wn)}
+.ch{font-size:8px;color:var(--i3);text-align:center;padding:2px 10px 5px}
+.ip{width:250px;flex-shrink:0;background:var(--p);border-left:1px solid var(--ln);display:flex;flex-direction:column;overflow:hidden;transition:width var(--a)}.ip.closed{width:0;opacity:0;pointer-events:none}
+.ips{flex:1;overflow-y:auto}
+.ipb{padding:12px 14px;border-bottom:1px solid var(--ln)}.ipl{font-size:9px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:7px}
+.kv{display:flex;justify-content:space-between;gap:6px;margin-bottom:4px;font-size:11px}.kvk{color:var(--i3)}.kvv{font-weight:600;text-align:right}.kvv.red{color:var(--red)}.kvv.ok{color:var(--ok)}.kvv.big{font-size:13px;font-weight:800}
+/* LTV badge */
+.ltv{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;margin-top:6px}
+.ltv.hi{background:var(--obg);color:var(--ok)}.ltv.mid{background:var(--wbg);color:var(--wn)}.ltv.lo{background:var(--nbg);color:var(--i3)}
+.sh2{padding:12px 14px;background:var(--wbg)}.shh{font-size:9px;font-weight:700;color:var(--wn);text-transform:uppercase;margin-bottom:5px}
+.shs{display:flex;align-items:flex-start;gap:5px;font-size:10px;color:var(--i2);line-height:1.4;margin-bottom:3px}
+.shn{width:15px;height:15px;border-radius:50%;background:var(--wn);color:#fff;font-size:8px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.kbp{position:absolute;top:0;right:0;width:320px;height:100%;background:var(--p);border-left:1.5px solid var(--ln);box-shadow:-4px 0 16px rgba(10,30,54,.06);z-index:10;display:none;flex-direction:column}.kbp.open{display:flex}
+.kbph{padding:10px 12px;border-bottom:1px solid var(--ln);display:flex;gap:6px}.kbph input{flex:1;height:32px;border:1.5px solid var(--ln);border-radius:16px;padding:0 10px;font-size:12px;outline:none;background:var(--bg)}.kbph input:focus{border-color:var(--red)}
+.kbpx{width:26px;height:26px;border-radius:5px;border:1px solid var(--ln);background:var(--p);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--i3)}.kbpx:hover{background:var(--rbg);color:var(--red)}
+.kbpb{flex:1;overflow-y:auto;padding:10px 12px}
+.kbr{padding:8px 10px;border:1px solid var(--ln);border-radius:var(--rs);margin-bottom:6px;cursor:pointer;transition:all var(--a)}.kbr:hover{border-color:var(--rsf);background:var(--rbg)}.kbr.open{border-color:var(--red);background:var(--rbg)}
+.kbrt{font-size:12px;font-weight:600;margin-bottom:2px}.kbrd{font-size:11px;color:var(--i2);line-height:1.6;display:none}.kbr.open .kbrd{display:block}
+.clscr{position:absolute;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:10;flex-direction:column;gap:12px;text-align:center}.clscr.vis{display:flex}
+.clch{width:48px;height:48px;border-radius:50%;background:var(--obg);color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:22px}
+.cltl{font-size:17px;font-weight:800}.clsb{font-size:11px;color:var(--i3);max-width:260px}
+.clbs{display:flex;gap:6px;margin-top:4px}.clb{height:36px;padding:0 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer}.clb.pri{border:none;background:var(--red);color:#fff}.clb.sec{border:1.5px solid var(--ln);background:var(--p);color:var(--ink)}
+.mo{position:fixed;inset:0;background:rgba(10,30,54,.5);display:none;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(2px)}.mo.open{display:flex}
+.ml2{background:var(--p);border-radius:var(--r);width:400px;max-height:85vh;overflow-y:auto;box-shadow:var(--shl);animation:su .2s ease}
+@keyframes su{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.mlh{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--ln)}.mlt{font-size:14px;font-weight:700}
+.mlx{width:26px;height:26px;border-radius:5px;border:1px solid var(--ln);background:var(--p);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--i3)}.mlx:hover{background:var(--rbg);color:var(--red)}
+.mlb{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.mf{display:flex;flex-direction:column;gap:3px}.mfl{font-size:11px;font-weight:700;color:var(--i2)}
+.mi2{height:36px;border:1.5px solid var(--ln);border-radius:var(--rs);padding:0 10px;font-size:12px;background:var(--bg);outline:none}.mi2:focus{border-color:var(--red);background:var(--p)}
+.msl{height:36px;border:1.5px solid var(--ln);border-radius:var(--rs);padding:0 10px;font-size:12px;background:var(--bg);outline:none;cursor:pointer}
+.mta2{height:70px;border:1.5px solid var(--ln);border-radius:var(--rs);padding:7px 10px;font-size:12px;background:var(--bg);outline:none;resize:none;line-height:1.5}
+.mfd{background:var(--obg);border:1.5px solid var(--ok);border-radius:var(--rs);padding:8px 10px;display:none;gap:6px}.mfd.vis{display:flex}
+.pri2{padding:7px 10px;border-radius:var(--rs);font-size:10px;font-weight:600;display:none}.pri2.vis{display:block}.pri2.hi{background:var(--rbg);color:var(--red)}.pri2.mi{background:var(--wbg);color:var(--wn)}.pri2.lo{background:var(--obg);color:var(--ok)}
+.kbsec{margin-bottom:12px}.kbst{font-size:12px;font-weight:700;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid var(--ln)}
+.kbi{padding:8px 10px;border:1px solid var(--ln);border-radius:var(--rs);margin-bottom:4px;cursor:pointer;transition:all var(--a)}.kbi:hover{background:var(--bg)}.kbi.open{border-color:var(--rsf);background:var(--rbg)}
+.kbit{font-size:11px;font-weight:600;margin-bottom:1px}.kbid{font-size:10px;color:var(--i3);line-height:1.5;display:none}.kbi.open .kbid{display:block}
+/* DIAGNOSTICS */
+.diag-btn{height:26px;padding:0 10px;border-radius:5px;border:1.5px solid var(--red);background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--red);display:flex;align-items:center;gap:5px;transition:all var(--a);white-space:nowrap}.diag-btn:hover{background:var(--red);color:#fff}.diag-btn.running{background:var(--red);color:#fff;pointer-events:none;animation:diagPulse 1.2s infinite}.diag-btn svg{flex-shrink:0}
+@keyframes diagPulse{0%,100%{opacity:1}50%{opacity:.6}}
+.diag-overlay{position:absolute;inset:0;background:rgba(10,30,54,.55);backdrop-filter:blur(3px);z-index:20;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px}.diag-overlay.vis{display:flex}
+.diag-spinner{width:42px;height:42px;border:3px solid var(--ln);border-top:3px solid var(--red);border-radius:50%;animation:dspin .8s linear infinite}
+@keyframes dspin{to{transform:rotate(360deg)}}
+.diag-step{font-size:12px;color:#fff;font-weight:600;text-align:center;max-width:220px;opacity:0;transition:opacity .3s}.diag-step.vis{opacity:1}
+.diag-panel{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);overflow:hidden;display:none}.diag-panel.vis{display:block}
+.diag-head{padding:10px 14px;display:flex;align-items:center;gap:7px;border-bottom:1.5px solid var(--ln)}
+.diag-head-ico{width:22px;height:22px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.diag-head-t{font-size:12px;font-weight:800;color:var(--ink)}.diag-head-time{font-size:9px;color:var(--i3);margin-left:auto}
+.diag-row{padding:7px 14px;border-bottom:1px solid var(--ln);display:flex;flex-direction:column;gap:3px;font-size:11px;line-height:1.5}
+.diag-row:last-child{border-bottom:none}
+.diag-row-top{display:flex;align-items:center;gap:7px}
+.diag-ico{width:16px;height:16px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800}
+.diag-ico.ok{background:var(--obg);color:var(--ok)}.diag-ico.err{background:var(--rbg);color:var(--red)}.diag-ico.warn{background:var(--wbg);color:var(--wn)}
+.diag-label{color:var(--i2);flex:1;font-weight:500}.diag-val{font-weight:700;text-align:right;font-size:10px}
+.diag-val.ok{color:var(--ok)}.diag-val.err{color:var(--red)}.diag-val.warn{color:var(--wn)}
+.diag-hint{font-size:10px;line-height:1.5;padding:5px 9px;border-radius:5px;background:var(--rbg);color:var(--rdk);font-weight:500;margin-left:23px}
+.diag-hint.warn-hint{background:var(--wbg);color:var(--wn)}
+.diag-stop{margin:0 14px 8px;padding:8px 10px;border-radius:var(--rs);background:var(--rbg);border:1.5px solid var(--rsf);font-size:11px;font-weight:700;color:var(--rdk);display:flex;align-items:flex-start;gap:6px;line-height:1.5}
+.diag-stop.all-ok{background:var(--obg);border-color:var(--ok);color:var(--ok)}
+.diag-acts{padding:7px 14px;display:flex;gap:6px;justify-content:flex-end;border-top:1px solid var(--ln)}
+.diag-act{height:24px;padding:0 10px;border-radius:5px;border:1px solid var(--ln);background:var(--p);font-size:10px;font-weight:600;color:var(--i2);cursor:pointer}.diag-act:hover{background:var(--bg)}
+.diag-act.pri{border:none;background:var(--red);color:#fff}.diag-act.pri:hover{opacity:.9}
+/* CLASSIFY MODAL */
+.clf-mo{position:fixed;inset:0;background:rgba(10,30,54,.5);display:none;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(2px)}.clf-mo.open{display:flex}
+.clf-box{background:var(--p);border-radius:var(--r);width:420px;max-height:85vh;overflow-y:auto;box-shadow:var(--shl);animation:su .2s ease}
+.clf-hd{padding:14px 18px;border-bottom:1px solid var(--ln);display:flex;align-items:center;gap:8px}
+.clf-hd-ico{width:28px;height:28px;border-radius:50%;background:var(--rbg);color:var(--red);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.clf-hd-t{font-size:14px;font-weight:700;flex:1}.clf-hd-sub{font-size:10px;color:var(--i3)}
+.clf-bd{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.clf-lbl{font-size:11px;font-weight:700;color:var(--i2)}
+.clf-sel{height:36px;border:1.5px solid var(--ln);border-radius:var(--rs);padding:0 10px;font-size:12px;background:var(--bg);outline:none;width:100%;cursor:pointer}.clf-sel:focus{border-color:var(--red);background:var(--p)}
+.clf-ta{height:60px;border:1.5px solid var(--ln);border-radius:var(--rs);padding:7px 10px;font-size:12px;background:var(--bg);outline:none;resize:none;width:100%;line-height:1.5}.clf-ta:focus{border-color:var(--red);background:var(--p)}
+.clf-ft{padding:10px 18px;border-top:1px solid var(--ln);display:flex;gap:6px;justify-content:flex-end}
+.clf-btn{height:34px;padding:0 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+.clf-btn.sec{border:1.5px solid var(--ln);background:var(--p);color:var(--ink)}.clf-btn.sec:hover{background:var(--bg)}
+.clf-btn.pri{border:none;background:var(--red);color:#fff}.clf-btn.pri:hover{opacity:.9}
+.clf-warn{font-size:10px;color:var(--red);min-height:14px}
+
+@media(max-width:1100px){.g6{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:900px){.g6,.g4{grid-template-columns:repeat(2,1fr)}.ip{width:200px}.kbp{width:100%}}
+@media(max-width:640px){.g6,.g4,.g3{grid-template-columns:1fr}.ip{display:none}}
+</style>
+</head>
+<body>
+
+<div class="view" id="loginView"><div style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+<div class="card" style="width:360px;padding:30px 34px;border-radius:14px;box-shadow:var(--shl)">
+  <div style="display:flex;align-items:center;justify-content:center;gap:2px;margin-bottom:22px"><span style="font-size:16px;font-weight:800;color:var(--ink)">WIFI</span><svg width="28" height="28" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="var(--red)"/><path d="M50 15 C30 15 15 35 20 55 C22 62 30 70 40 72 C35 60 33 48 38 38 C43 28 50 25 50 25 C50 25 43 35 45 50 C47 62 55 72 55 72 C55 72 48 65 47 55 C46 48 50 42 55 38 C60 34 65 38 65 48 C65 58 58 68 50 72 C62 70 72 60 75 50 C78 38 70 20 50 15Z" fill="#0A1E36"/><circle cx="52" cy="58" r="6" fill="#0A1E36"/></svg><span style="font-size:16px;font-weight:800;color:var(--ink)">ТОЧКА</span></div>
+  <div style="font-size:17px;font-weight:700;text-align:center;margin-bottom:18px">Вход</div>
+  <div style="margin-bottom:8px"><input class="mi2" style="width:100%" type="email" id="loginEmail" placeholder="Email"></div>
+  <div style="margin-bottom:8px"><input class="mi2" style="width:100%" type="password" id="loginPass" placeholder="Пароль" onkeydown="if(event.key==='Enter')doLogin()"></div>
+  <button onclick="doLogin()" style="width:100%;height:40px;border:none;border-radius:var(--rs);background:var(--red);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Войти</button>
+  <div id="loginError" style="font-size:10px;color:var(--red);text-align:center;min-height:14px;margin-top:5px"></div>
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--ln)"><div class="tl" style="padding:5px 8px" onclick="qL()"><span class="tag tn">КЦ демо</span><span style="font-size:10px;color:var(--i2);flex:1">cc@wifitochka.ru</span><span style="color:var(--i3)">→</span></div></div>
+</div></div></div>
+
+<!-- CC -->
+<div class="view" id="ccView">
+<nav class="nav">
+  <div class="logo"><span class="logo-wifi">WIFI</span><svg class="logo-mark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="var(--red)"/><path d="M50 15 C30 15 15 35 20 55 C22 62 30 70 40 72 C35 60 33 48 38 38 C43 28 50 25 50 25 C50 25 43 35 45 50 C47 62 55 72 55 72 C55 72 48 65 47 55 C46 48 50 42 55 38 C60 34 65 38 65 48 C65 58 58 68 50 72 C62 70 72 60 75 50 C78 38 70 20 50 15Z" fill="var(--nvb)"/><circle cx="52" cy="58" r="6" fill="var(--nvb)"/></svg><span class="logo-tochka">ТОЧКА</span></div>
+  <div class="nr"><button class="ib" onclick="toggleN()" id="bellB"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 2a5 5 0 00-5 5v3l-1.5 2.5h13L15 10V7a5 5 0 00-5-5z"/><path d="M8 16.5a2 2 0 004 0"/></svg><span class="dot"></span><div class="ndd" id="ndd"><div class="ndh">Уведомления</div><div class="ndi" onclick="goChat(301,'Карекин П.А.','Не удается подключиться','new')"><span style="color:var(--red)">●</span> Карекин П.А. — 47 мин<div class="ndt">2 мин назад</div></div><div class="ndi" onclick="goChat(300,'Иванова О.Н.','Сменить тариф','new')"><span style="color:var(--red)">●</span> Иванова О.Н.<div class="ndt">12 мин назад</div></div></div></button>
+  <button class="ib" onclick="toggleTheme()"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.3 11.3A8 8 0 118.7 2.7a6 6 0 008.6 8.6z"/></svg></button>
+  <button class="tb" onclick="logout()">Выйти</button></div>
+</nav>
+<div class="tabs" id="ccT">
+  <button class="tab on" onclick="goTab('home',this)">Главная</button>
+  <button class="tab" onclick="goTab('call',this)"><span style="color:var(--red);font-weight:700">Регистрация</span>&nbsp;звонка</button>
+  <button class="tab" onclick="goTab('chats',this)">Чат <span class="c">5</span></button>
+  <button class="tab" onclick="goTab('stats',this)">Статистика</button>
+  <button class="tab" onclick="goTab('kb',this)">База знаний</button>
+</div>
+
+<!-- HOME -->
+<div class="tp on" id="tp-home"><div class="pg">
+  <div style="text-align:center;padding:8px 0 4px"><div style="font-size:17px;font-weight:800;margin-bottom:10px">Найдите <span style="color:var(--red)">абонента</span> или ответ в <span style="color:var(--red)">базе знаний</span></div>
+  <div class="sw" style="max-width:620px;margin:0 auto"><input class="si" type="text" id="mainSearch" placeholder="ФИО, ID, адрес · или запрос: «платёж не пришёл», «перезагрузка роутера»…" oninput="uniS(this.value)" onkeydown="if(event.key==='Enter')enterS()" autocomplete="off"><svg class="sic" width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M14 14l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div class="sd" id="mainDrop"></div></div></div>
+  <div class="kbc" id="kbCard"><button class="kbc-x" onclick="this.parentElement.classList.remove('vis')">×</button><div class="kbc-t" id="kbcT"></div><div class="kbc-b" id="kbcB"></div></div>
+  <p style="font-size:12px;color:var(--i2);text-align:center">Сегодня <strong style="color:var(--ink)">10 заявок</strong> — <span style="color:var(--red);font-weight:600">2 ждут ответа</span></p>
+  <div><div style="font-size:10px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px">Ждут ответа</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="ug" onclick="goChat(301,'Карекин П.А.','Не удается подключиться','new')"><div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:3px;display:flex;align-items:center;gap:3px"><div class="pulse"></div> 47 мин <span class="tag thi" style="margin-left:3px">Превышено</span></div><div style="font-size:12px;font-weight:700;margin-bottom:2px">Карекин П.А.</div><div style="font-size:10px;color:var(--i2)">Не удается подключиться</div><div style="display:inline-flex;margin-top:7px;font-size:10px;font-weight:700;color:var(--red);background:var(--rbg);border-radius:4px;padding:2px 7px">Ответить →</div></div>
+    <div class="ug" onclick="goChat(300,'Иванова О.Н.','Сменить тариф / Турбо','new')"><div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:3px;display:flex;align-items:center;gap:3px"><div class="pulse"></div> 32 мин</div><div style="font-size:12px;font-weight:700;margin-bottom:2px">Иванова О.Н.</div><div style="font-size:10px;color:var(--i2)">Сменить тариф</div><div style="display:inline-flex;margin-top:7px;font-size:10px;font-weight:700;color:var(--red);background:var(--rbg);border-radius:4px;padding:2px 7px">Ответить →</div></div>
+  </div></div>
+  <div><div style="font-size:10px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px">Открытые заявки</div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <div class="tl" onclick="goChat(302,'Соколовчик А.П.','Посмотреть расходы','wait')"><div class="tln">#302</div><div class="tld" style="background:var(--wn)"></div><div class="tlnm">Соколовчик А.П.</div><div class="tltp">Посмотреть расходы</div><span class="tag tw">Ожидание</span><div class="tlt">Вчера 14:03</div></div>
+    <div class="tl" onclick="goChat(298,'Жаркова М.В.','Не помню пароль','work')"><div class="tln">#298</div><div class="tld" style="background:var(--i2)"></div><div class="tlnm">Жаркова М.В.</div><div class="tltp">Не помню пароль</div><span class="tag tk">В работе</span><div class="tlt">Сегодня 11:20</div></div>
+    <div class="tl" onclick="goChat(297,'Петров И.С.','Медленная скорость','work')"><div class="tln">#297</div><div class="tld" style="background:var(--i2)"></div><div class="tlnm">Петров И.С.</div><div class="tltp">Медленная скорость</div><span class="tag tk">В работе</span><div class="tlt">Сегодня 10:45</div></div>
+  </div></div>
+  <div class="card"><div class="ct">Низкие оценки</div><div class="cs2">Рекомендуется связаться повторно</div>
+    <table class="dt"><thead><tr><th>Клиент</th><th>Причина</th><th>Оценка</th><th>Дата</th><th></th></tr></thead><tbody>
+      <tr><td><strong>Иванова О.Н.</strong></td><td style="color:var(--i2)">Долгое ожидание</td><td style="color:var(--red);font-weight:700">1</td><td style="color:var(--i3)">28 мар</td><td><button class="lb" onclick="openW('Иванова О.Н.','#300')">Написать</button></td></tr>
+      <tr><td><strong>Максимов А.В.</strong></td><td style="color:var(--i2)">40 мин ожидания</td><td style="color:var(--wn);font-weight:700">2</td><td style="color:var(--i3)">27 мар</td><td><button class="lb" onclick="openW('Максимов А.В.','#295')">Написать</button></td></tr>
+    </tbody></table>
+  </div>
+</div></div>
+
+<!-- CALL -->
+<div class="tp" id="tp-call"><div class="pg" style="max-width:600px">
+  <div style="font-size:16px;font-weight:800"><span style="color:var(--red)">Регистрация</span> звонка</div>
+  <div style="font-size:11px;color:var(--i3);background:var(--bg);padding:8px 12px;border-radius:var(--rs);border:1px solid var(--ln)">Входящие звонки 8-800. Категория обращения выбирается при завершении заявки.</div>
+  <div class="mf"><div class="mfl">1. Абонент</div><input class="mi2" style="width:100%" type="text" id="callS" placeholder="ФИО, ID, адрес…" oninput="callSFn(this.value)"><div class="mfd" id="callF"><div><div style="font-size:12px;font-weight:700" id="callFN"></div><div style="font-size:10px;color:var(--i2)" id="callFM"></div></div></div></div>
+  <div class="mf"><div class="mfl">2. Что говорит клиент</div><textarea class="mta2" style="width:100%;height:80px" id="callDesc" placeholder="С утра нет интернета, не загружается страница авторизации…"></textarea></div>
+  <div style="display:flex;gap:6px;justify-content:flex-end"><button class="tb" onclick="goTab('home',document.querySelector('#ccT .tab'))">Отмена</button><button style="height:34px;padding:0 16px;border-radius:6px;border:none;background:var(--red);color:#fff;font-size:12px;font-weight:700;cursor:pointer" onclick="submitCall2()">Создать заявку</button></div>
+</div></div>
+
+<!-- CHATS -->
+<div class="tp" id="tp-chats">
+<div id="chatList"><div class="pg">
+  <div style="font-size:16px;font-weight:800;margin-bottom:-4px">Диалоги</div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <div class="tl" onclick="goChat(301,'Карекин П.А.','Не удается подключиться','new')"><div class="tln">#301</div><div class="tld" style="background:var(--red)"></div><div class="tlnm">Карекин П.А.</div><div class="tltp">Не удается подключиться</div><span class="tag tn">Новая</span><div class="tlt">47 мин</div></div>
+    <div class="tl" onclick="goChat(300,'Иванова О.Н.','Сменить тариф','new')"><div class="tln">#300</div><div class="tld" style="background:var(--red)"></div><div class="tlnm">Иванова О.Н.</div><div class="tltp">Сменить тариф</div><span class="tag tn">Новая</span><div class="tlt">32 мин</div></div>
+    <div class="tl" onclick="goChat(302,'Соколовчик А.П.','Посмотреть расходы','wait')"><div class="tln">#302</div><div class="tld" style="background:var(--wn)"></div><div class="tlnm">Соколовчик А.П.</div><div class="tltp">Посмотреть расходы</div><span class="tag tw">Ожидание</span><div class="tlt">Вчера 14:03</div></div>
+    <div class="tl" onclick="goChat(298,'Жаркова М.В.','Не помню пароль','work')"><div class="tln">#298</div><div class="tld" style="background:var(--i2)"></div><div class="tlnm">Жаркова М.В.</div><div class="tltp">Не помню пароль</div><span class="tag tk">В работе</span><div class="tlt">Сегодня 11:20</div></div>
+  </div>
+</div></div>
+<div id="chatDetail" style="display:none;flex-direction:column;flex:1;overflow:hidden;position:relative">
+  <div class="tbar"><button class="tbk" onclick="backToChats()">← Назад</button><div style="width:1px;height:16px;background:var(--ln)"></div><div class="ttl" id="cdTT">Тема</div><div class="tid" id="cdTI">#000</div><span class="tag tw" id="cdTS">Статус</span><div class="tacts"><button class="diag-btn" id="diagBtn" onclick="startDiag()"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 15h3l2-5 3 8 2-10 2 4h4"/><circle cx="17" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>Проверка</button><button class="tb3" onclick="reqClassify('esc')">Инженерам</button><button class="tb3 kbo" onclick="toggleKBP()">База знаний</button><button class="tb3 cls" onclick="reqClassify('close')">Завершить</button><button class="tb3" onclick="cdTI2()">≡</button></div></div>
+  <div class="tbody"><div class="czone"><div class="diag-overlay" id="diagOverlay"><div class="diag-spinner"></div><div class="diag-step vis" id="diagStepTxt">Подключение к станции…</div></div><div class="cscrl" id="cdChat"><div class="dsep"><span>19 марта</span></div><div class="msg cl"><div class="mav cl">К</div><div class="mc2"><div class="bbl cl">Здравствуйте! Где посмотреть детализацию?</div><div class="mtm">14:03</div></div></div><div class="msg me"><div class="mav ag">КЦ</div><div class="mc2" style="align-items:flex-end"><div class="bbl ag">Здравствуйте! Сейчас помогу</div><div class="mtm">14:05</div></div></div></div>
+    <div class="comp"><div class="ctbs"><button class="ct2 on" id="ctR" onclick="sM('r')">Ответ клиенту</button><button class="ct2 nt2" id="ctN" onclick="sM('n')">Внутренняя заметка</button></div>
+      <div class="cq" id="cqW"><span class="cql">Быстрые ответы:</span><button class="chip" onclick="ins2('Здравствуйте! Чем могу помочь?')">Приветствие</button><button class="chip" onclick="ins2('Уточню, подождите.')">Уточню</button><button class="chip" onclick="ins2('Перезагрузите роутер: выключите на 30 сек.')">Роутер</button><button class="chip" onclick="ins2('Проверьте баланс: ЛК → Финансы.')">Баланс</button><button class="chip" onclick="ins2('Создаю заявку на инженера.')">Инженер</button><button class="chip" onclick="ins2('Рад помочь!')">Завершение</button></div>
+      <div class="crow"><button class="cat" title="Прикрепить файл"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.5 10.5l-5 5a3.5 3.5 0 01-5-5l6-6a2.5 2.5 0 013.5 3.5l-6 6a1.5 1.5 0 01-2-2l5-5"/></svg></button><textarea class="cf" id="cdMsg" placeholder="Ответ клиенту…" rows="2" onkeydown="if(event.ctrlKey&&event.key==='Enter')cdSend()"></textarea><button class="csb" id="cdSB" onclick="cdSend()">→</button></div><div class="ch">Ctrl+Enter — отправить</div></div></div>
+    <aside class="ip" id="cdIP"><div class="ips">
+      <div class="ipb"><div class="ipl">Абонент</div><div style="font-size:14px;font-weight:800;margin-bottom:2px" id="cdPN">Карекин П.А.</div><div style="font-size:10px;color:var(--i3);margin-bottom:4px" id="cdPM">ID: 2201 · Томтор</div><div class="ltv hi" id="cdLTV">VIP клиент · с нами 4 года</div></div>
+      <div class="ipb"><div class="ipl">Тариф и баланс</div><div class="kv"><span class="kvk">Тариф</span><span class="kvv" id="cdTar">Безлимитный 350</span></div><div class="kv"><span class="kvk">Баланс</span><span class="kvv ok big" id="cdBal">3 200 ₽</span></div></div>
+      <div class="sh2"><div class="shh">Подсказка</div><div class="shs"><div class="shn">1</div><span>Проверить статус станции</span></div><div class="shs"><div class="shn">2</div><span>Перезагрузить роутер</span></div><div class="shs"><div class="shn">3</div><span>Если offline → инженерам</span></div></div>
+      <div style="padding:10px 14px" id="diagResultWrap"><div class="diag-panel" id="diagPanel"></div></div>
+    </div></aside>
+    <div class="kbp" id="kbP"><div class="kbph"><input type="text" id="kbPS" placeholder="Поиск в базе…" oninput="kbPSFn(this.value)"><button class="kbpx" onclick="toggleKBP()">×</button></div><div class="kbpb" id="kbPB"></div></div>
+  </div>
+  <div class="clscr" id="clScr"><div class="clch">✓</div><div class="cltl" id="clTl">Заявка завершена</div><div class="clsb">Оценка запрошена у клиента</div><div class="clbs"><button class="clb sec" onclick="backToChats()">В список чатов</button><button class="clb pri" onclick="cdNext()">Следующая →</button></div></div>
+</div></div>
+
+<!-- STATS -->
+<div class="tp" id="tp-stats"><div class="pg">
+  <div style="font-size:16px;font-weight:800;margin-bottom:-4px">Статистика</div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:10px 14px"><span style="font-size:9px;font-weight:700;color:var(--i3);text-transform:uppercase">Период</span><select class="msl" style="height:28px;font-size:11px"><option>Сегодня</option><option selected>Неделя</option><option>Месяц</option></select><input type="date" class="mi2" style="height:28px;width:120px;font-size:11px" value="2026-03-23"><span style="font-size:10px;color:var(--i3)">—</span><input type="date" class="mi2" style="height:28px;width:120px;font-size:11px" value="2026-03-29"></div>
+  <div class="g6">
+    <div class="mc"><div class="ml">Обработано заявок</div><div class="mv nv">278 <span class="dl up">↑14%</span></div><div class="md">Прошлая: 244</div></div>
+    <div class="mc"><div class="ml">Время первого ответа <span class="mh" data-tip="Среднее от поступления до первого ответа">?</span></div><div class="mv red">38 мин <span class="dl up">↑8%</span></div><div class="md">Прошлая: 35м</div></div>
+    <div class="mc"><div class="ml">Повторные обращения <span class="mh" data-tip="Клиент вернулся за 72 часа">?</span></div><div class="mv wn">18% <span class="dl up">↑3%</span></div><div class="md">Прошлая: 15%</div></div>
+    <div class="mc"><div class="ml">Передано инженерам <span class="mh" data-tip="Доля заявок, переданных инженерной команде">?</span></div><div class="mv nv">43% <span class="dl dn">↓2%</span></div><div class="md">Прошлая: 45%</div></div>
+    <div class="mc"><div class="ml">Брошенные звонки <span class="mh" data-tip="Клиент не дождался. Норма до 5%">?</span></div><div class="mv red">12% <span class="dl up">↑2%</span></div><div class="md">Прошлая: 10%</div></div>
+    <div class="mc"><div class="ml">Оценка обслуживания <span class="mh" data-tip="Средняя 1–5 после закрытия">?</span></div><div class="mv ok">4.1 <span class="dl dn">↑0.3</span></div><div class="md">Прошлая: 3.8</div></div>
+  </div>
+  <div class="card"><div class="ct">По категориям</div>
+    <div class="br"><div class="blr"><span class="bt2">Проблемы с интернетом</span><span class="bp">45%</span></div><div class="btr"><div class="bf bfr" style="width:45%"></div></div></div>
+    <div class="br"><div class="blr"><span class="bt2">Оплата и баланс</span><span class="bp">28%</span></div><div class="btr"><div class="bf bfn" style="width:28%"></div></div></div>
+    <div class="br"><div class="blr"><span class="bt2">Вход, пароли, тарифы</span><span class="bp">20%</span></div><div class="btr"><div class="bf bfw" style="width:20%"></div></div></div>
+    <div class="br"><div class="blr"><span class="bt2">Другое</span><span class="bp">7%</span></div><div class="btr"><div class="bf bfo" style="width:7%"></div></div></div>
+  </div>
+</div></div>
+
+<!-- KB -->
+<div class="tp" id="tp-kb"><div class="pg">
+  <div style="font-size:16px;font-weight:800;margin-bottom:4px">База знаний</div>
+  <div class="kbsec"><div class="kbst">Тарифы</div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Безлимитный 250</div><div class="kbid">Скорость до 2048 Кбит/с. Лимит 250 МБ/сутки. Турбо: 100 ₽. От 120 ₽/день.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Безлимитный 350/450/550/650</div><div class="kbid">Лимиты 350–650 МБ. Турбо: 120–200 ₽. 140–200 ₽/день.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Пакеты «Трафик»</div><div class="kbid">1–20 ГБ. До 4 Мбит/с. 500–5000 ₽.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Турбо-кнопка</div><div class="kbid">Сброс лимита. 100–200 ₽. ЛК → Тарифы.</div></div></div>
+  <div class="kbsec"><div class="kbst">Оплата</div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Способы и сроки</div><div class="kbid">Карта — мгновенно. СБП — до 24ч. ЮMoney — до 1ч.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Платёж не зачислился</div><div class="kbid">1) Способ/сумма. 2) Биллинг. 3) СБП=24ч. 4) >24ч → фин.отдел.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Возврат</div><div class="kbid">14 дней. Заявление → бухгалтерия → 5 дней → карта.</div></div></div>
+  <div class="kbsec"><div class="kbst">Проблемы</div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Нет интернета</div><div class="kbid">Баланс → станция → роутер → инженерам.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Медленный интернет</div><div class="kbid">Лимит → Турбо → нагрузка станции.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Перезагрузка роутера</div><div class="kbid">Выключить 30 сек → включить → 2–3 мин.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Вход / Пароль</div><div class="kbid">Email/договор. Сброс → email. Утерян → паспорт.</div></div><div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Заморозка</div><div class="kbid">ЛК → Тарифы → Пауза. 7–90 дней.</div></div></div>
+</div></div>
+</div>
+
+<div class="mo" id="wMo"><div class="ml2"><div class="mlh"><div class="mlt" id="wmT">Написать</div><div class="mlx" onclick="closeW()">×</div></div><div class="mlb"><div class="mf"><div style="font-size:13px;font-weight:600" id="wmN"></div><div style="font-size:10px;color:var(--i3)" id="wmM"></div></div><div class="mf"><div class="mfl">Сообщение</div><textarea class="mta2" style="width:100%;height:90px" placeholder="Здравствуйте! Хотим разобраться…"></textarea></div><div style="display:flex;gap:6px;justify-content:flex-end"><button class="tb" onclick="closeW()">Отмена</button><button style="height:32px;padding:0 14px;border-radius:6px;border:none;background:var(--red);color:#fff;font-size:12px;font-weight:700;cursor:pointer" onclick="closeW();alert('Отправлено')">Отправить</button></div></div></div></div>
+
+<!-- CLASSIFY MODAL -->
+<div class="clf-mo" id="clfMo">
+<div class="clf-box">
+  <div class="clf-hd"><div class="clf-hd-ico">✎</div><div><div class="clf-hd-t">Классификация обращения</div><div class="clf-hd-sub" id="clfSub">Заявка #301 — перед завершением</div></div></div>
+  <div class="clf-bd">
+    <div><div class="clf-lbl">Категория *</div><select class="clf-sel" id="clfCat" onchange="clfCatCh()"><option value="">— Выберите категорию —</option><option value="inet">Проблемы с интернетом</option><option value="pay">Оплата и баланс</option><option value="access">Вход, пароли и тарифы</option><option value="org">Организациям и партнёрам</option><option value="other">Другое</option></select></div>
+    <div><div class="clf-lbl">Подкатегория *</div><select class="clf-sel" id="clfSubCat" disabled><option value="">— Сначала выберите категорию —</option></select></div>
+    <div><div class="clf-lbl">Комментарий (необязательно)</div><textarea class="clf-ta" id="clfComment" placeholder="Краткое описание решения…"></textarea></div>
+    <div class="clf-warn" id="clfWarn"></div>
+  </div>
+  <div class="clf-ft"><button class="clf-btn sec" onclick="closeClfMo()">Отмена</button><button class="clf-btn pri" onclick="submitClf()">Подтвердить</button></div>
+</div></div>
+
+<script>
+function toggleTheme(){document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light'}
+function doLogin(){const e=document.getElementById('loginEmail').value.trim().toLowerCase();if(e==='cc@wifitochka.ru'&&document.getElementById('loginPass').value==='cc2024'){showV('ccView')}else{document.getElementById('loginError').textContent='Неверные данные'}}
+function qL(){document.getElementById('loginEmail').value='cc@wifitochka.ru';document.getElementById('loginPass').value='cc2024';doLogin()}
+function logout(){showV('loginView')}
+function showV(id){document.querySelectorAll('.view').forEach(v=>{v.classList.remove('active');v.style.display='none'});const t=document.getElementById(id);t.classList.add('active');t.style.display='flex'}
+function toggleN(){document.getElementById('ndd').classList.toggle('open')}
+document.addEventListener('click',e=>{if(!document.getElementById('bellB')?.contains(e.target))document.getElementById('ndd')?.classList.remove('open');document.querySelectorAll('.sd').forEach(d=>{if(!d.parentElement.contains(e.target))d.classList.remove('vis')})})
+function goTab(id,btn){document.querySelectorAll('#ccT .tab').forEach(b=>b.classList.remove('on'));if(btn)btn.classList.add('on');else{const tabs=document.querySelectorAll('#ccT .tab');const map={home:0,call:1,chats:2,stats:3,kb:4};if(map[id]!==undefined)tabs[map[id]].classList.add('on')}document.querySelectorAll('#ccView > .tp').forEach(p=>p.classList.remove('on'));document.getElementById('tp-'+id).classList.add('on');if(id==='chats'){document.getElementById('chatList').style.display='block';document.getElementById('chatDetail').style.display='none'}}
+
+const SUBS=[{n:'Соколовчик А.П.',id:13807,c:'Владимир',a:'пр.Ленина 73',s:'frozen',t:'Безлимитный 300',ltv:'hi',ltvT:'VIP · 4 года',bal:'50 000 ₽'},{n:'Жаркова М.В.',id:6784,c:'Москва',a:'ул.Тверская 15',s:'active',t:'Безлимитный 250',ltv:'mid',ltvT:'Лояльный · 2 года',bal:'12 400 ₽'},{n:'Карекин П.А.',id:2201,c:'Томтор',a:'ул.Центральная 5',s:'active',t:'Безлимитный 350',ltv:'lo',ltvT:'Новый · 3 мес',bal:'3 200 ₽'},{n:'Иванова О.Н.',id:9934,c:'Архангельск',a:'пр.Ломоносова 42',s:'active',t:'Безлимитный 450',ltv:'hi',ltvT:'VIP · 5 лет',bal:'8 700 ₽'},{n:'Максимов А.В.',id:4421,c:'Нарьян-Мар',a:'ул.Полярная 11',s:'frozen',t:'Безлимитный 250',ltv:'mid',ltvT:'Лояльный · 1.5 года',bal:'0 ₽'}];
+const KB2=[{t:'Безлимитный 250',k:'тариф безлимитный 250',b:'<strong>Скорость:</strong> до 2048 Кбит/с<br><strong>Лимит:</strong> 250 МБ/сутки<br><strong>Турбо:</strong> 100 ₽<br><strong>Цена:</strong> от 120 ₽/день'},{t:'Безлимитный 350–650',k:'тариф безлимитный 350 450 550 650',b:'Лимиты 350–650 МБ<br><strong>Турбо:</strong> 120–200 ₽<br><strong>Цена:</strong> 140–200 ₽/день'},{t:'Турбо-кнопка',k:'турбо кнопка сброс лимит',b:'Сброс лимита. 100–200 ₽. ЛК → Тарифы → Турбо.'},{t:'Способы оплаты',k:'оплата способ карта сбп',b:'Карта — мгновенно. СБП — до 24ч. ЮMoney — до 1ч.'},{t:'Платёж не зачислился',k:'платёж оплата не пришёл деньги баланс',b:'<ol><li>Уточнить способ/сумму</li><li>Биллинг</li><li>СБП — до 24ч</li><li>>24ч → фин.отдел</li></ol>'},{t:'Нет интернета',k:'нет интернет не работает',b:'<ol><li>Баланс и тариф</li><li>Статус станции</li><li>Перезагрузить роутер</li><li>Offline → инженерам</li></ol>'},{t:'Медленный интернет',k:'медленный скорость тормоз',b:'<ol><li>Суточный лимит</li><li>Турбо/смена тарифа</li><li>Нагрузка станции</li></ol>'},{t:'Перезагрузка роутера',k:'перезагрузка роутер сброс',b:'<ol><li>Выключить 30 сек</li><li>Включить</li><li>Ждать 2–3 мин</li></ol>Reset 10 сек если не помогло.'},{t:'Вход / Пароль',k:'пароль вход логин лк',b:'Логин = email/договор. Сброс → email. Утерян → паспорт.'},{t:'Заморозка',k:'заморозка пауза стоп',b:'ЛК → Тарифы → Пауза. 7–90 дней.'}];
+
+let _kbH=[];
+function uniS(v){const el=document.getElementById('mainDrop');document.getElementById('kbCard').classList.remove('vis');if(!v.trim()||v.length<2){el.classList.remove('vis');el.innerHTML='';return}const q=v.toLowerCase();const sh=SUBS.filter(s=>s.n.toLowerCase().includes(q)||String(s.id).includes(q)||s.c.toLowerCase().includes(q)||s.a.toLowerCase().includes(q));const kh=KB2.filter(k=>k.t.toLowerCase().includes(q)||k.k.includes(q));_kbH=kh;if(!sh.length&&!kh.length){el.classList.remove('vis');el.innerHTML='';return}let h='';if(sh.length){h+='<div class="ssc">Абоненты</div>';h+=sh.map(s=>`<div class="si2" onclick="document.getElementById('mainDrop').classList.remove('vis');document.getElementById('mainSearch').value='${s.n}'"><div class="sav">${s.n[0]}</div><div style="flex:1"><div class="sn">${s.n}</div><div class="sm">ID ${s.id} · ${s.a} · ${s.c}</div></div></div>`).join('')}if(kh.length){h+='<div class="ssc">База знаний</div>';h+=kh.slice(0,5).map((k,i)=>`<div class="si2" onclick="showKBC(${i})"><div class="sav kb">БЗ</div><div style="flex:1"><div class="sn">${k.t}</div><div class="sm">${k.b.replace(/<[^>]+>/g,'').slice(0,70)}…</div></div></div>`).join('')}el.innerHTML=h;el.classList.add('vis')}
+function enterS(){const v=document.getElementById('mainSearch').value;if(!v.trim())return;document.getElementById('mainDrop').classList.remove('vis');const q=v.toLowerCase();const kh=KB2.filter(k=>k.t.toLowerCase().includes(q)||k.k.includes(q));if(kh.length){_kbH=kh;showKBC(0)}else{const sh=SUBS.filter(s=>s.n.toLowerCase().includes(q)||String(s.id).includes(q));if(sh.length){document.getElementById('mainSearch').value=sh[0].n}else alert('Не найдено: «'+v+'»')}}
+function showKBC(i){const k=_kbH[i];if(!k)return;document.getElementById('mainDrop').classList.remove('vis');document.getElementById('mainSearch').value='';document.getElementById('kbcT').innerHTML=k.t+' <span class="kbc-tag">Инструкция</span>';document.getElementById('kbcB').innerHTML=k.b;document.getElementById('kbCard').classList.add('vis');document.getElementById('kbCard').scrollIntoView({behavior:'smooth'})}
+
+let cdIO=true,cM='r',curT='';
+function goChat(id,n,topic,st){curT=id;goTab('chats');document.getElementById('chatList').style.display='none';document.getElementById('chatDetail').style.display='flex';document.getElementById('cdTT').textContent=topic;document.getElementById('cdTI').textContent='#'+id;const sm={new:'tn',work:'tk',wait:'tw',done:'td'},sl={new:'Новая',work:'В работе',wait:'Ожидание',done:'Решена'};document.getElementById('cdTS').className='tag '+(sm[st]||'tk');document.getElementById('cdTS').textContent=sl[st]||'В работе';document.getElementById('cdPN').textContent=n;const sub=SUBS.find(s=>s.n.includes(n.split(' ')[0]));if(sub){document.getElementById('cdPM').textContent='ID: '+sub.id+' · '+sub.c;document.getElementById('cdLTV').className='ltv '+sub.ltv;document.getElementById('cdLTV').textContent=sub.ltvT;document.getElementById('cdTar').textContent=sub.t;document.getElementById('cdBal').textContent=sub.bal}document.getElementById('clScr').classList.remove('vis');document.getElementById('kbP').classList.remove('open');document.getElementById('diagPanel').classList.remove('vis');sM('r')}
+function backToChats(){document.getElementById('chatDetail').style.display='none';document.getElementById('chatList').style.display='block';document.getElementById('clScr').classList.remove('vis')}
+function cdTI2(){cdIO=!cdIO;document.getElementById('cdIP').classList.toggle('closed',!cdIO)}
+function cdEsc(){const s=document.getElementById('cdChat');const d=document.createElement('div');d.style.cssText='align-self:center;font-size:10px;padding:3px 12px;border-radius:16px;border:1px solid var(--ln);background:var(--p);color:var(--i2)';d.textContent='Передано инженерам';s.appendChild(d);s.scrollTop=s.scrollHeight}
+function cdClose(){const s=document.getElementById('cdChat');const d=document.createElement('div');d.style.cssText='align-self:center;font-size:10px;padding:3px 12px;border-radius:16px;border:1px solid var(--ok);background:var(--obg);color:var(--ok);font-weight:600';d.textContent='Оценка запрошена у клиента';s.appendChild(d);s.scrollTop=s.scrollHeight;document.getElementById('clTl').textContent='Заявка #'+curT+' завершена';setTimeout(()=>document.getElementById('clScr').classList.add('vis'),400)}
+function cdNext(){document.getElementById('clScr').classList.remove('vis');goChat(300,'Иванова О.Н.','Сменить тариф','new')}
+function cdSend(){const f=document.getElementById('cdMsg');if(!f.value.trim())return;const s=document.getElementById('cdChat');const t=new Date().getHours()+':'+String(new Date().getMinutes()).padStart(2,'0');const d=document.createElement('div');if(cM==='n'){d.className='msg me';d.innerHTML=`<div class="mav ag" style="background:var(--wn)">З</div><div class="mc2" style="align-items:flex-end"><div class="bbl nt"><div class="ntb">Заметка</div>${f.value.replace(/</g,'&lt;')}</div><div class="mtm">${t}</div></div>`}else{d.className='msg me';d.innerHTML=`<div class="mav ag">КЦ</div><div class="mc2" style="align-items:flex-end"><div class="bbl ag">${f.value.replace(/</g,'&lt;')}</div><div class="mtm">${t}</div></div>`}s.appendChild(d);f.value='';s.scrollTop=s.scrollHeight}
+function ins2(t){document.getElementById('cdMsg').value=t;document.getElementById('cdMsg').focus()}
+function sM(m){cM=m;document.getElementById('ctR').classList.toggle('on',m==='r');document.getElementById('ctN').classList.toggle('on',m==='n');const f=document.getElementById('cdMsg'),s=document.getElementById('cdSB'),q=document.getElementById('cqW');if(m==='n'){f.classList.add('nm');f.placeholder='Заметка…';s.classList.add('ns');q.style.display='none'}else{f.classList.remove('nm');f.placeholder='Ответ…';s.classList.remove('ns');q.style.display='flex'}}
+function toggleKBP(){document.getElementById('kbP').classList.toggle('open');if(document.getElementById('kbP').classList.contains('open'))initKBP()}
+function initKBP(){document.getElementById('kbPS').value='';document.getElementById('kbPB').innerHTML=KB2.map(k=>`<div class="kbr" onclick="this.classList.toggle('open')"><div class="kbrt">${k.t}</div><div class="kbrd">${k.b}</div></div>`).join('')}
+function kbPSFn(v){const b=document.getElementById('kbPB');if(!v.trim()){initKBP();return}const q=v.toLowerCase();const h=KB2.filter(k=>k.t.toLowerCase().includes(q)||k.k.includes(q));b.innerHTML=h.length?h.map(k=>`<div class="kbr open"><div class="kbrt">${k.t}</div><div class="kbrd">${k.b}</div></div>`).join(''):'<div style="font-size:11px;color:var(--i3);padding:16px;text-align:center">Не найдено</div>'}
+
+function callSFn(v){const f=document.getElementById('callF');if(v.length<2){f.classList.remove('vis');return}const q=v.toLowerCase();const h=SUBS.find(s=>s.n.toLowerCase().includes(q)||String(s.id).includes(q)||s.a.toLowerCase().includes(q));if(h){document.getElementById('callFN').textContent=h.n;document.getElementById('callFM').textContent='ID '+h.id+' · '+h.a+' · '+h.c+' · '+h.t;f.classList.add('vis')}else f.classList.remove('vis')}
+
+function submitCall2(){const desc=document.getElementById('callDesc');if(!desc||!desc.value.trim()){alert('Опишите обращение клиента');return}goChat(Math.floor(Math.random()*100)+400,'Новый абонент',desc.value.trim().slice(0,40),'new')}
+
+function openW(n,t){document.getElementById('wmN').textContent=n;document.getElementById('wmM').textContent='Заявка '+t;document.getElementById('wMo').classList.add('open')}
+function closeW(){document.getElementById('wMo').classList.remove('open')}
+document.getElementById('wMo')?.addEventListener('click',e=>{if(e.target===document.getElementById('wMo'))closeW()})
+
+/* === CLASSIFICATION MODAL === */
+const CLF_CATS={
+inet:['Не удаётся подключиться к интернету','Медленная скорость / Нестабильное подключение','Роутер не работает','Настройка роутера'],
+pay:['Оплатил, но деньги не пришли','Не получается оплатить (ошибка)','Посмотреть расходы (детализация)'],
+access:['Не помню пароль / Не могу войти','Сменить тариф / Турбо-кнопка','Пауза (заморозка) интернета'],
+org:['Счета, документы','Вопросы сотрудничества'],
+other:['Иной вопрос']
+};
+let _clfAction='';
+function reqClassify(action){
+_clfAction=action;
+document.getElementById('clfSub').textContent='Заявка #'+curT+(action==='esc'?' — передача инженерам':' — завершение');
+document.getElementById('clfCat').value='';
+document.getElementById('clfSubCat').innerHTML='<option value="">— Сначала выберите категорию —</option>';
+document.getElementById('clfSubCat').disabled=true;
+document.getElementById('clfComment').value='';
+document.getElementById('clfWarn').textContent='';
+document.getElementById('clfMo').classList.add('open');
+}
+function closeClfMo(){document.getElementById('clfMo').classList.remove('open')}
+document.getElementById('clfMo')?.addEventListener('click',e=>{if(e.target===document.getElementById('clfMo'))closeClfMo()})
+function clfCatCh(){
+const v=document.getElementById('clfCat').value;
+const sel=document.getElementById('clfSubCat');
+if(!v){sel.innerHTML='<option value="">— Сначала выберите категорию —</option>';sel.disabled=true;return}
+const subs=CLF_CATS[v]||[];
+sel.innerHTML='<option value="">— Выберите подкатегорию —</option>'+subs.map(s=>`<option value="${s}">${s}</option>`).join('');
+sel.disabled=false;
+}
+function submitClf(){
+const cat=document.getElementById('clfCat').value;
+const sub=document.getElementById('clfSubCat').value;
+if(!cat||!sub){document.getElementById('clfWarn').textContent='Выберите категорию и подкатегорию';return}
+closeClfMo();
+if(_clfAction==='esc'){cdEsc()}
+else{cdClose()}
+}
+
+/* === DIAGNOSTICS === */
+const DIAG_STEPS=['Проверка логина / ID…','Проверка тарифа…','Проверка баланса…','Проверка станции…','Проверка сессии…','Проверка лимита сессий…'];
+const DIAG_SCENARIOS=[
+{name:'Станция не на связи',stopAt:3,items:[
+{label:'Логин / ID активен',val:'Да',st:'ok'},
+{label:'Тариф подключен',val:'Да',st:'ok'},
+{label:'Баланс',val:'3 200 ₽',st:'ok'},
+{label:'Станция на связи',val:'Нет — offline',st:'err'},
+],stop:'СТОП: Станция не на связи. Ориентировочный срок восстановления — до 4 часов.',hint:'Сообщите абоненту: «Базовая станция в вашем населённом пункте временно недоступна. Наши инженеры уже работают над восстановлением. Ориентировочный срок — до 4 часов. Я лично проконтролирую и сообщу вам, как только связь будет восстановлена. Номер вашей заявки — #'+Math.floor(Math.random()*900+100)+'»'},
+{name:'Отрицательный баланс',stopAt:2,items:[
+{label:'Логин / ID активен',val:'Да',st:'ok'},
+{label:'Тариф подключен',val:'Да',st:'ok'},
+{label:'Баланс',val:'-120 ₽',st:'err'},
+],stop:'СТОП: Отрицательный баланс. Интернет заблокирован до пополнения.',hint:'Сообщите абоненту: «На вашем счету отрицательный баланс, поэтому доступ к интернету приостановлен. Пополните счёт любым удобным способом — через Личный кабинет, по карте или через СБП. После зачисления средств интернет восстановится автоматически.»'},
+{name:'Тариф не подключен',stopAt:1,items:[
+{label:'Логин / ID активен',val:'Да',st:'ok'},
+{label:'Тариф подключен',val:'Нет',st:'err'},
+],stop:'СТОП: Тариф не подключен. Услуга неактивна.',hint:'Сообщите абоненту: «В данный момент у вас не подключен тарифный план. Вероятно, срок действия истёк. Зайдите в Личный кабинет → раздел «Тарифный план» и выберите подходящий тариф, либо я помогу вам подключить его прямо сейчас.»'},
+{name:'Ошибка авторизации',stopAt:4,items:[
+{label:'Логин / ID активен',val:'Да',st:'ok'},
+{label:'Тариф подключен',val:'Да',st:'ok'},
+{label:'Баланс',val:'8 700 ₽',st:'ok'},
+{label:'Станция на связи',val:'Да — online',st:'ok'},
+{label:'Сессия активна',val:'Нет — ошибка авторизации',st:'err'},
+],stop:'СТОП: Ошибка авторизации. Проверьте логин и пароль абонента.',hint:'Сообщите абоненту: «Ваше устройство не может пройти авторизацию в сети. Попробуйте выйти из Wi-Fi и подключиться заново. Если не помогает — откройте браузер и введите адрес login.wifitochka.ru. Если пароль забыт — я помогу его восстановить.»'},
+{name:'Лимит сессий превышен',stopAt:5,items:[
+{label:'Логин / ID активен',val:'Да',st:'ok'},
+{label:'Тариф подключен',val:'Да',st:'ok'},
+{label:'Баланс',val:'12 400 ₽',st:'ok'},
+{label:'Станция на связи',val:'Да — online',st:'ok'},
+{label:'Сессия активна',val:'Да',st:'ok'},
+{label:'Лимит сессий',val:'Превышен (3 из 3)',st:'err'},
+],stop:'СТОП: Лимит сессий превышен. Нажмите «Сбросить сессии» для освобождения подключений.',hint:'Сообщите абоненту: «К вашему аккаунту подключено максимальное количество устройств. Я сброшу текущие сессии — после этого переподключитесь к сети заново. Если проблема повторяется, убедитесь, что к вашей сети не подключены чужие устройства.»'},
+{name:'Сеть в норме',stopAt:-1,items:[
+{label:'Логин / ID активен',val:'Да',st:'ok'},
+{label:'Тариф подключен',val:'Да',st:'ok'},
+{label:'Баланс',val:'50 000 ₽',st:'ok'},
+{label:'Станция на связи',val:'Да — online',st:'ok'},
+{label:'Сессия активна',val:'Да',st:'ok'},
+{label:'Лимит сессий',val:'Не превышен (1 из 3)',st:'ok'},
+],stop:null,hint:'Сообщите абоненту: «Со стороны нашей сети всё работает корректно. Попробуйте перезагрузить роутер: выключите его из розетки на 30 секунд, затем включите и подождите 2–3 минуты. Если не поможет — проверьте кабельное соединение.»'},
+{name:'Учётная запись не найдена',stopAt:0,items:[
+{label:'Логин / ID активен',val:'Не найден / заблокирован',st:'err'},
+],stop:'СТОП: Учётная запись не найдена, заблокирована или удалена.',hint:'Сообщите абоненту: «Ваша учётная запись не найдена в системе. Возможно, она зарегистрирована на другой номер телефона или email. Уточните, пожалуйста, данные, или мы поможем восстановить доступ через паспорт.»'}
+];
+
+let diagRunning=false;
+function startDiag(){
+if(diagRunning)return;diagRunning=true;
+const btn=document.getElementById('diagBtn');
+btn.classList.add('running');btn.innerHTML='<svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 15h3l2-5 3 8 2-10 2 4h4"/><circle cx="17" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>Проверяю…';
+const ov=document.getElementById('diagOverlay');const stTxt=document.getElementById('diagStepTxt');
+ov.classList.add('vis');stTxt.textContent=DIAG_STEPS[0];stTxt.classList.add('vis');
+let step=0;
+const iv=setInterval(()=>{step++;if(step<DIAG_STEPS.length){stTxt.classList.remove('vis');setTimeout(()=>{stTxt.textContent=DIAG_STEPS[step];stTxt.classList.add('vis')},150)}else{clearInterval(iv);setTimeout(()=>{ov.classList.remove('vis');btn.classList.remove('running');btn.innerHTML='<svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 15h3l2-5 3 8 2-10 2 4h4"/><circle cx="17" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>Проверка';diagRunning=false;showDiagResult()},400)}},900)}
+
+function showDiagResult(){
+const sc=DIAG_SCENARIOS[Math.floor(Math.random()*DIAG_SCENARIOS.length)];
+const now=new Date();const ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+const p=document.getElementById('diagPanel');
+let h='<div class="diag-head"><div class="diag-head-ico"><svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#fff" stroke-width="2"><path d="M2 15h3l2-5 3 8 2-10 2 4h4"/></svg></div><div class="diag-head-t">Проверка подключения</div><div class="diag-head-time">'+ts+'</div></div>';
+sc.items.forEach(it=>{
+const ico=it.st==='ok'?'<div class="diag-ico ok">✓</div>':'<div class="diag-ico err">✕</div>';
+h+='<div class="diag-row"><div class="diag-row-top">'+ico+'<span class="diag-label">'+it.label+'</span><span class="diag-val '+it.st+'">'+it.val+'</span></div></div>'});
+if(sc.stop){h+='<div class="diag-stop">⛔ '+sc.stop+'</div>'}else{h+='<div class="diag-stop all-ok">✓ СЕТЬ В НОРМЕ. Проблема в настройках клиента.</div>'}
+if(sc.hint){h+='<div class="diag-row"><div class="diag-hint">💬 '+sc.hint+'</div></div>'}
+h+='<div class="diag-acts"><button class="diag-act" onclick="closeDiag()">Скрыть</button><button class="diag-act pri" onclick="copyDiagMsg()">Вставить ответ</button></div>';
+p.innerHTML=h;p.classList.add('vis');
+p.scrollIntoView({behavior:'smooth',block:'nearest'});
+window._lastDiagHint=sc.hint||'';
+const chat=document.getElementById('cdChat');const d=document.createElement('div');
+d.style.cssText='align-self:center;font-size:10px;padding:4px 12px;border-radius:16px;border:1.5px solid var(--red);background:var(--rbg);color:var(--rdk);font-weight:600;display:flex;align-items:center;gap:5px';
+d.innerHTML='<svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 15h3l2-5 3 8 2-10 2 4h4"/></svg> Проверка завершена — см. панель справа';
+chat.appendChild(d);chat.scrollTop=chat.scrollHeight}
+
+function closeDiag(){document.getElementById('diagPanel').classList.remove('vis')}
+function copyDiagMsg(){if(!window._lastDiagHint)return;const msg=window._lastDiagHint.replace(/Сообщите абоненту: «/,'').replace(/»$/,'');document.getElementById('cdMsg').value=msg;document.getElementById('cdMsg').focus()}
+
+window.addEventListener('DOMContentLoaded',()=>showV('loginView'))
+</script>
+</body>
+</html>
