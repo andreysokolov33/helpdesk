@@ -99,6 +99,7 @@ function TariffCard({
   tariff,
   netflowNote,
   netflowTariff,
+  isJuridical,
   onFreeze,
   onUnfreeze,
   onCancelPlan,
@@ -108,6 +109,7 @@ function TariffCard({
   tariff: ProfileTariff | null;
   netflowNote: string | null;
   netflowTariff: string | null;
+  isJuridical: number;
   openSessionsCount: number;
   onFreeze: () => void;
   onUnfreeze: () => void;
@@ -123,37 +125,44 @@ function TariffCard({
     );
   }
 
+  const isFrozen = tariff?.state === "frozen";
+  const freezeLabel = tariff?.can_unfreeze ? "Разморозить" : "Заморозить";
+  const freezeEnabled = Boolean(tariff?.can_unfreeze || tariff?.can_freeze);
+  const freezeHandler = tariff?.can_unfreeze ? onUnfreeze : onFreeze;
+  const sessionsLabel =
+    openSessionsCount > 0 ? `Закрыть сессии (${openSessionsCount})` : "Закрыть сессии";
+  const showSessionsBtn = !isFrozen && tariff?.can_disconnect_sessions !== false;
+
   return (
     <div className="card up-card up-tariff up-tariff-main">
-      <div className="up-card-head">
-        <div className="ct">Тарифный план</div>
-        <div className="up-actions">
-          {tariff?.can_unfreeze ? (
-            <button type="button" className="up-btn pri" onClick={onUnfreeze}>
-              Разморозить
-            </button>
-          ) : null}
-          {tariff?.can_freeze ? (
-            <button type="button" className="up-btn sec" onClick={onFreeze}>
-              Заморозить
-            </button>
-          ) : null}
-          {tariff?.can_cancel_planned_freeze ? (
-            <button type="button" className="up-btn sec" onClick={onCancelPlan}>
-              Отменить заморозку
-            </button>
-          ) : null}
-          {tariff?.can_disconnect_sessions !== false ? (
-            openSessionsCount > 0 ? (
-              <button type="button" className="up-btn sec" onClick={onDisconnect}>
-                Закрыть сессии ({openSessionsCount})
-              </button>
-            ) : (
-              <span className="up-sessions-hint">Активных сессий на данной УЗ нет</span>
-            )
-          ) : null}
-        </div>
+      <div className="up-tariff-head">
+        <div className="ct up-tariff-title">Тарифный план</div>
+        {tariff?.can_cancel_planned_freeze ? (
+          <button type="button" className="up-tariff-actions-btn" onClick={onCancelPlan}>
+            Действия
+          </button>
+        ) : null}
       </div>
+
+      {!isFrozen ? (
+        <div className="up-tariff-toolbar">
+          <button
+            type="button"
+            className="up-tariff-btn up-tariff-btn--freeze"
+            disabled={!freezeEnabled}
+            onClick={freezeEnabled ? freezeHandler : undefined}
+          >
+            {freezeLabel}
+          </button>
+          {showSessionsBtn ? (
+            <button type="button" className="up-tariff-btn up-tariff-btn--sessions" onClick={onDisconnect}>
+              {sessionsLabel}
+            </button>
+          ) : (
+            <span />
+          )}
+        </div>
+      ) : null}
 
       {netflowNote ? <div className="up-alert info">{netflowNote}</div> : null}
       {netflowTariff ? (
@@ -170,18 +179,72 @@ function TariffCard({
         </div>
       ) : null}
 
-      {tariff?.state === "frozen" ? (
-        <div className="up-freeze-box">
-          <div className="up-freeze-title">Тариф заморожен</div>
-          {tariff.frozen_at ? <div>Заморожен: {tariff.frozen_at}</div> : null}
-          {tariff.unfreeze_at ? <div>Дата разморозки: <strong>{tariff.unfreeze_at}</strong></div> : null}
+      {isFrozen && tariff ? (
+        <>
+          <div className="up-frozen-panel">
+            <div className="up-frozen-title">Тариф заморожен</div>
+            {tariff.frozen_at ? <div className="up-frozen-meta">Заморожен: {tariff.frozen_at}</div> : null}
+            <hr className="up-frozen-divider" />
+            <div className="up-frozen-unfreeze-row">
+              Дата разморозки:{" "}
+              {tariff.unfreeze_at ? (
+                <strong>{tariff.unfreeze_at}</strong>
+              ) : (
+                <span className="up-frozen-unfreeze-missing">не установлена</span>
+              )}
+            </div>
+            {tariff.can_unfreeze ? (
+              <button type="button" className="up-frozen-unfreeze-btn" onClick={onUnfreeze}>
+                Разморозить сейчас
+              </button>
+            ) : null}
+          </div>
+
+          <div className="up-kv">
+            <span className="up-k">Название</span>
+            <span className="up-v">{tariff.tariff_name}</span>
+          </div>
+          {isJuridical === 2 ? (
+            <>
+              {tariff.jur_main_packet_mb != null ? (
+                <div className="up-kv">
+                  <span className="up-k">Остаток основного пакета</span>
+                  <span className="up-v up-frozen-traffic-val">
+                    {fmtTrafficMb(tariff.jur_main_packet_mb)} МБ
+                  </span>
+                </div>
+              ) : null}
+              {tariff.overrun_mb != null && tariff.overrun_mb > 0 ? (
+                <div className="up-kv">
+                  <span className="up-k">Использовано доп. трафика</span>
+                  <span className="up-v up-frozen-traffic-val">
+                    {fmtTrafficMb(tariff.overrun_mb)} МБ
+                  </span>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="up-kv up-frozen-traffic">
+              <span className="up-k">Трафик (остаток / всего)</span>
+              <span className="up-v up-frozen-traffic-val">
+                {fmtTrafficMb(tariff.remain_traffic_mb)} / {fmtTrafficMb(tariff.full_packet_mb)} МБ
+              </span>
+            </div>
+          )}
           {tariff.frozen_remaining_label ? (
-            <div>Замороженный срок: {tariff.frozen_remaining_label}</div>
+            <div className="up-kv">
+              <span className="up-k">Замороженный срок</span>
+              <span className="up-v">{tariff.frozen_remaining_label}</span>
+            </div>
           ) : null}
-        </div>
+
+          <p className="up-frozen-footnote">
+            * Действие услуг приостановлено. Пакеты трафика и сроки действия не расходуются.
+          </p>
+        </>
       ) : null}
 
-      {tariff ? (
+      {tariff && !isFrozen ? (
         <>
           <div className="up-kv">
             <span className="up-k">Название</span>
@@ -202,7 +265,9 @@ function TariffCard({
             <span className="up-v">{tariff.rate_down}</span>
           </div>
           <div className="up-kv">
-            <span className="up-k">{tariff.speed_unlimited ? "Суточный трафик (остаток / лимит)" : "Трафик (остаток / всего)"}</span>
+            <span className="up-k">
+              {tariff.speed_unlimited ? "Суточный трафик (остаток / лимит)" : "Трафик (остаток / всего)"}
+            </span>
             <span className={`up-v ${tariff.overrun_mb ? "bad" : ""}`}>
               {fmtTrafficMb(tariff.remain_traffic_mb)} / {fmtTrafficMb(tariff.full_packet_mb)} МБ
             </span>
@@ -256,7 +321,6 @@ function TariffCard({
     </div>
   );
 }
-
 export default function UserProfilePage() {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -343,7 +407,7 @@ export default function UserProfilePage() {
               {data.online.is_online ? "В сети" : "Офлайн"}
             </span>
             {!data.online.is_online && data.online.last_session_end_label ? (
-              <span className="up-session-meta">последняя сессия {data.online.last_session_end_label}</span>
+              <span className="up-session-meta">последняя авторизация {data.online.last_session_end_label}</span>
             ) : null}
           </div>
         </div>
@@ -406,6 +470,7 @@ export default function UserProfilePage() {
                 tariff={data.tariff}
                 netflowNote={data.netflow_note}
                 netflowTariff={data.netflow_tariff}
+                isJuridical={p.is_juridical}
                 openSessionsCount={data.open_sessions_count}
                 onFreeze={() => {
                   setFreezeDate("");
@@ -415,7 +480,7 @@ export default function UserProfilePage() {
                 }}
                 onUnfreeze={() => setModal("unfreeze")}
                 onCancelPlan={() => runAction(() => deleteFreezePlan(uid))}
-                onDisconnect={() => data.open_sessions_count > 0 && setModal("disconnect")}
+                onDisconnect={() => setModal("disconnect")}
               />
               <ProfileSideColumn
                 balance={data.balance}
@@ -553,26 +618,38 @@ export default function UserProfilePage() {
               </>
             ) : null}
             {modal === "disconnect" ? (
-              <>
-                <div className="up-modal-title">Закрыть активные сессии?</div>
-                <p>
-                  Активных сессий: {data.open_sessions_count}. После подтверждения они закроются в течение
-                  минуты.
-                </p>
-                <div className="up-modal-actions">
-                  <button type="button" className="up-btn sec" disabled={busy} onClick={() => setModal(null)}>
-                    Отмена
-                  </button>
-                  <button
-                    type="button"
-                    className="up-btn pri"
-                    disabled={busy}
-                    onClick={() => runAction(() => postDisconnect(uid))}
-                  >
-                    Закрыть
-                  </button>
-                </div>
-              </>
+              data.open_sessions_count > 0 ? (
+                <>
+                  <div className="up-modal-title">Закрыть активные сессии?</div>
+                  <p>
+                    Активных сессий: {data.open_sessions_count}. После подтверждения они закроются в течение
+                    минуты.
+                  </p>
+                  <div className="up-modal-actions">
+                    <button type="button" className="up-btn sec" disabled={busy} onClick={() => setModal(null)}>
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      className="up-btn pri"
+                      disabled={busy}
+                      onClick={() => runAction(() => postDisconnect(uid))}
+                    >
+                      Закрыть
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="up-modal-title">Закрыть сессии</div>
+                  <p>Активных сессий на данной УЗ нет.</p>
+                  <div className="up-modal-actions">
+                    <button type="button" className="up-btn sec" onClick={() => setModal(null)}>
+                      Понятно
+                    </button>
+                  </div>
+                </>
+              )
             ) : null}
             {modal === "freeze" ? (
               <>
