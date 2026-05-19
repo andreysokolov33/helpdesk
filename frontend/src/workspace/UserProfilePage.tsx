@@ -66,15 +66,7 @@ function PhoneValue({ phone }: { phone: string | null }) {
 }
 
 
-function ProfileSideColumn({
-  balance,
-  authPage,
-  onResetPassword,
-}: {
-  balance: number;
-  authPage: string | null;
-  onResetPassword: () => void;
-}) {
+function TariffSideColumn({ balance, authPage }: { balance: number; authPage: string | null }) {
   return (
     <div className="up-tariff-side">
       <div className="card up-card up-metric-cell up-balance-cell">
@@ -88,9 +80,6 @@ function ProfileSideColumn({
         </div>
         <div className="up-metric-val up-auth-val">{authPage ?? "—"}</div>
       </div>
-      <button type="button" className="up-btn sec up-reset-pwd" onClick={onResetPassword}>
-        Сбросить пароль
-      </button>
     </div>
   );
 }
@@ -423,49 +412,28 @@ export default function UserProfilePage() {
 
         <div className="up-stack">
         <div className="up-grid">
-            <div className="card up-card up-personal">
-              <div className="ct">Персональные данные</div>
-              <div className="up-ids">
-                <div className="up-id-block">
-                  <span className="up-id-lbl">ID</span>
-                  <span className="up-id-val up-id-val--num">{p.user_id}</span>
+            <div className="up-profile-wrap">
+              <div className="card up-card up-personal">
+                <div className="ct">Персональные данные</div>
+                <div className="up-personal-details">
+                  <div className="up-kv">
+                    <span className="up-k">Почта</span>
+                    <span className="up-v">{p.email ?? "—"}</span>
+                  </div>
+                  <div className="up-kv">
+                    <span className="up-k">Телефон</span>
+                    <PhoneValue phone={p.phone} />
+                  </div>
+                  <div className="up-kv">
+                    <span className="up-k">{idDocLabel}</span>
+                    <span className="up-v">{p.id_doc ?? "—"}</span>
+                  </div>
+                  <div className="up-kv">
+                    <span className="up-k">Станция</span>
+                    <span className="up-v">{p.station_name ?? "—"}</span>
+                  </div>
                 </div>
-                <div className="up-id-block up-id-block--login">
-                  <span className="up-id-lbl">Логин</span>
-                  <span className="up-id-val up-id-val--login" title={p.login || undefined}>
-                    {p.login || "—"}
-                  </span>
-                </div>
               </div>
-              <div className="up-kv">
-                <span className="up-k">Почта</span>
-                <span className="up-v">{p.email ?? "—"}</span>
-              </div>
-              <div className="up-kv">
-                <span className="up-k">Телефон</span>
-                <PhoneValue phone={p.phone} />
-              </div>
-              <div className="up-kv">
-                <span className="up-k">{idDocLabel}</span>
-                <span className="up-v">{p.id_doc ?? "—"}</span>
-              </div>
-              <div className="up-kv">
-                <span className="up-k">Станция</span>
-                <span className="up-v">{p.station_name ?? "—"}</span>
-              </div>
-              {p.user_status === 3 ? (
-                <button
-                  type="button"
-                  className="up-btn pri"
-                  style={{ marginTop: 10 }}
-                  onClick={() => setModal("unarchive")}
-                >
-                  Разархивировать УЗ
-                </button>
-              ) : null}
-            </div>
-
-            <div className="up-tariff-layout">
               <TariffCard
                 tariff={data.tariff}
                 netflowNote={data.netflow_note}
@@ -482,13 +450,39 @@ export default function UserProfilePage() {
                 onCancelPlan={() => runAction(() => deleteFreezePlan(uid))}
                 onDisconnect={() => setModal("disconnect")}
               />
-              <ProfileSideColumn
-                balance={data.balance}
-                authPage={p.auth_page}
-                onResetPassword={() => setToast("Сброс пароля — в разработке")}
-              />
+              <div className="up-aside-top">
+                <div className="card up-card up-metric-cell up-personal-metric">
+                  <div className="ct">ID</div>
+                  <div className="up-metric-val up-personal-id-val">{p.user_id}</div>
+                </div>
+                <div className="card up-card up-metric-cell up-personal-metric">
+                  <div className="ct">Логин</div>
+                  <div className="up-metric-val up-personal-login-val" title={p.login || undefined}>
+                    {p.login || "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="up-aside-bottom">
+                {p.user_status === 3 ? (
+                  <button
+                    type="button"
+                    className="up-btn up-btn-restore up-reset-pwd"
+                    onClick={() => setModal("unarchive")}
+                  >
+                    Восстановить УЗ
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="up-btn sec up-reset-pwd"
+                    onClick={() => setToast("Смена пароля — в разработке")}
+                  >
+                    Сменить пароль
+                  </button>
+                )}
+                <TariffSideColumn balance={data.balance} authPage={p.auth_page} />
+              </div>
             </div>
-
             <div className="card up-card up-stats">
               <div className="ct">Статистика</div>
               <select
@@ -608,11 +602,11 @@ export default function UserProfilePage() {
                   </button>
                   <button
                     type="button"
-                    className="up-btn pri"
+                    className="up-btn up-btn-restore"
                     disabled={busy}
                     onClick={() => runAction(() => postUnarchive(uid))}
                   >
-                    Восстановить
+                    Да
                   </button>
                 </div>
               </>
