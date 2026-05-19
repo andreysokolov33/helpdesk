@@ -70,8 +70,15 @@ export type UserProfileResponse = {
   tariff: ProfileTariff | null;
   netflow_note: string | null;
   netflow_tariff: string | null;
-  tickets: ProfileTicket[];
   health_check: { items: string[] };
+  tickets: ProfileTicketListResponse;
+};
+
+export type ProfileTicketListResponse = {
+  total: number;
+  page: number;
+  per_page: number;
+  items: ProfileTicket[];
 };
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -83,8 +90,25 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export function fetchUserProfile(userId: number): Promise<UserProfileResponse> {
-  return api(`/api/v1/helpdesk/users/${userId}/profile`);
+export function fetchUserProfile(
+  userId: number,
+  ticketsPage = 1,
+  ticketsPerPage = 10,
+): Promise<UserProfileResponse> {
+  const q = new URLSearchParams({
+    tickets_page: String(ticketsPage),
+    tickets_per_page: String(ticketsPerPage),
+  });
+  return api(`/api/v1/helpdesk/users/${userId}/profile?${q}`);
+}
+
+export function fetchUserProfileTickets(
+  userId: number,
+  page = 1,
+  perPage = 10,
+): Promise<ProfileTicketListResponse> {
+  const q = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  return api(`/api/v1/helpdesk/users/${userId}/profile/tickets?${q}`);
 }
 
 export function postUnarchive(userId: number) {
@@ -109,4 +133,39 @@ export function postFreeze(userId: number, body: { date_freeze?: string | null; 
 
 export function postDisconnect(userId: number) {
   return api<{ message: string }>(`/api/v1/helpdesk/users/${userId}/disconnect-sessions`, { method: "POST" });
+}
+
+export type PasswordResetState = {
+  has_ppp_sessions: boolean;
+  active_code: string | null;
+  expires_at: string | null;
+  can_generate: boolean;
+  code_id: number | null;
+};
+
+export type PasswordResetGenerateResult = {
+  code: string;
+  expires_at: string;
+  code_id: number;
+  message: string;
+};
+
+export type PasswordResetPoll = {
+  code_used: boolean;
+  code_expired: boolean;
+  active_code: string | null;
+  expires_at: string | null;
+  code_id: number | null;
+};
+
+export function fetchPasswordResetState(userId: number): Promise<PasswordResetState> {
+  return api(`/api/v1/helpdesk/users/${userId}/password-reset`);
+}
+
+export function fetchPasswordResetPoll(userId: number, codeId: number): Promise<PasswordResetPoll> {
+  return api(`/api/v1/helpdesk/users/${userId}/password-reset/poll?code_id=${codeId}`);
+}
+
+export function generatePasswordResetCode(userId: number): Promise<PasswordResetGenerateResult> {
+  return api(`/api/v1/helpdesk/users/${userId}/password-reset/generate`, { method: "POST" });
 }

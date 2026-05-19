@@ -3,18 +3,21 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   deleteFreezePlan,
   fetchUserProfile,
+  fetchUserProfileTickets,
   postDisconnect,
   postFreeze,
   postUnarchive,
   postUnfreeze,
   type ProfileTariff,
+  type ProfileTicket,
   type UserProfileResponse,
 } from "@/api/userProfile";
 import { copyPhone, formatPhoneDisplay } from "@/utils/phone";
 import { AuthPageHelp } from "@/components/AuthPageHelp";
+import { PasswordResetModal } from "@/components/PasswordResetModal";
 import { categoryBadgeClass, supportLineBadgeClass, supportLineLabel } from "@/utils/ticketLabels";
 
-type ModalKind = "unfreeze" | "unarchive" | "disconnect" | "freeze" | null;
+type ModalKind = "unfreeze" | "unarchive" | "disconnect" | "freeze" | "password_reset" | null;
 
 const REPORTS = [
   { id: "check", label: "Быстрая проверка пользователя" },
@@ -48,6 +51,30 @@ function statusClass(us: number | null) {
 
 function entityClass(isJuridical: number) {
   return isJuridical === 2 ? "up-badge jur" : "up-badge phys";
+}
+
+function splitEmails(email: string | null, isJuridical: number): string[] {
+  if (!email?.trim()) return [];
+  if (isJuridical !== 2) return [email.trim()];
+  return email
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function EmailValue({ email, isJuridical }: { email: string | null; isJuridical: number }) {
+  const list = splitEmails(email, isJuridical);
+  if (list.length === 0) return <span className="up-v">—</span>;
+  if (list.length === 1) return <span className="up-v">{list[0]}</span>;
+  return (
+    <span className="up-v up-email-list">
+      {list.map((addr) => (
+        <span key={addr} className="up-email-line">
+          {addr}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function PhoneValue({ phone }: { phone: string | null }) {
@@ -324,19 +351,58 @@ export default function UserProfilePage() {
   const [showUnfreezeDate, setShowUnfreezeDate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [ticketsPage, setTicketsPage] = useState(1);
+  const [tickets, setTickets] = useState<ProfileTicket[]>([]);
+  const [ticketsTotal, setTicketsTotal] = useState(0);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketsErr, setTicketsErr] = useState<string | null>(null);
+
+  const ticketsPerPage = 10;
+  const ticketsTotalPages = Math.max(1, Math.ceil(ticketsTotal / ticketsPerPage));
 
   const reload = useCallback(() => {
     if (!Number.isFinite(uid)) return;
     setLoading(true);
-    fetchUserProfile(uid)
-      .then(setData)
+    setTicketsLoading(true);
+    setTicketsErr(null);
+    setTicketsPage(1);
+    fetchUserProfile(uid, 1, ticketsPerPage)
+      .then((r) => {
+        setData(r);
+        setTickets(r.tickets.items);
+        setTicketsTotal(r.tickets.total);
+      })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Ошибка"))
-      .finally(() => setLoading(false));
-  }, [uid]);
+      .finally(() => {
+        setLoading(false);
+        setTicketsLoading(false);
+      });
+  }, [uid, ticketsPerPage]);
 
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const loadTicketsPage = useCallback(
+    (page: number) => {
+      if (!Number.isFinite(uid)) return;
+      setTicketsPage(page);
+      setTicketsLoading(true);
+      setTicketsErr(null);
+      fetchUserProfileTickets(uid, page, ticketsPerPage)
+        .then((r) => {
+          setTickets(r.items);
+          setTicketsTotal(r.total);
+        })
+        .catch((e: unknown) => {
+          setTickets([]);
+          setTicketsTotal(0);
+          setTicketsErr(e instanceof Error ? e.message : "Не удалось загрузить обращения");
+        })
+        .finally(() => setTicketsLoading(false));
+    },
+    [uid, ticketsPerPage],
+  );
 
   async function runAction(fn: () => Promise<{ message: string }>) {
     setBusy(true);
@@ -416,9 +482,11 @@ export default function UserProfilePage() {
               <div className="card up-card up-personal">
                 <div className="ct">Персональные данные</div>
                 <div className="up-personal-details">
-                  <div className="up-kv">
+                  <div
+                    className={`up-kv${p.is_juridical === 2 && splitEmails(p.email, p.is_juridical).length > 1 ? " up-kv--multiline" : ""}`}
+                  >
                     <span className="up-k">Почта</span>
-                    <span className="up-v">{p.email ?? "—"}</span>
+                    <EmailValue email={p.email} isJuridical={p.is_juridical} />
                   </div>
                   <div className="up-kv">
                     <span className="up-k">Телефон</span>
@@ -475,7 +543,7 @@ export default function UserProfilePage() {
                   <button
                     type="button"
                     className="up-btn sec up-reset-pwd"
-                    onClick={() => setToast("Смена пароля — в разработке")}
+                    onClick={() => setModal("password_reset")}
                   >
                     Сменить пароль
                   </button>
@@ -518,60 +586,98 @@ export default function UserProfilePage() {
               Регистрация звонка
             </button>
           </div>
-          {data.tickets.length === 0 ? (
+          {ticketsLoading ? (
+            <p className="up-muted">Загрузка…</p>
+          ) : ticketsErr ? (
+            <p className="up-muted up-error">{ticketsErr}</p>
+          ) : tickets.length === 0 ? (
             <p className="up-muted">Обращений не найдено</p>
           ) : (
-            <table className="dt up-tickets">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Тема</th>
-                  <th>Категория</th>
-                  <th>Линия</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.tickets.map((t) => (
-                  <tr
-                    key={t.id}
-                    className="up-ticket-row"
-                    onClick={() => navigate(`/tickets/${t.id}`)}
-                  >
-                    <td>{fmtDt(t.date_of_create)}</td>
-                    <td>
-                      <strong>{t.title}</strong>
-                    </td>
-                    <td>
-                      {t.category ? (
-                        <span
-                          className={`ch-cat ch-cat--${categoryBadgeClass(t.category_theme, t.category)}`}
-                          title={t.category}
-                        >
-                          {t.category}
-                        </span>
-                      ) : (
-                        <span className="ch-cat ch-cat--empty">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`ch-line ch-line--${supportLineBadgeClass(t.support_line)}`}>
-                        {supportLineLabel(t.support_line, t.support_line_label)}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`ch-status ch-status--${t.status}`}>{t.status_label}</span>
-                    </td>
+            <>
+              <table className="dt up-tickets">
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Тема</th>
+                    <th>Категория</th>
+                    <th>Линия</th>
+                    <th>Статус</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {tickets.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="up-ticket-row"
+                      onClick={() => navigate(`/tickets/${t.id}`)}
+                    >
+                      <td>{fmtDt(t.date_of_create)}</td>
+                      <td>
+                        <strong>{t.title}</strong>
+                      </td>
+                      <td>
+                        {t.category ? (
+                          <span
+                            className={`ch-cat ch-cat--${categoryBadgeClass(t.category_theme, t.category)}`}
+                            title={t.category}
+                          >
+                            {t.category}
+                          </span>
+                        ) : (
+                          <span className="ch-cat ch-cat--empty">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`ch-line ch-line--${supportLineBadgeClass(t.support_line)}`}>
+                          {supportLineLabel(t.support_line, t.support_line_label)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`ch-status ch-status--${t.status}`}>{t.status_label}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {ticketsTotal > ticketsPerPage ? (
+                <div className="ch-pager">
+                  <button
+                    type="button"
+                    className="ch-page-btn"
+                    disabled={ticketsPage <= 1 || ticketsLoading}
+                    onClick={() => loadTicketsPage(Math.max(1, ticketsPage - 1))}
+                  >
+                    Назад
+                  </button>
+                  <span className="ch-page-info">
+                    Стр. {ticketsPage} / {ticketsTotalPages} · всего {ticketsTotal}
+                  </span>
+                  <button
+                    type="button"
+                    className="ch-page-btn"
+                    disabled={ticketsPage >= ticketsTotalPages || ticketsLoading}
+                    onClick={() => loadTicketsPage(ticketsPage + 1)}
+                  >
+                    Вперёд
+                  </button>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       </div>
 
       {modal ? (
         <div className="up-modal-back" onClick={() => !busy && setModal(null)}>
+          {modal === "password_reset" ? (
+            <PasswordResetModal
+              userId={uid}
+              busy={busy}
+              setBusy={setBusy}
+              onClose={() => setModal(null)}
+              onError={(msg) => setToast(msg)}
+            />
+          ) : (
           <div className="up-modal" onClick={(e) => e.stopPropagation()}>
             {modal === "unfreeze" ? (
               <>
@@ -702,6 +808,7 @@ export default function UserProfilePage() {
               </>
             ) : null}
           </div>
+          )}
         </div>
       ) : null}
     </div>
