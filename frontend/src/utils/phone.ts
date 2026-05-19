@@ -1,0 +1,32 @@
+/** Цифры из строки телефона (для копирования и валидации). */
+export function phoneDigits(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw.replace(/\D/g, "");
+}
+
+/**
+ * Форматирование RU-телефонов: +7 (XXX) XXX-XX-XX.
+ * Если распознать не удалось — исходная строка.
+ */
+export function formatPhoneDisplay(raw: string | null | undefined): string {
+  if (!raw?.trim()) return "—";
+  const src = raw.trim();
+  let d = phoneDigits(src);
+  if (!d) return src;
+
+  if (d.length === 11 && (d.startsWith("7") || d.startsWith("8"))) {
+    d = d.startsWith("8") ? `7${d.slice(1)}` : d;
+    return `+7 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9, 11)}`;
+  }
+  if (d.length === 10) {
+    return `+7 (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 8)}-${d.slice(8, 10)}`;
+  }
+  return src;
+}
+
+export async function copyPhone(raw: string | null | undefined): Promise<void> {
+  const d = phoneDigits(raw);
+  const text = d || (raw ?? "");
+  if (!text) return;
+  await navigator.clipboard.writeText(text);
+}
