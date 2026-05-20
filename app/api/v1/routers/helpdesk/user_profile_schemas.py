@@ -137,3 +137,14 @@ class FreezeRequest(BaseModel):
 class ActionMessage(BaseModel):
     ok: bool = True
     message: str
+
+
+class TariffBlockResponse(BaseModel):
+    """Блок тарифа на карточке абонента (после отключения — без перезагрузки страницы)."""
+
+    ok: bool = True
+    message: str
+    tariff: Optional[ProfileTariffActive] = None
+    netflow_note: Optional[str] = None
+    netflow_tariff: Optional[str] = None
+    health_check: ProfileHealthCheck = Field(default_factory=ProfileHealthCheck)

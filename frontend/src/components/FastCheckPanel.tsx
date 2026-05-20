@@ -14,7 +14,7 @@ const INTRO =
 const REVEAL_MS = 420;
 
 function stoppedAtLabel(stoppedAt: string, steps: FastCheckStep[]): string {
-  const step = steps.find((s) => s.test_code === stoppedAt);
+  const step = steps.find((s) => s.test_code === stoppedAt || s.check_label === stoppedAt);
   return step?.check_label ?? stoppedAt;
 }
 

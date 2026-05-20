@@ -6,8 +6,10 @@ import {
   fetchUserProfileTickets,
   postDisconnect,
   postFreeze,
+  postRemoveEndedTariff,
   postUnarchive,
   postUnfreeze,
+  type TariffBlockResponse,
   type ProfileTariff,
   type ProfileTicket,
   type UserProfileResponse,
@@ -17,11 +19,20 @@ import { AuthPageHelp } from "@/components/AuthPageHelp";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import PaymentsHistoryPanel from "@/components/PaymentsHistoryPanel";
 import TariffsHistoryPanel from "@/components/TariffsHistoryPanel";
+import DatePickerField, { dateYmdToIso } from "@/components/DatePickerField";
 import { PasswordResetModal } from "@/components/PasswordResetModal";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 import { categoryBadgeClass, supportLineBadgeClass, supportLineLabel } from "@/utils/ticketLabels";
 
-type ModalKind = "unfreeze" | "unarchive" | "disconnect" | "freeze" | "password_reset" | null;
+type ModalKind =
+  | "unfreeze"
+  | "unarchive"
+  | "disconnect"
+  | "freeze"
+  | "cancel_planned_freeze"
+  | "remove_ended_tariff"
+  | "password_reset"
+  | null;
 
 const REPORTS = [
   { id: "check", label: "Быстрая проверка пользователя" },
@@ -123,6 +134,7 @@ function TariffCard({
   onFreeze,
   onUnfreeze,
   onCancelPlan,
+  onRemoveEndedTariff,
   openSessionsCount,
   onDisconnect,
 }: {
@@ -134,23 +146,45 @@ function TariffCard({
   onFreeze: () => void;
   onUnfreeze: () => void;
   onCancelPlan: () => void;
+  onRemoveEndedTariff?: () => void;
   onDisconnect: () => void;
 }) {
   if (!tariff && !netflowTariff) {
     return (
       <div className="card up-card up-tariff up-tariff-main">
-        <div className="ct">Тарифный план</div>
-        <p className="up-muted">Тариф не подключён</p>
+        <div className="ct up-tariff-title">Тарифный план</div>
+        <div className="up-tariff-empty" role="status">
+          <div className="up-tariff-empty__title">Тариф не подключён</div>
+          <p className="up-tariff-empty__text">
+            Абоненту нужно выбрать подходящий тарифный план в личном кабинете на странице{" "}
+            <strong>«Тариф»</strong>. Без подключённого тарифа доступ в интернет недоступен.
+          </p>
+        </div>
       </div>
     );
   }
 
   const isFrozen = tariff?.state === "frozen";
+  const isPlannedFreeze = tariff?.state === "planned_freeze";
+  const isTariffEnded = Boolean(tariff && !isFrozen && !isPlannedFreeze && !tariff.is_active);
   const canManageTariff = isJuridical === 0;
-  const freezeLabel = tariff?.can_unfreeze ? "Разморозить" : "Заморозить";
+  const freezeLabel = tariff?.can_unfreeze
+    ? "Разморозить"
+    : isPlannedFreeze
+      ? "Отменить заморозку"
+      : "Заморозить";
   const freezeEnabled =
-    canManageTariff && Boolean(tariff?.can_unfreeze || tariff?.can_freeze);
-  const freezeHandler = tariff?.can_unfreeze ? onUnfreeze : onFreeze;
+    canManageTariff &&
+    Boolean(
+      tariff?.can_unfreeze ||
+        tariff?.can_freeze ||
+        (isPlannedFreeze && tariff?.can_cancel_planned_freeze),
+    );
+  const freezeHandler = tariff?.can_unfreeze
+    ? onUnfreeze
+    : isPlannedFreeze
+      ? onCancelPlan
+      : onFreeze;
   const sessionsLabel =
     openSessionsCount > 0 ? `Закрыть сессии (${openSessionsCount})` : "Закрыть сессии";
   const showSessionsBtn = !isFrozen && tariff?.can_disconnect_sessions !== false;
@@ -159,14 +193,24 @@ function TariffCard({
     <div className="card up-card up-tariff up-tariff-main">
       <div className="up-tariff-head">
         <div className="ct up-tariff-title">Тарифный план</div>
-        {canManageTariff && tariff?.can_cancel_planned_freeze ? (
-          <button type="button" className="up-tariff-actions-btn" onClick={onCancelPlan}>
-            Действия
-          </button>
-        ) : null}
       </div>
 
-      {canManageTariff && !isFrozen ? (
+      {isTariffEnded ? (
+        onRemoveEndedTariff ? (
+          <button
+            type="button"
+            className="up-tariff-ended-banner up-tariff-ended-banner--action"
+            onClick={onRemoveEndedTariff}
+          >
+            <span className="up-tariff-ended-banner__title">Тариф закончился</span>
+            <span className="up-tariff-ended-banner__hint">Нажмите, чтобы отключить</span>
+          </button>
+        ) : (
+          <div className="up-tariff-ended-banner" role="status">
+            Тариф закончился
+          </div>
+        )
+      ) : canManageTariff && !isFrozen ? (
         <div className="up-tariff-toolbar">
           <button
             type="button"
@@ -374,11 +418,23 @@ export default function UserProfilePage() {
     setTicketsLoading(true);
     setTicketsErr(null);
     setTicketsPage(1);
-    fetchUserProfile(uid, 1, ticketsPerPage)
+    fetchUserProfile(uid, 1, ticketsPerPage, false)
       .then((r) => {
         setData(r);
-        setTickets(r.tickets.items);
-        setTicketsTotal(r.tickets.total);
+        setLoading(false);
+        return fetchUserProfileTickets(uid, 1, ticketsPerPage).catch((e: unknown) => {
+          setTicketsErr(e instanceof Error ? e.message : "Не удалось загрузить обращения");
+          setTickets([]);
+          setTicketsTotal(0);
+          return null;
+        });
+      })
+      .then((t) => {
+        if (t) {
+          setTickets(t.items);
+          setTicketsTotal(t.total);
+          setTicketsErr(null);
+        }
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Ошибка"))
       .finally(() => {
@@ -438,6 +494,33 @@ export default function UserProfilePage() {
       setToast({ message: r.message, variant: "success" });
       setModal(null);
       reload();
+    } catch (e: unknown) {
+      setToast({
+        message: e instanceof Error ? e.message : "Ошибка",
+        variant: "error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runTariffBlockAction(fn: () => Promise<TariffBlockResponse>) {
+    setBusy(true);
+    try {
+      const r = await fn();
+      setToast({ message: r.message, variant: "success" });
+      setModal(null);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              tariff: r.tariff,
+              netflow_note: r.netflow_note,
+              netflow_tariff: r.netflow_tariff,
+              health_check: r.health_check,
+            }
+          : prev,
+      );
     } catch (e: unknown) {
       setToast({
         message: e instanceof Error ? e.message : "Ошибка",
@@ -536,7 +619,8 @@ export default function UserProfilePage() {
                   setModal("freeze");
                 }}
                 onUnfreeze={() => setModal("unfreeze")}
-                onCancelPlan={() => runAction(() => deleteFreezePlan(uid))}
+                onCancelPlan={() => setModal("cancel_planned_freeze")}
+                onRemoveEndedTariff={() => setModal("remove_ended_tariff")}
                 onDisconnect={() => setModal("disconnect")}
               />
               <div className="up-aside-top">
@@ -705,7 +789,10 @@ export default function UserProfilePage() {
               onError={(msg) => setToast({ message: msg, variant: "error" })}
             />
           ) : (
-          <div className="up-modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            className={`up-modal${modal === "freeze" ? " up-modal--freeze" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             {modal === "unfreeze" ? (
               <>
                 <div className="up-modal-title">Разморозить тариф?</div>
@@ -721,6 +808,51 @@ export default function UserProfilePage() {
                     onClick={() => runAction(() => postUnfreeze(uid))}
                   >
                     Разморозить тариф
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {modal === "cancel_planned_freeze" ? (
+              <>
+                <div className="up-modal-title">Отменить заморозку?</div>
+                <p>Запланированная заморозка тарифа будет удалена из расписания.</p>
+                <div className="up-modal-actions">
+                  <button type="button" className="up-btn sec" disabled={busy} onClick={() => setModal(null)}>
+                    Нет
+                  </button>
+                  <button
+                    type="button"
+                    className="up-btn pri"
+                    disabled={busy}
+                    onClick={() => runAction(() => deleteFreezePlan(uid))}
+                  >
+                    Да, отменить
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {modal === "remove_ended_tariff" ? (
+              <>
+                <div className="up-modal-title">Отключить тариф?</div>
+                <p className="up-modal-lead">
+                  У абонента <strong>истёк срок действия тарифа</strong> — интернет по этому тарифу недоступен.
+                </p>
+                <p>
+                  Если абонент не может сам отключить тариф в личном кабинете (вкладка{" "}
+                  <strong>«Тарифы»</strong>), вы можете сделать это здесь. После подтверждения тариф будет снят
+                  с учётной записи.
+                </p>
+                <div className="up-modal-actions">
+                  <button type="button" className="up-btn sec" disabled={busy} onClick={() => setModal(null)}>
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="up-btn pri"
+                    disabled={busy}
+                    onClick={() => runTariffBlockAction(() => postRemoveEndedTariff(uid))}
+                  >
+                    Отключить тариф
                   </button>
                 </div>
               </>
@@ -781,33 +913,68 @@ export default function UserProfilePage() {
             {modal === "freeze" ? (
               <>
                 <div className="up-modal-title">Заморозка тарифа</div>
-                <p className="up-muted">
-                  Укажите дату заморозки. Пустое поле — заморозить сейчас. Будущая дата — только запись в
-                  расписании.
-                </p>
-                <label className="up-label">
-                  Дата заморозки
-                  <input
-                    type="datetime-local"
-                    className="up-input"
+                <div className="up-freeze-modal-hints">
+                  <p>
+                    Если поле <strong>«Дата заморозки»</strong> оставить пустым и нажать{" "}
+                    <strong>«Подтвердить»</strong>, тариф будет <strong>заморожен сразу</strong> — абонент
+                    потеряет доступ к услуге в течение минуты.
+                  </p>
+                  <p>
+                    Если указать <strong>дату в будущем</strong>, заморозка только запишется в
+                    расписание: до наступления этой даты тариф останется активным.
+                  </p>
+                  <p className="up-freeze-modal-hints-note">
+                    Дату разморозки можно добавить по желанию — иначе абонент разморозит тариф самостоятельно
+                    или через оператора.
+                  </p>
+                </div>
+                <div className="up-freeze-dt-block">
+                  <div className="up-freeze-dt-head">
+                    <span className="up-label up-label--inline">Дата заморозки</span>
+                    {freezeDate ? (
+                      <button
+                        type="button"
+                        className="up-link up-link--inline"
+                        onClick={() => setFreezeDate("")}
+                      >
+                        Очистить
+                      </button>
+                    ) : null}
+                  </div>
+                  <span className="up-label-hint">необязательно — пустое поле = заморозка сейчас</span>
+                  <DatePickerField
                     value={freezeDate}
-                    onChange={(e) => setFreezeDate(e.target.value)}
+                    onChange={setFreezeDate}
+                    id="freeze-date"
+                    placeholder="Не выбрано — заморозка сейчас"
                   />
-                </label>
+                </div>
                 {!showUnfreezeDate ? (
                   <button type="button" className="up-link" onClick={() => setShowUnfreezeDate(true)}>
-                    + Указать время разморозки
+                    + Указать дату разморозки
                   </button>
                 ) : (
-                  <label className="up-label">
-                    Дата разморозки
-                    <input
-                      type="datetime-local"
-                      className="up-input"
+                  <div className="up-freeze-dt-block">
+                    <div className="up-freeze-dt-head">
+                      <span className="up-label up-label--inline">Дата разморозки</span>
+                      {unfreezeDate ? (
+                        <button
+                          type="button"
+                          className="up-link up-link--inline"
+                          onClick={() => setUnfreezeDate("")}
+                        >
+                          Очистить
+                        </button>
+                      ) : null}
+                    </div>
+                    <DatePickerField
                       value={unfreezeDate}
-                      onChange={(e) => setUnfreezeDate(e.target.value)}
+                      onChange={setUnfreezeDate}
+                      minDate={freezeDate || undefined}
+                      id="unfreeze-date"
+                      placeholder="Выберите дату"
                     />
-                  </label>
+                  </div>
                 )}
                 <div className="up-modal-actions">
                   <button type="button" className="up-btn sec" disabled={busy} onClick={() => setModal(null)}>
@@ -820,11 +987,9 @@ export default function UserProfilePage() {
                     onClick={() =>
                       runAction(() =>
                         postFreeze(uid, {
-                          date_freeze: freezeDate ? new Date(freezeDate).toISOString() : null,
+                          date_freeze: freezeDate ? dateYmdToIso(freezeDate) : null,
                           date_unfreeze:
-                            showUnfreezeDate && unfreezeDate
-                              ? new Date(unfreezeDate).toISOString()
-                              : null,
+                            showUnfreezeDate && unfreezeDate ? dateYmdToIso(unfreezeDate) : null,
                         }),
                       )
                     }

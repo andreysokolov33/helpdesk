@@ -29,6 +29,16 @@ from app.models.users import FastCheckDatabase
 
 _UNLIM_SESSION_LIMIT = 2
 
+# Подписи шагов, если строка в fast_check_database отсутствует
+_CHECK_LABEL_FALLBACK: dict[str, str] = {
+    "account_status": "1. Статус учётной записи",
+    "tariff_state": "2. Состояние тарифа",
+    "balance_tariff": "3. Баланс и платежи",
+    "station_aliveness": "4. Станция на связи",
+    "active_sessions": "5. Активные сессии",
+    "session_limit": "6. Лимит сессий",
+}
+
 
 @dataclass
 class _Instr:
@@ -62,6 +72,8 @@ async def _load_instruction(
     if key not in cache:
         row = None
         variants_to_try = [variant]
+        if test_code == "tariff_state" and variant == 7:
+            variants_to_try.append(6)
         if 1 <= variant <= 7:
             variants_to_try.append(0)
         for v in variants_to_try:
@@ -91,7 +103,9 @@ def _step(
     extra_html: str = "",
     stop_chain: Optional[bool] = None,
 ) -> FastCheckStep:
-    label = instr.check_label if instr else test_code
+    label = (instr.check_label if instr else None) or _CHECK_LABEL_FALLBACK.get(
+        test_code, test_code
+    )
     html: Optional[str] = None
     if status in ("fail", "warn") and instr:
         html = instr.actions_html + (extra_html or "")
@@ -111,13 +125,20 @@ def _step(
     )
 
 
+def _stopped_at_label(steps: list[FastCheckStep]) -> str:
+    for s in steps:
+        if s.stop_chain and s.status in ("fail", "warn"):
+            return s.check_label
+    return steps[-1].check_label
+
+
 def _fail_response(
     steps: list[FastCheckStep],
     managers: list[ManagerContact] | None = None,
 ) -> FastCheckResponse:
     return FastCheckResponse(
         steps=steps,
-        stopped_at=steps[-1].check_label,
+        stopped_at=_stopped_at_label(steps),
         manager_contacts=managers or [],
     )
 
@@ -314,7 +335,10 @@ async def _min_tariff_price(session: AsyncSession, id_grp: int) -> Optional[floa
                 SELECT s.price::numeric AS p
                 FROM wifitochka.grp_srv gs
                 JOIN service.service s ON s.id = gs.id_srv
-                WHERE gs.id_grp = :gid AND coalesce(s.is_actual, 0) = 1 AND s.price IS NOT NULL
+                WHERE gs.id_grp = :gid
+                  AND coalesce(s.active, 0) = 1
+                  AND coalesce(s.hidden, 0) = 0
+                  AND s.price IS NOT NULL
             ),
             slider_lim AS (
                 SELECT stl.price::numeric AS p
@@ -439,18 +463,21 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
         ctx.real_type = await _load_real_type(session, sname)
 
     if not connected:
-        variant = 26 if ctx.is_jur == 2 else 6
+        tariff_ended = (ctx.groupname or "").strip().lower() == "disabled"
+        variant = 26 if ctx.is_jur == 2 else (7 if tariff_ended else 6)
         instr = await _load_instruction(session, cache, "tariff_state", variant)
         extra = ""
         if ctx.is_jur == 2:
             managers = await _load_jur_managers(session)
             extra = _managers_html(managers)
+        detail = "Тариф закончился" if tariff_ended and ctx.is_jur == 0 else None
         steps.append(
             _step(
                 "tariff_state",
                 variant,
                 "fail",
                 instr,
+                detail=detail,
                 stop_chain=False,
                 extra_html=extra,
             )
@@ -511,7 +538,15 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
                     "pass",
                     instr,
                     detail=f"Баланс {ctx.balance:.2f} ₽, достаточно для подключения тарифа",
+                    stop_chain=False,
                 )
+            )
+            return FastCheckResponse(
+                steps=steps,
+                stopped_at=next(
+                    s.check_label for s in steps if s.test_code == "tariff_state"
+                ),
+                manager_contacts=managers,
             )
         else:
             extra = ""

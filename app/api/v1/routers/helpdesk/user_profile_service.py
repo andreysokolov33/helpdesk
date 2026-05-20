@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from sqlalchemy import and_, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,7 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
     ProfileTariffActive,
     ProfileTicket,
     ProfileTicketListResponse,
+    TariffBlockResponse,
     UserProfileResponse,
 )
 from app.api.v1.routers.helpdesk.user_profile_utils import (
@@ -42,15 +44,24 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     tariff_display_name,
     traffic_reset_labels,
 )
+from app.api.v1.routers.helpdesk.operator_log_service import write_operator_log
 from app.api.v1.routers.users.dao import RadacctDAO, UserFreezeTariffDAO, UsersDAO
 from app.core.user_cache import on_tariff_freeze_changed, on_unarchive
-from app.api.v1.routers.users.subscriber_search import _format_passport, _latest_user_details_subq, _join_latest_ud
+from app.api.v1.routers.users.subscriber_search import _format_passport
 from app.constants import STATUS_DISPLAY, SUPPORT_LINE_DISPLAY
-from app.models.oss import JurClientList
 from app.models.users import TrackerTickets, User, UserDetails, UserFreezeTariff
 
 _ENTITY = {0: "Физическое лицо", 1: "Физическое лицо", 2: "Юридическое лицо"}
 _STATUS = {1: "Активен", 2: "Заморожен", 3: "В архиве"}
+
+
+async def _require_juridical_subscriber(session: AsyncSession, user_id: int) -> dict[str, Any]:
+    row = await UsersDAO.find_one_or_none(session, id=user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
+    if int(row.get("is_juridical") or 0) != 2:
+        raise HTTPException(status_code=400, detail="Действие доступно только для юридических лиц")
+    return row
 
 
 async def _require_physical_subscriber(session: AsyncSession, user_id: int) -> dict[str, Any]:
@@ -67,56 +78,47 @@ async def _require_physical_subscriber(session: AsyncSession, user_id: int) -> d
 
 
 async def _load_personal(session: AsyncSession, user_id: int) -> ProfilePersonal:
-    ud_sq = _latest_user_details_subq()
-    u = User
-    jcl = JurClientList
-    q = (
-        select(
-            u.id,
-            u.login,
-            u.email,
-            u.mob_tel,
-            u.is_juridical,
-            u.user_status,
-            u.full_name,
-            ud_sq.c.ud_surname,
-            ud_sq.c.ud_name,
-            ud_sq.c.ud_patronymic,
-            ud_sq.c.ud_pas_series,
-            ud_sq.c.ud_pas_number,
-            u.passport,
-            jcl.short_name_organization,
-            jcl.email_organization,
-            jcl.phone_organization,
-            jcl.inn,
-        )
-        .select_from(u)
-        .outerjoin(ud_sq, _join_latest_ud(ud_sq))
-        .outerjoin(jcl, jcl.id == u.juridical_id)
-        .where(u.id == user_id)
-    )
-    row = (await session.execute(q)).one_or_none()
-    if not row:
-        raise HTTPException(status_code=404, detail="Абонент не найден")
+    personal, _balance = await _load_personal_with_balance(session, user_id)
+    return personal
 
-    is_jur = int(row.is_juridical or 0)
-    if is_jur == 2:
-        name = (row.short_name_organization or row.full_name or "").strip()
-        email = row.email_organization
-        phone = row.phone_organization
-        id_doc = (row.inn or "").strip() or None
-    else:
-        parts = [row.ud_surname, row.ud_name, row.ud_patronymic]
-        name = " ".join(p for p in parts if p and str(p).strip()).strip() or (row.full_name or "")
-        email = row.email
-        phone = row.mob_tel
-        id_doc = _format_passport(row.ud_pas_series, row.ud_pas_number, row.passport)
 
-    st = (
+async def _load_personal_with_balance(
+    session: AsyncSession, user_id: int
+) -> tuple[ProfilePersonal, float]:
+    """Один запрос: user + LATERAL user_details + станция (без оконной функции по всей user_details)."""
+    row = (
         await session.execute(
             text("""
-                SELECT coalesce(sf.station_name, ig.name) AS station_name, h.ip AS auth_page
+                SELECT
+                    u.id,
+                    u.login,
+                    u.email,
+                    u.mob_tel,
+                    u.is_juridical,
+                    u.user_status,
+                    u.full_name,
+                    u.passport,
+                    u.balanse,
+                    ud.surname AS ud_surname,
+                    ud.name AS ud_name,
+                    ud.patronymic AS ud_patronymic,
+                    ud.pas_series AS ud_pas_series,
+                    ud.pas_number AS ud_pas_number,
+                    jcl.short_name_organization,
+                    jcl.email_organization,
+                    jcl.phone_organization,
+                    jcl.inn,
+                    coalesce(sf.station_name, ig.name) AS station_name,
+                    h.ip AS auth_page
                 FROM users."user" u
+                LEFT JOIN LATERAL (
+                    SELECT ud.surname, ud.name, ud.patronymic, ud.pas_series, ud.pas_number
+                    FROM users.user_details ud
+                    WHERE ud.user_id = u.id
+                    ORDER BY ud.is_actual DESC NULLS LAST, ud.id DESC
+                    LIMIT 1
+                ) ud ON true
+                LEFT JOIN oss.jur_client_list jcl ON jcl.id = u.juridical_id
                 LEFT JOIN wifitochka.ip_group ig ON ig.id = u.id_grp
                 LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
                 LEFT JOIN stations.hotspot h ON h.id = ig.id_hotspot
@@ -124,13 +126,28 @@ async def _load_personal(session: AsyncSession, user_id: int) -> ProfilePersonal
             """),
             {"uid": user_id},
         )
-    ).one_or_none()
+    ).mappings().one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
 
-    us = int(row.user_status) if row.user_status is not None else 1
-    return ProfilePersonal(
-        user_id=int(row.id),
-        name=name or f"#{row.id}",
-        login=(row.login or "").strip(),
+    is_jur = int(row["is_juridical"] or 0)
+    if is_jur == 2:
+        name = (row["short_name_organization"] or row["full_name"] or "").strip()
+        email = row["email_organization"]
+        phone = row["phone_organization"]
+        id_doc = (row["inn"] or "").strip() or None
+    else:
+        parts = [row["ud_surname"], row["ud_name"], row["ud_patronymic"]]
+        name = " ".join(p for p in parts if p and str(p).strip()).strip() or (row["full_name"] or "")
+        email = row["email"]
+        phone = row["mob_tel"]
+        id_doc = _format_passport(row["ud_pas_series"], row["ud_pas_number"], row["passport"])
+
+    us = int(row["user_status"]) if row["user_status"] is not None else 1
+    personal = ProfilePersonal(
+        user_id=int(row["id"]),
+        name=name or f"#{row['id']}",
+        login=(row["login"] or "").strip(),
         email=(email or "").strip() or None,
         phone=(phone or "").strip() or None,
         id_doc=id_doc,
@@ -138,28 +155,17 @@ async def _load_personal(session: AsyncSession, user_id: int) -> ProfilePersonal
         entity_label=_ENTITY.get(is_jur, "Физическое лицо"),
         user_status=us,
         status_label=_STATUS.get(us, "Неизвестно"),
-        station_name=st.station_name if st else None,
-        auth_page=st.auth_page if st else None,
+        station_name=row["station_name"],
+        auth_page=row["auth_page"],
     )
+    return personal, float(row["balanse"] or 0)
 
 
-async def _load_online(session: AsyncSession, login: str) -> ProfileOnline:
-    online = await RadacctDAO.is_online(session, login)
-    last_end = None
-    if not online:
-        last_end = await RadacctDAO.get_last_session_end_time(session, login)
-        if last_end is None:
-            r = await session.execute(
-                text("""
-                    SELECT acctstoptime FROM radius.radacct r
-                    WHERE lower(r.username) = lower(:login)
-                    ORDER BY radacctid DESC LIMIT 1
-                """),
-                {"login": login},
-            )
-            last_end = r.scalar_one_or_none()
+def _online_from_radacct_summary(
+    is_online: bool, last_end: Optional[datetime]
+) -> ProfileOnline:
     return ProfileOnline(
-        is_online=online,
+        is_online=is_online,
         last_session_end=last_end,
         last_session_end_label=format_dt_msk(last_end) if last_end else None,
     )
@@ -188,8 +194,14 @@ async def _load_tariff_row(session: AsyncSession, user_id: int, login: str) -> O
                 u.traffic_update_hour AS msk_hour,
                 ig.gmt,
                 ru.now_day_traffic AS unlim_day_traffic
-            FROM radius.radusergroup r
-            LEFT JOIN users."user" u ON lower(u.login) = lower(r.username)
+            FROM users."user" u
+            LEFT JOIN LATERAL (
+                SELECT r.groupname, r.sname, r.priority
+                FROM radius.radusergroup r
+                WHERE lower(r.username) = lower(u.login)
+                ORDER BY r.priority NULLS LAST
+                LIMIT 1
+            ) r ON true
             LEFT JOIN service.service s ON s.sname = r.sname
             LEFT JOIN radius.radgroupreply r2 ON r2.groupname = s.sname
                 AND r2.attribute = 'Mikrotik-Rate-Limit'
@@ -201,14 +213,12 @@ async def _load_tariff_row(session: AsyncSession, user_id: int, login: str) -> O
                 WHERE lower(rr.username) = lower(u.login)
                 ORDER BY rr.id DESC
                 LIMIT 1
-            ) r3 ON TRUE
+            ) r3 ON true
             LEFT JOIN radius.radreply_unlim ru ON ru.uid = u.id
             LEFT JOIN service.service_jur sj ON sj.service = s.sname
             LEFT JOIN users.user_service_date usd ON usd.user_id = u.id
             LEFT JOIN wifitochka.ip_group ig ON ig.id = u.id_grp
             WHERE u.id = :uid
-            ORDER BY r.priority NULLS LAST
-            LIMIT 1
         """),
         {"uid": user_id},
     )
@@ -427,7 +437,6 @@ async def load_user_tickets_page(
         ).scalar_one()
         or 0
     )
-
     offset = (page - 1) * per_page
     r = await session.execute(
         text(_TICKETS_SELECT),
@@ -633,29 +642,24 @@ def _build_health_check(personal: ProfilePersonal, online: ProfileOnline, tariff
     return ProfileHealthCheck(items=items)
 
 
-async def get_user_profile(
+async def _load_tariff_bundle(
     session: AsyncSession,
     user_id: int,
-    tickets_page: int = 1,
-    tickets_per_page: int = 10,
-) -> UserProfileResponse:
-    personal = await _load_personal(session, user_id)
-    user_row = await UsersDAO.find_one_or_none(session, id=user_id)
-    balance = float((user_row or {}).get("balanse") or 0)
-    online = await _load_online(session, personal.login)
-    open_sessions = await count_open_sessions(session, personal.login)
-    trow = await _load_tariff_row(session, user_id, personal.login)
-    freeze = await _load_freeze(session, user_id)
-    netflow_note, netflow_tariff = await _load_netflow(session, user_id)
+    personal: ProfilePersonal,
+) -> tuple[Optional[ProfileTariffActive], Optional[str], Optional[str]]:
+    trow, freeze, netflow_pair = await asyncio.gather(
+        _load_tariff_row(session, user_id, personal.login),
+        _load_freeze(session, user_id),
+        _load_netflow(session, user_id),
+    )
+    netflow_note, netflow_tariff = netflow_pair
     freeze_sname = (freeze or {}).get("tariff") if freeze else None
     service_meta = await _load_service_by_sname(session, freeze_sname) if freeze_sname else None
     if service_meta is None and trow and trow.get("real_type"):
         service_meta = {"name": trow.get("tariff_name"), "real_type": trow.get("real_type")}
-    jur_normal = (
-        await _load_jur_normal_traffic(session, freeze_sname)
-        if freeze_sname and personal.is_juridical == 2
-        else None
-    )
+    jur_normal = None
+    if freeze_sname and personal.is_juridical == 2:
+        jur_normal = await _load_jur_normal_traffic(session, freeze_sname)
     tariff = _build_tariff(
         trow,
         freeze,
@@ -663,8 +667,62 @@ async def get_user_profile(
         service_meta=service_meta,
         jur_normal=jur_normal,
     )
+    return tariff, netflow_note, netflow_tariff
+
+
+async def _assemble_tariff_block(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    personal: Optional[ProfilePersonal] = None,
+    balance: Optional[float] = None,
+    online: Optional[ProfileOnline] = None,
+) -> tuple[
+    Optional[ProfileTariffActive],
+    Optional[str],
+    Optional[str],
+    ProfileHealthCheck,
+    ProfilePersonal,
+    float,
+    ProfileOnline,
+]:
+    personal, balance_loaded = await _load_personal_with_balance(session, user_id)
+    if balance is None:
+        balance = balance_loaded
+    is_online, open_count, last_end = await RadacctDAO.get_session_summary(session, personal.login)
+    online = online or _online_from_radacct_summary(is_online, last_end)
+    tariff, netflow_note, netflow_tariff = await _load_tariff_bundle(session, user_id, personal)
     health = _build_health_check(personal, online, tariff, balance)
-    tickets = await load_user_tickets_page(session, user_id, tickets_page, tickets_per_page)
+    return tariff, netflow_note, netflow_tariff, health, personal, balance, online
+
+
+async def get_user_profile(
+    session: AsyncSession,
+    user_id: int,
+    tickets_page: int = 1,
+    tickets_per_page: int = 10,
+    *,
+    include_tickets: bool = True,
+) -> UserProfileResponse:
+    personal, balance = await _load_personal_with_balance(session, user_id)
+
+    is_online, open_sessions, last_end = await RadacctDAO.get_session_summary(
+        session, personal.login
+    )
+
+    if include_tickets and tickets_per_page > 0:
+        tariff_res, tickets = await asyncio.gather(
+            _load_tariff_bundle(session, user_id, personal),
+            load_user_tickets_page(session, user_id, tickets_page, tickets_per_page),
+        )
+    else:
+        tariff_res = await _load_tariff_bundle(session, user_id, personal)
+        tickets = ProfileTicketListResponse(total=0, page=1, per_page=tickets_per_page, items=[])
+
+    online = _online_from_radacct_summary(is_online, last_end)
+    tariff, netflow_note, netflow_tariff = tariff_res
+    health = _build_health_check(personal, online, tariff, balance)
+
     return UserProfileResponse(
         personal=personal,
         online=online,
@@ -675,6 +733,62 @@ async def get_user_profile(
         netflow_tariff=netflow_tariff,
         health_check=health,
         tickets=tickets,
+    )
+
+
+async def remove_ended_tariff(
+    session: AsyncSession,
+    user_id: int,
+    operator: dict[str, Any],
+    request: Request,
+) -> TariffBlockResponse:
+    """Отключение завершённого тарифа (radius.remove_user) для ФЛ и ЮЛ."""
+    row = await UsersDAO.find_one_or_none(session, id=user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
+    login = (row.get("login") or "").strip()
+    if not login:
+        raise HTTPException(status_code=400, detail="У абонента не задан логин")
+
+    trow = await _load_tariff_row(session, user_id, login)
+    if not trow:
+        raise HTTPException(status_code=400, detail="Данные тарифа не найдены")
+    if int(trow.get("is_active") or 0) == 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Тариф ещё активен — отключение не требуется",
+        )
+
+    f_type = str(trow.get("real_type") or "default")
+    await _log_tariff_action(
+        session,
+        operator=operator,
+        request=request,
+        user_id=user_id,
+        action="tariff.remove_ended",
+        details={
+            "login": login,
+            "f_type": f_type,
+            "is_juridical": int(row.get("is_juridical") or 0),
+        },
+    )
+    await _call_radius_proc(
+        session,
+        "CALL radius.remove_user(:login, :ftype)",
+        {"login": login, "ftype": f_type},
+    )
+    await session.commit()
+    await on_tariff_freeze_changed(session, user_id)
+
+    tariff, netflow_note, netflow_tariff, health, _, _, _ = await _assemble_tariff_block(
+        session, user_id
+    )
+    return TariffBlockResponse(
+        message="Тариф отключён",
+        tariff=tariff,
+        netflow_note=netflow_note,
+        netflow_tariff=netflow_tariff,
+        health_check=health,
     )
 
 
@@ -693,19 +807,40 @@ async def unarchive_user(session: AsyncSession, user_id: int) -> ActionMessage:
 
 
 async def count_open_sessions(session: AsyncSession, login: str) -> int:
-    r = await session.execute(
-        text("""
-            SELECT count(1) FROM radius.radacct r
-            WHERE lower(username) = lower(:login) AND acctstoptime IS NULL
-        """),
-        {"login": login},
-    )
-    return int(r.scalar() or 0)
+    _online, open_count, _last = await RadacctDAO.get_session_summary(session, login)
+    return open_count
 
 
 async def _call_radius_proc(session: AsyncSession, sql: str, params: dict[str, Any]) -> None:
     """PostgreSQL PROCEDURE — только CALL, не SELECT."""
     await session.execute(text(sql), params)
+
+
+def _dt_iso(dt: Optional[datetime]) -> Optional[str]:
+    return dt.isoformat() if dt else None
+
+
+async def _log_tariff_action(
+    session: AsyncSession,
+    *,
+    operator: dict[str, Any],
+    request: Request,
+    user_id: int,
+    action: str,
+    details: Optional[dict[str, Any]] = None,
+) -> None:
+    await write_operator_log(
+        session,
+        operator_id=int(operator["user_id"]),
+        action=action,
+        subscriber_id=user_id,
+        page=f"/users/{user_id}",
+        request=request,
+        subject_type="tariff",
+        subject_id=user_id,
+        details=details,
+        auto_commit=False,
+    )
 
 
 async def force_disconnect(session: AsyncSession, login: str) -> ActionMessage:
@@ -720,21 +855,49 @@ async def force_disconnect(session: AsyncSession, login: str) -> ActionMessage:
     return ActionMessage(message="Сессии будут закрыты в течение минуты")
 
 
-async def unfreeze_tariff(session: AsyncSession, user_id: int) -> ActionMessage:
+async def unfreeze_tariff(
+    session: AsyncSession,
+    user_id: int,
+    operator: dict[str, Any],
+    request: Request,
+) -> ActionMessage:
     await _require_physical_subscriber(session, user_id)
     await _call_radius_proc(session, "CALL radius.unfreeze_tariff(:uid)", {"uid": user_id})
+    await _log_tariff_action(
+        session,
+        operator=operator,
+        request=request,
+        user_id=user_id,
+        action="tariff.unfreeze",
+    )
     await session.commit()
     await on_tariff_freeze_changed(session, user_id)
     return ActionMessage(message="Тариф разморожен")
 
 
-async def delete_planned_freeze(session: AsyncSession, user_id: int) -> ActionMessage:
+async def delete_planned_freeze(
+    session: AsyncSession,
+    user_id: int,
+    operator: dict[str, Any],
+    request: Request,
+) -> ActionMessage:
     await _require_physical_subscriber(session, user_id)
     fr = await UserFreezeTariffDAO.find_one_or_none(session, user_id=user_id)
     if not fr:
         raise HTTPException(status_code=404, detail="Запланированная заморозка не найдена")
     if fr.get("is_frozen"):
         raise HTTPException(status_code=400, detail="Тариф уже заморожен")
+    await _log_tariff_action(
+        session,
+        operator=operator,
+        request=request,
+        user_id=user_id,
+        action="tariff.freeze_plan.cancel",
+        details={
+            "date_freeze": _dt_iso(fr.get("date_freeze")),
+            "date_unfreeze": _dt_iso(fr.get("date_unfreeze")),
+        },
+    )
     await session.execute(delete(UserFreezeTariff).where(UserFreezeTariff.user_id == user_id))
     await session.commit()
     await on_tariff_freeze_changed(session, user_id)
@@ -746,6 +909,8 @@ async def apply_freeze(
     user_id: int,
     date_freeze: Optional[datetime],
     date_unfreeze: Optional[datetime],
+    operator: dict[str, Any],
+    request: Request,
 ) -> ActionMessage:
     await _require_physical_subscriber(session, user_id)
     now = datetime.now(timezone.utc)
@@ -765,6 +930,18 @@ async def apply_freeze(
                     filter_by={"user_id": user_id},
                     date_unfreeze=date_unfreeze,
                 )
+        await _log_tariff_action(
+            session,
+            operator=operator,
+            request=request,
+            user_id=user_id,
+            action="tariff.freeze",
+            details={
+                "immediate": True,
+                "date_freeze": _dt_iso(date_freeze),
+                "date_unfreeze": _dt_iso(date_unfreeze),
+            },
+        )
         await session.commit()
         await on_tariff_freeze_changed(session, user_id)
         return ActionMessage(message="Тариф заморожен")
@@ -788,6 +965,18 @@ async def apply_freeze(
             date_freeze=date_freeze,
             date_unfreeze=date_unfreeze,
         )
+    await _log_tariff_action(
+        session,
+        operator=operator,
+        request=request,
+        user_id=user_id,
+        action="tariff.freeze",
+        details={
+            "immediate": False,
+            "date_freeze": _dt_iso(date_freeze),
+            "date_unfreeze": _dt_iso(date_unfreeze),
+        },
+    )
     await session.commit()
     await on_tariff_freeze_changed(session, user_id)
     return ActionMessage(message="Заморозка запланирована")

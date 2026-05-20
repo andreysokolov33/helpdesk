@@ -62,6 +62,8 @@ export type ProfileTicket = {
   status_label: string;
 };
 
+export type ProfileHealthCheck = { items: string[] };
+
 export type UserProfileResponse = {
   personal: ProfilePersonal;
   online: ProfileOnline;
@@ -70,8 +72,17 @@ export type UserProfileResponse = {
   tariff: ProfileTariff | null;
   netflow_note: string | null;
   netflow_tariff: string | null;
-  health_check: { items: string[] };
+  health_check: ProfileHealthCheck;
   tickets: ProfileTicketListResponse;
+};
+
+export type TariffBlockResponse = {
+  ok: boolean;
+  message: string;
+  tariff: ProfileTariff | null;
+  netflow_note: string | null;
+  netflow_tariff: string | null;
+  health_check: ProfileHealthCheck;
 };
 
 export type ProfileTicketListResponse = {
@@ -94,10 +105,12 @@ export function fetchUserProfile(
   userId: number,
   ticketsPage = 1,
   ticketsPerPage = 10,
+  includeTickets = true,
 ): Promise<UserProfileResponse> {
   const q = new URLSearchParams({
     tickets_page: String(ticketsPage),
-    tickets_per_page: String(ticketsPerPage),
+    tickets_per_page: includeTickets ? String(ticketsPerPage) : "0",
+    include_tickets: includeTickets ? "true" : "false",
   });
   return api(`/api/v1/helpdesk/users/${userId}/profile?${q}`);
 }
@@ -133,6 +146,12 @@ export function postFreeze(userId: number, body: { date_freeze?: string | null; 
 
 export function postDisconnect(userId: number) {
   return api<{ message: string }>(`/api/v1/helpdesk/users/${userId}/disconnect-sessions`, { method: "POST" });
+}
+
+export function postRemoveEndedTariff(userId: number) {
+  return api<TariffBlockResponse>(`/api/v1/helpdesk/users/${userId}/tariff/remove-ended`, {
+    method: "POST",
+  });
 }
 
 export type FastCheckStatus = "pass" | "fail" | "warn" | "skip";

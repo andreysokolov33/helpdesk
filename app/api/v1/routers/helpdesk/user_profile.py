@@ -14,6 +14,7 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
     ActionMessage,
     FreezeRequest,
     PaymentHistoryListResponse,
+    TariffBlockResponse,
     TariffHistoryListResponse,
     ProfileTicketListResponse,
     UserProfileResponse,
@@ -63,11 +64,18 @@ async def list_user_profile_tickets(
 async def get_profile(
     user_id: int,
     tickets_page: int = Query(1, ge=1),
-    tickets_per_page: int = Query(10, ge=1, le=50),
+    tickets_per_page: int = Query(10, ge=0, le=50),
+    include_tickets: bool = Query(False),
     _user: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserProfileResponse:
-    return await svc.get_user_profile(db, user_id, tickets_page, tickets_per_page)
+    return await svc.get_user_profile(
+        db,
+        user_id,
+        tickets_page,
+        tickets_per_page,
+        include_tickets=include_tickets and tickets_per_page > 0,
+    )
 
 
 @router.post("/{user_id}/unarchive", response_model=ActionMessage)
@@ -82,29 +90,44 @@ async def unarchive(
 @router.post("/{user_id}/unfreeze", response_model=ActionMessage)
 async def unfreeze(
     user_id: int,
-    _user: dict = Depends(require_tracker_user),
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActionMessage:
-    return await svc.unfreeze_tariff(db, user_id)
+    return await svc.unfreeze_tariff(db, user_id, operator, request)
 
 
 @router.delete("/{user_id}/freeze-plan", response_model=ActionMessage)
 async def cancel_freeze_plan(
     user_id: int,
-    _user: dict = Depends(require_tracker_user),
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActionMessage:
-    return await svc.delete_planned_freeze(db, user_id)
+    return await svc.delete_planned_freeze(db, user_id, operator, request)
+
+
+@router.post("/{user_id}/tariff/remove-ended", response_model=TariffBlockResponse)
+async def remove_ended_tariff(
+    user_id: int,
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
+    db: AsyncSession = Depends(get_db),
+) -> TariffBlockResponse:
+    return await svc.remove_ended_tariff(db, user_id, operator, request)
 
 
 @router.post("/{user_id}/freeze", response_model=ActionMessage)
 async def freeze(
     user_id: int,
     body: FreezeRequest,
-    _user: dict = Depends(require_tracker_user),
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActionMessage:
-    return await svc.apply_freeze(db, user_id, body.date_freeze, body.date_unfreeze)
+    return await svc.apply_freeze(
+        db, user_id, body.date_freeze, body.date_unfreeze, operator, request
+    )
 
 
 @router.get("/{user_id}/password-reset", response_model=PasswordResetStateResponse)

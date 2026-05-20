@@ -560,6 +560,43 @@ class RadacctDAO(BaseDAO):
     model = Radacct
 
     @classmethod
+    async def get_session_summary(
+        cls, session: AsyncSession, login: str
+    ) -> tuple[bool, int, Optional[datetime]]:
+        """
+        Активные сессии; при офлайне — последняя активность по acctstarttime
+        (не ORDER BY radacctid — полный scan истории).
+        """
+        login = (login or "").strip()
+        if not login:
+            return False, 0, None
+
+        r = await session.execute(
+            text("""
+                SELECT count(*)::int AS open_count
+                FROM radius.radacct r
+                WHERE lower(r.username) = lower(:login)
+                  AND r.acctstoptime IS NULL
+            """),
+            {"login": login},
+        )
+        open_count = int(r.scalar_one() or 0)
+        if open_count > 0:
+            return True, open_count, None
+
+        r2 = await session.execute(
+            text("""
+                SELECT COALESCE(r.acctstoptime, r.acctupdatetime, r.acctstarttime) AS last_end
+                FROM radius.radacct r
+                WHERE lower(r.username) = lower(:login)
+                ORDER BY r.acctstarttime DESC NULLS LAST
+                LIMIT 1
+            """),
+            {"login": login},
+        )
+        return False, 0, r2.scalar_one_or_none()
+
+    @classmethod
     async def is_online(cls, session: AsyncSession, login: str) -> bool:
         """
         Проверяет, есть ли у пользователя активные сессии.
@@ -585,17 +622,9 @@ class RadacctDAO(BaseDAO):
     
     @classmethod
     async def get_last_session_end_time(cls, session: AsyncSession, login: str) -> Optional[datetime]:
-        """
-        Дата завершения последней успешной сессии
-        """
-        query = select(cls.model.acctstoptime).where(
-            func.lower(cls.model.username) == login.lower()
-        ).order_by(
-            desc(cls.model.acctstarttime)
-        ).limit(1)
-        
-        result = await session.execute(query)
-        return result.scalar_one_or_none()
+        """Дата завершения последней сессии (предпочтительно get_session_summary)."""
+        _online, _open, last_end = await cls.get_session_summary(session, login)
+        return last_end
     
     @classmethod
     async def count_online_by_station(cls, session: AsyncSession, station_id: int) -> int:
