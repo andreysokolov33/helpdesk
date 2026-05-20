@@ -39,3 +39,26 @@ class TrackerTicketListResponse(BaseModel):
     page: int = Field(ge=1)
     per_page: int = Field(ge=1, le=100)
     items: list[TrackerTicketListItem]
+
+
+class DeskSearchSubscriberHit(BaseModel):
+    id: int
+    login: str
+    name: str
+    email: str | None = None
+    phone: str | None = None
+    id_doc: str | None = None
+    is_juridical: int = 0
+
+
+class DeskSearchKbHit(BaseModel):
+    """Заглушка под будущий поиск по базе знаний."""
+
+    id: int
+    title: str
+    excerpt: str | None = None
+
+
+class DeskSearchResponse(BaseModel):
+    subscribers: list[DeskSearchSubscriberHit]
+    kb: list[DeskSearchKbHit] = []

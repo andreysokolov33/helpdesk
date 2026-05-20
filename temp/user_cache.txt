@@ -1,0 +1,395 @@
+================================================================================
+REDIS-КЭШ АБОНЕНТА (prefix "user") — abs-flask
+Страница: GET /users/{user_id}  (пример: /users/13807)
+Код: app/core/redis.py, app/api/v1/routers/users/user_info.py (SubscriberService)
+================================================================================
+
+1. КРАТКО
+---------
+Один абонент = один ключ Redis.
+Значение — одна JSON-строка (тип Redis: STRING), не HASH.
+Класс: RedisCache(prefix="user") → ключ user:{id}, TTL по умолчанию 24 часа.
+
+Для user_id=13807 ключ:  user:13807
+
+Абонент 13807 в тестовых заметках проекта: ФЛ (физлицо), лимитный тариф, пакет не исчерпан.
+(см. Dbeaver-query.txt: «13807 - ФЛ лимитный с полным тарифов»)
+
+
+2. ФОРМАТ ХРАНЕНИЯ В REDIS
+---------------------------
+Ключ:     user:{user_id}
+          Примеры: user:13807, user:46185
+
+Тип:      STRING (команда SET / GET)
+
+Значение: json.dumps(dict, ensure_ascii=False)
+          Сериализация в app/core/redis.py:
+          - datetime/date → ISO-строка
+          - Decimal, IPv4Address → str()
+          - остальное нестандартное → str()
+
+TTL:      ex=86400 секунд (24 часа) при каждой записи set()
+          При чтении TTL не продлевается автоматически.
+
+Пустой кэш: GET user:13807 → (nil)
+
+
+3. ЧТО НЕ ЯВЛЯЕТСЯ ЭТИМ КЭШЕМ
+------------------------------
+operator:{abs_user_id}  — кэш оператора ABS (роль, full_name), middleware auth.
+                        Другой префикс, другая структура, TTL 600 с.
+
+service:{sname}         — отдельный кэш тарифа для ЮЛ; при reset-cache user для ЮЛ
+                        может удаляться дополнительно.
+
+prefix station:*        — кэш станции, не абонента.
+
+save_in_redis() в app/utils/redis_functions.py (HSET) — универсальная утилита;
+кэш абонента на профиле /users/* использует именно RedisCache (SET + JSON).
+
+
+4. КОГДА СОЗДАЁТСЯ И ОБНОВЛЯЕТСЯ
+---------------------------------
+4.1. Первичное наполнение (полная сборка)
+    GET /users/{id} → profile_page → SubscriberService.get_subscriber_data()
+    Если кэша нет:
+      - читает users.user, ip_group, hotspot, satellite, user_details (ФЛ), jur_client_list (ЮЛ)…
+      - собирает dict через SubscriberFormatter
+      - background_tasks.add_task(cache.set, user_id, result)  — запись в Redis после ответа
+
+4.2. Чтение при наличии кэша
+    - Берётся cached из Redis
+    - balanse ВСЕГДА перечитывается из БД (users.user.balanse) и подставляется в ответ
+    - user_status / status сверяются с БД; при расхождении — правка и cache.set()
+    - для ФЛ: is_actual сверяется с user_details
+    - для ЮЛ: month_start_balance* подмешиваются в ответ (из jur_monthly_bill_v2), в кэш при dirty — set
+
+4.3. Точечные обновления (patch существующего JSON)
+    - balanse          — pays/views.py (платежи, трансферы)
+    - password, hashed_password — смена пароля
+    - login            — смена логина
+    - id_grp, station_name, gmt, hotspot*, satellite*, hub, remove_check — смена IP-группы
+    - auto_renew       — toggle_autorenew (tariffs_logic.py)
+    - traffic_update_hour, reset_local_time, reset_moskow_time — change_reset_hour
+    - is_archive, user_status, status — архивация / разархивация
+    - поля ФИО/адреса/email/mob_tel и др. — update_detailed_info (merge в кэш)
+    - remain_traffic, is_low_speed, speed — только после «сброса скорости» (tariffs.py);
+      в обычной сборке SubscriberService эти поля НЕ кладутся
+
+4.4. Полный сброс ключа (delete)
+    - POST /api/v1/users/{id}/reset-cache?prefix=user
+    - смена белого IP (add/delete) — delete, пересборка при следующем заходе
+    - freeze/unfreeze тарифа, delete planned freeze — delete + полная пересборка
+    - смена станции у абонента (stations/router) — delete по user_id
+    - часть операций с тарифами — delete
+
+4.5. Важно для «единого кэша» в другом проекте
+    Тариф (остаток МБ, скорость, freeze_date, sname…) на странице профиля
+    НЕ хранится в user:* постоянно — подгружается TariffService отдельно.
+    Исключение: после engineer-action «сброс скорости» в кэш могут попасть
+    remain_traffic, is_low_speed, speed — устаревшие, если не делать delete.
+
+
+5. ПОЛНЫЙ СПИСОК ПОЛЕЙ КЭША
+---------------------------
+Ниже — поля при «чистой» сборке SubscriberService.
+Типы — как в JSON после redis; источник — откуда берётся при первой записи.
+
+─── 5.1. Общие (ФЛ и ЮЛ) — SubscriberFormatter.format_base_data() ───
+
+| Поле               | Тип JSON    | Источник / смысл |
+|--------------------|-------------|------------------|
+| uid                | number      | users.user.id |
+| login              | string      | users.user.login |
+| password           | string      | users.user.password (открытый пароль ЛК!) |
+| hashed_password    | string      | users.user.hashed_password (bcrypt) |
+| balanse            | number      | users.user.balanse (при чтении кэша — всегда свежий из БД) |
+| auto_renew         | number      | users.user.auto_renew (0/1) |
+| traffic_update_hour| number/str  | users.user.traffic_update_hour — час сброса суточного трафика (МСК) |
+| test_user          | boolean     | users.user.test_user |
+| is_juridical       | number      | users.user.is_juridical (2 = юрлицо) |
+| is_jur             | boolean     | is_juridical == 2 (дубликат для шаблонов) |
+| create_date        | string      | users.user.create_date (unix ts → "DD.MM.YYYY HH:MM") |
+| email              | string      | users.user.email |
+| id_grp             | number      | users.user.id_grp — ID IP-группы / «станции» |
+| gmt                | number      | wifitochka.ip_group.gmt |
+| hotspot            | string      | IP хотспота (wifitochka.hotspot.ip) или "" |
+| hotspot_id         | number/null | wifitochka.hotspot.id |
+| vno                | number      | wifitochka.ip_group.vno |
+| reset_local_time   | number      | вычисляется: час сброса в поясе абонента (0–23) |
+| reset_moskow_time  | number      | час сброса по МСК (0–23) |
+| success            | boolean     | true (служебное для API) |
+| netflow_name       | string      | users.user.password_service |
+| chanel_id          | number      | wifitochka.ip_group.channel_id (опечатка в коде: chanel) |
+| satellite_name     | string      | stations.satellite.name |
+| satellite_id       | number      | satellite.id (-1 если нет) |
+| satellite_range    | string      | satellite.freq_range ('ku', 'ka', …) |
+| hub                | string      | hotspot.hub или 'schelkovo' |
+| jur_id             | number      | users.user.jur_id (0 если нет) |
+| hotspot_vno        | number      | hotspot.vno или 1 |
+| service_master     | string      | "тел - ФИО" из station_forms или "" |
+| mob_tel            | string      | users.user.mob_tel |
+| station_name       | string      | station_forms.station_name или ip_group.name |
+| remove_check       | number      | 0/1/2 — исключение из скрипта распределения IP-групп |
+| is_archive         | boolean     | users.user.archive |
+| partner_id         | number      | ip_group.id_diler |
+| user_status        | number      | users.user.user_status: 1=active, 2=frozen, 3=archived |
+| status             | string      | 'active' | 'frozen' | 'archived' (из user_status) |
+
+─── 5.2. Белые IP (добавляются в base при сборке) ───
+
+| Поле                    | Тип JSON | Смысл |
+|-------------------------|----------|-------|
+| has_white_address       | boolean  | всегда true (флаг «функция доступна») |
+| white_address           | string[] | список IP строками |
+| white_address_records   | object[] | записи users.white_ip_addresses: id, user_id, station_id, ip_address (str), date_start, date_stop, created_at, updated_at |
+
+─── 5.3. Только ФЛ (is_juridical != 2) — format_physical() ───
+
+| Поле         | Тип JSON | Источник |
+|--------------|----------|----------|
+| full_name    | string   | user_details (ФИО) или users.user.full_name |
+| address      | string   | user_details.address или склейка region,city,street,house,flat |
+| netflow_user | boolean  | всегда false для ФЛ |
+| date_birth   | string   | user_details.date_birth → "DD.MM.YYYY" или null |
+| is_actual    | boolean  | user_details.is_actual (актуальность анкеты в ЛК) |
+
+Паспортные поля (pas_series, surname, …) в базовую сборку НЕ входят,
+но после update_detailed_info могут появиться в кэше через cached_user.update().
+
+─── 5.4. Только ЮЛ (is_juridical == 2) — format_juridical() + monthly ───
+
+| Поле                          | Тип JSON | Источник |
+|-------------------------------|----------|----------|
+| short_name                    | string   | oss.jur_client_list.short_name_organization |
+| name_organization             | string   | jur_client_list.name_organization |
+| phone_organization            | string   | jur_client_list.phone_organization |
+| addr_organization             | string   | jur_client_list.addr_organization |
+| inn, kpp, ogrn, bik, bank     | string   | jur_client_list |
+| email                         | string   | может перезаписаться из jur (email_organization) |
+| netflow_user                  | boolean  | есть ли запись в netflow_users |
+| month_start_balance           | number   | oss.jur_monthly_bill_v2.balance_value (тек. месяц) |
+| month_start_balance_is_active | boolean  | jur_monthly_bill_v2.is_active |
+
+У ЮЛ нет: full_name, address, date_birth, is_actual (в базовой сборке).
+
+─── 5.5. Опциональные (не при первой сборке, могут появиться позже) ───
+
+| Поле            | Когда появляется |
+|-----------------|------------------|
+| remain_traffic  | после сброса скорости инженером (байты в radius) |
+| is_low_speed    | после сброса скорости |
+| speed           | строка скорости после сброса |
+| surname, name, …| после редактирования персональных данных (merge) |
+
+
+6. user_status И status
+-----------------------
+users.user.user_status:
+  1 (или другое не 2/3) → status = 'active'
+  2                     → status = 'frozen'
+  3                     → status = 'archived'
+
+define_user_status() в user_info.py.
+Заморозка тарифа может менять user_status в БД; кэш синхронизируется при чтении
+или через delete+rebuild после freeze/unfreeze.
+
+
+7. КАК СТРАНИЦА /users/13807 ИСПОЛЬЗУЕТ КЭШ
+------------------------------------------
+main.py profile_page:
+  user_info = SubscriberService.get_subscriber_data(13807, bg_task)
+    → Redis user:13807 или сборка из БД
+
+Из user_info в шаблон уходит subset (не весь кэш):
+  user: id, login, password, balanse, email, full_name, status, is_jur, white_address, …
+  station: id_grp, satellite_name, station_name, hotspot, vno
+  tariff: отдельно TariffService.get_user_current_tariff() — НЕ из Redis user:*
+
+Отдельные API (статистика, чат) читают user:* в основном для login, is_jur, gmt.
+
+
+8. ПРИМЕР КЭША ДЛЯ user:13807 (ФЛ, лимитный, активный)
+------------------------------------------------------
+Реальные значения в вашем Redis могут отличаться; структура и набор ключей — такие.
+Пароль в примере замаскирован.
+
+Ключ Redis:
+  user:13807
+
+Значение (форматированный JSON):
+
+{
+  "uid": 13807,
+  "login": "example_login",
+  "password": "***",
+  "hashed_password": "$2b$14$..............................",
+  "balanse": 1520.50,
+  "auto_renew": 1,
+  "traffic_update_hour": 0,
+  "test_user": false,
+  "is_juridical": 0,
+  "is_jur": false,
+  "create_date": "15.03.2019 14:22",
+  "email": "user@example.com",
+  "id_grp": 42,
+  "gmt": 3,
+  "hotspot": "10.20.30.1",
+  "hotspot_id": 7,
+  "vno": 1,
+  "reset_local_time": 0,
+  "reset_moskow_time": 0,
+  "success": true,
+  "netflow_name": "",
+  "chanel_id": 3,
+  "satellite_name": "Ямал-401",
+  "satellite_id": 5,
+  "satellite_range": "ku",
+  "hub": "schelkovo",
+  "jur_id": 0,
+  "hotspot_vno": 1,
+  "service_master": "+79001234567 - Иванов И.И.",
+  "mob_tel": "+79001234567",
+  "station_name": "Станция Север-12",
+  "remove_check": 0,
+  "is_archive": false,
+  "partner_id": 100,
+  "user_status": 1,
+  "status": "active",
+  "has_white_address": true,
+  "white_address": ["185.123.45.67"],
+  "white_address_records": [
+    {
+      "id": 901,
+      "user_id": 13807,
+      "station_id": 42,
+      "ip_address": "185.123.45.67",
+      "date_start": "2024-01-10T12:00:00+00:00",
+      "date_stop": null,
+      "created_at": "2024-01-10T12:00:00+00:00",
+      "updated_at": "2024-01-10T12:00:00+00:00"
+    }
+  ],
+  "full_name": "Иванов Иван Иванович",
+  "address": "Московская обл., г. Подольск, ул. Ленина, д. 1, кв. 10",
+  "netflow_user": false,
+  "date_birth": "01.05.1985",
+  "is_actual": true
+}
+
+TTL на ключе: ~86400 (секунд до истечения), уменьшается со временем после set.
+
+
+9. ПРИМЕР КЭША ДЛЯ ЮЛ (для сравнения, user_id=1881)
+----------------------------------------------------
+{
+  "uid": 1881,
+  "login": "org_login",
+  "password": "***",
+  "hashed_password": "$2b$14$...",
+  "balanse": 50000.00,
+  "auto_renew": 0,
+  "traffic_update_hour": 3,
+  "test_user": false,
+  "is_juridical": 2,
+  "is_jur": true,
+  "create_date": "10.01.2018 09:00",
+  "email": "buh@company.ru",
+  "id_grp": 15,
+  "gmt": 5,
+  "hotspot": "10.1.2.3",
+  "hotspot_id": 2,
+  "vno": 2,
+  "reset_local_time": 5,
+  "reset_moskow_time": 3,
+  "success": true,
+  "netflow_name": "",
+  "chanel_id": 1,
+  "satellite_name": "Express-AMU1",
+  "satellite_id": 2,
+  "satellite_range": "ku",
+  "hub": "schelkovo",
+  "jur_id": 555,
+  "hotspot_vno": 2,
+  "service_master": "",
+  "mob_tel": "+74951234567",
+  "station_name": "ЮЛ Хаб-1",
+  "remove_check": 0,
+  "is_archive": false,
+  "partner_id": 50,
+  "user_status": 1,
+  "status": "active",
+  "has_white_address": true,
+  "white_address": [],
+  "white_address_records": [],
+  "short_name": "ООО Ромашка",
+  "name_organization": "Общество с ограниченной ответственностью «Ромашка»",
+  "phone_organization": "+74951234567",
+  "addr_organization": "г. Москва, ул. Примерная, 1",
+  "inn": "7701234567",
+  "kpp": "770101001",
+  "ogrn": "1027700132195",
+  "bik": "044525225",
+  "bank": "ПАО Сбербанк",
+  "netflow_user": false,
+  "month_start_balance": 12000.00,
+  "month_start_balance_is_active": true
+}
+
+
+10. КОМАНДЫ ДЛЯ ПРОСМОТРА В REDIS
+---------------------------------
+  redis-cli GET user:13807
+  redis-cli TTL user:13807
+  redis-cli --raw GET user:13807 | jq .
+
+Пересборка с UI профиля: кнопка сброса кэша → POST /api/v1/users/13807/reset-cache?prefix=user
+Следующий заход на /users/13807 создаст ключ заново.
+
+
+11. РЕКОМЕНДАЦИИ ДЛЯ «ЕДИНОГО КЭША» В ДРУГОМ ПРОЕКТЕ
+----------------------------------------------------
+Если нужен один ключ на абонента по образцу abs-flask:
+
+  a) Ключ: user:{id}, значение: JSON object (STRING), TTL 24h.
+
+  b) Минимальный обязательный набор (ядро):
+     uid, login, balanse, id_grp, gmt, hotspot, vno, station_name,
+     is_jur / is_juridical, user_status, status, email, mob_tel
+
+  c) Разделение ФЛ/ЮЛ:
+     - общие поля в корне;
+     - ФЛ: full_name, address, date_birth, is_actual;
+     - ЮЛ: short_name, inn, … + month_start_balance*.
+
+  d) Не смешивать в user:* тяжёлый тарифный срез (остаток МБ, freeze_date, sname) —
+     в abs-flask он живёт в TariffService; иначе кэш раздувается и устаревает.
+
+  e) balanse: либо не кэшировать (читать всегда из БД), либо обновлять при каждой
+     финансовой операции — как в pays/views.py.
+
+  f) Пароли в кэше — осознанный риск abs-flask (нужны для отображения в профиле);
+     в новом проекте лучше не хранить password/hashed_password в Redis.
+
+  g) Инвалидация: delete при структурных изменениях (станция, белый IP, тариф freeze);
+     patch — при точечных (login, auto_renew, balanse).
+
+  h) Единообразие: не использовать HSET user:{id} для тех же данных, если основной
+     путь — JSON STRING (иначе два формата одного префикса).
+
+
+12. СВЯЗАННЫЕ ФАЙЛЫ В РЕПОЗИТОРИИ
+---------------------------------
+  app/core/redis.py                          — RedisCache
+  app/api/v1/routers/users/user_info.py      — SubscriberService, SubscriberFormatter
+  app/web/routers/main.py                      — GET /users/{user_id}
+  app/api/v1/routers/pays/views.py             — обновление balanse
+  app/api/v1/routers/users/tariffs_logic.py    — auto_renew, reset hour
+  app/api/v1/routers/users/tariffs.py          — delete/rebuild, speed fields
+  app/api/v1/routers/users/router.py           — reset-cache, white IP delete
+  app/middleware/auth_middleware.py            — operator:* (не user:*)
+
+================================================================================
+Конец документа
+================================================================================

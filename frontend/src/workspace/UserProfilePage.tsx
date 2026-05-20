@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   deleteFreezePlan,
@@ -14,7 +14,9 @@ import {
 } from "@/api/userProfile";
 import { copyPhone, formatPhoneDisplay } from "@/utils/phone";
 import { AuthPageHelp } from "@/components/AuthPageHelp";
+import FastCheckPanel from "@/components/FastCheckPanel";
 import { PasswordResetModal } from "@/components/PasswordResetModal";
+import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 import { categoryBadgeClass, supportLineBadgeClass, supportLineLabel } from "@/utils/ticketLabels";
 
 type ModalKind = "unfreeze" | "unarchive" | "disconnect" | "freeze" | "password_reset" | null;
@@ -142,8 +144,10 @@ function TariffCard({
   }
 
   const isFrozen = tariff?.state === "frozen";
+  const canManageTariff = isJuridical === 0;
   const freezeLabel = tariff?.can_unfreeze ? "Разморозить" : "Заморозить";
-  const freezeEnabled = Boolean(tariff?.can_unfreeze || tariff?.can_freeze);
+  const freezeEnabled =
+    canManageTariff && Boolean(tariff?.can_unfreeze || tariff?.can_freeze);
   const freezeHandler = tariff?.can_unfreeze ? onUnfreeze : onFreeze;
   const sessionsLabel =
     openSessionsCount > 0 ? `Закрыть сессии (${openSessionsCount})` : "Закрыть сессии";
@@ -153,14 +157,14 @@ function TariffCard({
     <div className="card up-card up-tariff up-tariff-main">
       <div className="up-tariff-head">
         <div className="ct up-tariff-title">Тарифный план</div>
-        {tariff?.can_cancel_planned_freeze ? (
+        {canManageTariff && tariff?.can_cancel_planned_freeze ? (
           <button type="button" className="up-tariff-actions-btn" onClick={onCancelPlan}>
             Действия
           </button>
         ) : null}
       </div>
 
-      {!isFrozen ? (
+      {canManageTariff && !isFrozen ? (
         <div className="up-tariff-toolbar">
           <button
             type="button"
@@ -209,9 +213,9 @@ function TariffCard({
                 <span className="up-frozen-unfreeze-missing">не установлена</span>
               )}
             </div>
-            {tariff.can_unfreeze ? (
+            {canManageTariff && tariff.can_unfreeze ? (
               <button type="button" className="up-frozen-unfreeze-btn" onClick={onUnfreeze}>
-                Разморозить сейчас
+                Разморозить тариф
               </button>
             ) : null}
           </div>
@@ -350,12 +354,14 @@ export default function UserProfilePage() {
   const [unfreezeDate, setUnfreezeDate] = useState("");
   const [showUnfreezeDate, setShowUnfreezeDate] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant: ToastVariant } | null>(null);
   const [ticketsPage, setTicketsPage] = useState(1);
   const [tickets, setTickets] = useState<ProfileTicket[]>([]);
   const [ticketsTotal, setTicketsTotal] = useState(0);
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [ticketsErr, setTicketsErr] = useState<string | null>(null);
+  const profileWrapRef = useRef<HTMLDivElement>(null);
+  const [statsHeight, setStatsHeight] = useState<number | null>(null);
 
   const ticketsPerPage = 10;
   const ticketsTotalPages = Math.max(1, Math.ceil(ticketsTotal / ticketsPerPage));
@@ -383,6 +389,25 @@ export default function UserProfilePage() {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    const el = profileWrapRef.current;
+    if (!el) return;
+
+    const sync = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) setStatsHeight(Math.round(h));
+    };
+
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    window.addEventListener("resize", sync);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", sync);
+    };
+  }, [data, loading]);
+
   const loadTicketsPage = useCallback(
     (page: number) => {
       if (!Number.isFinite(uid)) return;
@@ -408,11 +433,14 @@ export default function UserProfilePage() {
     setBusy(true);
     try {
       const r = await fn();
-      setToast(r.message);
+      setToast({ message: r.message, variant: "success" });
       setModal(null);
       reload();
     } catch (e: unknown) {
-      setToast(e instanceof Error ? e.message : "Ошибка");
+      setToast({
+        message: e instanceof Error ? e.message : "Ошибка",
+        variant: "error",
+      });
     } finally {
       setBusy(false);
     }
@@ -467,18 +495,9 @@ export default function UserProfilePage() {
           </div>
         </div>
 
-        {toast ? (
-          <div className="up-toast" role="status">
-            {toast}
-            <button type="button" aria-label="Закрыть" onClick={() => setToast(null)}>
-              ×
-            </button>
-          </div>
-        ) : null}
-
         <div className="up-stack">
         <div className="up-grid">
-            <div className="up-profile-wrap">
+            <div ref={profileWrapRef} className="up-profile-wrap">
               <div className="card up-card up-personal">
                 <div className="ct">Персональные данные</div>
                 <div className="up-personal-details">
@@ -531,7 +550,7 @@ export default function UserProfilePage() {
                 </div>
               </div>
               <div className="up-aside-bottom">
-                {p.user_status === 3 ? (
+                {p.user_status === 3 && p.is_juridical === 0 ? (
                   <button
                     type="button"
                     className="up-btn up-btn-restore up-reset-pwd"
@@ -539,7 +558,7 @@ export default function UserProfilePage() {
                   >
                     Восстановить УЗ
                   </button>
-                ) : (
+                ) : p.user_status !== 3 ? (
                   <button
                     type="button"
                     className="up-btn sec up-reset-pwd"
@@ -547,11 +566,14 @@ export default function UserProfilePage() {
                   >
                     Сменить пароль
                   </button>
-                )}
+                ) : null}
                 <TariffSideColumn balance={data.balance} authPage={p.auth_page} />
               </div>
             </div>
-            <div className="card up-card up-stats">
+            <div
+              className="card up-card up-stats"
+              style={statsHeight ? { height: statsHeight, maxHeight: statsHeight } : undefined}
+            >
               <div className="ct">Статистика</div>
               <select
                 className="up-select"
@@ -566,11 +588,10 @@ export default function UserProfilePage() {
               </select>
               <div className="up-stub">
                 {report === "check" ? (
-                  <ul className="up-check-list">
-                    {data.health_check.items.map((t) => (
-                      <li key={t}>{t}</li>
-                    ))}
-                  </ul>
+                  <FastCheckPanel
+                    userId={p.user_id}
+                    onDisconnect={() => postDisconnect(p.user_id).then(() => reload())}
+                  />
                 ) : (
                   <p className="up-muted">Раздел «{REPORTS.find((x) => x.id === report)?.label}» — скоро</p>
                 )}
@@ -675,7 +696,7 @@ export default function UserProfilePage() {
               busy={busy}
               setBusy={setBusy}
               onClose={() => setModal(null)}
-              onError={(msg) => setToast(msg)}
+              onError={(msg) => setToast({ message: msg, variant: "error" })}
             />
           ) : (
           <div className="up-modal" onClick={(e) => e.stopPropagation()}>
@@ -693,7 +714,7 @@ export default function UserProfilePage() {
                     disabled={busy}
                     onClick={() => runAction(() => postUnfreeze(uid))}
                   >
-                    Разморозить
+                    Разморозить тариф
                   </button>
                 </div>
               </>
@@ -810,6 +831,14 @@ export default function UserProfilePage() {
           </div>
           )}
         </div>
+      ) : null}
+
+      {toast ? (
+        <ToastNotice
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+        />
       ) : null}
     </div>
   );

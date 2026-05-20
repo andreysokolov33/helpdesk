@@ -1443,3 +1443,79 @@ class UserRegistrations(Base):
     registered_by = mapped_column(Integer, nullable=True)
     person_type = mapped_column(String, nullable=True)
     pasport = mapped_column(String, nullable=False)
+
+
+class FastCheckDatabase(Base):
+    """Справочник быстрой проверки абонента (users.fast_check_database)."""
+
+    __tablename__ = "fast_check_database"
+    __table_args__ = (
+        UniqueConstraint("test_code", "variant", name="fast_check_database_test_variant_uq"),
+        CheckConstraint("priority > 0", name="fast_check_database_priority_positive"),
+        Index("ix_fast_check_database_priority_active", "priority"),
+        Index("ix_fast_check_database_test_code", "test_code"),
+        {
+            "schema": "users",
+            "comment": "Шаги быстрой проверки: код теста, подпись, HTML-инструкция при сбое",
+        },
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    test_code: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="Код проверки в приложении"
+    )
+    variant: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+        comment="Уточнение: 0 — по умолчанию; иначе числовой подтип сбоя",
+    )
+    check_label: Mapped[str] = mapped_column(
+        String(128), nullable=False, comment="Подпись шага в списке проверок"
+    )
+    actions_html: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="HTML: действия оператора при сбое"
+    )
+    priority: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, comment="Порядок выполнения (меньше — раньше)"
+    )
+    stop_on_fail: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), comment="Остановить цепочку при сбое"
+    )
+    match_flags: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True, comment="Доп. условия сопоставления (резерв)"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(True), nullable=False, server_default=text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class PasswordResetCode(Base):
+    __tablename__ = "password_reset_code"
+    __table_args__ = {"schema": "users"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('users.user.id', ondelete="CASCADE"), nullable=False
+    )
+    operator_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.skystream_users.id", ondelete="RESTRICT"), nullable=False
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    code_salt: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    used_ip: Mapped[Optional[str]] = mapped_column(INET)
+    deactivation_reason: Mapped[Optional[str]] = mapped_column(String(32))
+    deactivated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    failed_attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))

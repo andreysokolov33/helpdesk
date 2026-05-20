@@ -10,5 +10,6 @@ from .task_manager import *
 from .traffic import *
 from .users import * 
 from .feedback import *
+from .logs import *
 
 __all__ = []

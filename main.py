@@ -51,11 +51,13 @@ if __name__ == "__main__":
             access_log=False,
         )
     else:  # DEV
+        reload_dirs = [str(BASE_DIR / "app"), str(BASE_DIR)]
         uvicorn.run(
             "main:app",
             host=settings.HOST,
             port=settings.PORT,
             reload=True,
+            reload_dirs=reload_dirs,
             proxy_headers=settings.PROXY_HEADERS,
             forwarded_allow_ips="*",
             log_level="info",

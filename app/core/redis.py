@@ -40,6 +40,15 @@ class RedisCache:
         except Exception as e:
             logger.error(f"REDIS CACHE SET ERROR: {e}") # Не глотайте ошибки!
 
+    async def patch(self, key: Any, updates: dict, ttl: int = 3600 * 24) -> bool:
+        """Merge updates в существующий JSON; False если ключа нет."""
+        cached = await self.get(key)
+        if not cached:
+            return False
+        cached.update(updates)
+        await self.set(key, cached, ttl=ttl)
+        return True
+
     async def delete(self, key: Any):
         """Удалить один ключ."""
         try:

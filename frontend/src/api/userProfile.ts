@@ -135,6 +135,34 @@ export function postDisconnect(userId: number) {
   return api<{ message: string }>(`/api/v1/helpdesk/users/${userId}/disconnect-sessions`, { method: "POST" });
 }
 
+export type FastCheckStatus = "pass" | "fail" | "warn" | "skip";
+
+export type FastCheckStep = {
+  test_code: string;
+  variant: number;
+  check_label: string;
+  status: FastCheckStatus;
+  detail?: string | null;
+  actions_html?: string | null;
+  stop_chain: boolean;
+};
+
+export type ManagerContact = {
+  full_name?: string | null;
+  phones: string[];
+  emails: string[];
+};
+
+export type FastCheckResponse = {
+  steps: FastCheckStep[];
+  stopped_at?: string | null;
+  manager_contacts: ManagerContact[];
+};
+
+export function postFastCheck(userId: number): Promise<FastCheckResponse> {
+  return api<FastCheckResponse>(`/api/v1/helpdesk/users/${userId}/fast-check`, { method: "POST" });
+}
+
 export type PasswordResetState = {
   has_ppp_sessions: boolean;
   active_code: string | null;

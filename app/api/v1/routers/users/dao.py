@@ -115,6 +115,21 @@ class UsersDAO(BaseDAO):
         name = (row[0] or "").strip()
         return name if name else None
 
+    @classmethod
+    async def search_subscribers(
+        cls,
+        session: AsyncSession,
+        pattern: str,
+        limit: int = 15,
+    ) -> List[Dict[str, Any]]:
+        """
+        Поиск абонентов по ФИО/организации, телефону, email, паспорту, ИНН, id, логину.
+        Регистронезависимый (lower). Несколько целевых запросов для скорости.
+        """
+        from app.api.v1.routers.users.subscriber_search import run_subscriber_search
+
+        return await run_subscriber_search(session, pattern, limit=limit)
+
 
 class UserArchiveDAO(BaseDAO):
     model = UserArchive
@@ -214,7 +229,22 @@ class UserFreezeTariffDAO(BaseDAO):
         rec, rus_reason, short_reason = row[0], row[1], row[2]
         d = _model_to_dict(rec)
         if d is not None:
-            d['reason_short'] = rus_reason if rus_reason else short_reason
+            d["reason_short"] = rus_reason if rus_reason else short_reason
+            if not d["reason_short"]:
+                code = d.get("reason_code")
+                if code is None:
+                    raw = d.get("reason")
+                    if raw is not None and str(raw).strip().isdigit():
+                        code = int(str(raw).strip())
+                if code is not None:
+                    r2 = await session.execute(
+                        select(UserFreezeReasonCode.rus_reason, UserFreezeReasonCode.short_reason).where(
+                            UserFreezeReasonCode.id == code
+                        )
+                    )
+                    row2 = r2.one_or_none()
+                    if row2:
+                        d["reason_short"] = row2[0] or row2[1]
         return d
 
     @classmethod

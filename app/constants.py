@@ -35,6 +35,13 @@ STATUS_DICT = {
     'not_resolved': 'Нерешён',
 }
 
+# Линия техподдержки (users.tracker_tickets.support_line)
+SUPPORT_LINE_DISPLAY = {
+    1: 'Контактный сервис',
+    2: 'Инженеры',
+    3: 'Партнёр',
+}
+
 # Для карточки тикета и списка: компактные названия статусов
 STATUS_DISPLAY = {
     'pending': 'Ожидает',

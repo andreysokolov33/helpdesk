@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ProfilePersonal(BaseModel):
+    user_id: int
+    name: str
+    login: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    id_doc: Optional[str] = None
+    is_juridical: int
+    entity_label: str
+    user_status: Optional[int] = None
+    status_label: str
+    station_name: Optional[str] = None
+    auth_page: Optional[str] = None
+
+
+class ProfileOnline(BaseModel):
+    is_online: bool
+    last_session_end: Optional[datetime] = None
+    last_session_end_label: Optional[str] = None
+
+
+class ProfileTariffActive(BaseModel):
+    state: Literal["active", "inactive", "frozen", "planned_freeze"]
+    tariff_name: str
+    real_type: Optional[str] = None
+    is_active: bool
+    rate_up: str = "—"
+    rate_down: str = "—"
+    speed_unlimited: bool = False
+    remain_traffic_mb: float = 0
+    full_packet_mb: float = 0
+    jur_main_packet_mb: Optional[float] = None
+    jur_dop_packet_mb: Optional[float] = None
+    overrun_mb: Optional[float] = None
+    traffic_renew_count: Optional[int] = None
+    msk_reset: Optional[str] = None
+    local_reset: Optional[str] = None
+    valid_date_label: Optional[str] = None
+    disconnect_at_label: Optional[str] = None
+    planned_freeze_at: Optional[str] = None
+    frozen_at: Optional[str] = None
+    unfreeze_at: Optional[str] = None
+    frozen_remaining_label: Optional[str] = None
+    freeze_reason: Optional[str] = None
+    can_freeze: bool = False
+    can_unfreeze: bool = False
+    can_cancel_planned_freeze: bool = False
+    can_disconnect_sessions: bool = True
+
+
+class ProfileTicket(BaseModel):
+    id: int
+    title: str
+    category: Optional[str] = None
+    category_theme: Optional[str] = None
+    date_of_create: datetime
+    date_of_close: Optional[datetime] = None
+    assigned_to_role: Optional[str] = None
+    support_line: int
+    support_line_label: str
+    status: str
+    status_label: str
+
+
+class ProfileHealthCheck(BaseModel):
+    items: list[str] = Field(default_factory=list)
+
+
+class ProfileTicketListResponse(BaseModel):
+    total: int = 0
+    page: int = Field(default=1, ge=1)
+    per_page: int = Field(default=10, ge=1, le=50)
+    items: list[ProfileTicket] = Field(default_factory=list)
+
+
+class UserProfileResponse(BaseModel):
+    personal: ProfilePersonal
+    online: ProfileOnline
+    open_sessions_count: int = 0
+    balance: float
+    tariff: Optional[ProfileTariffActive] = None
+    netflow_note: Optional[str] = None
+    netflow_tariff: Optional[str] = None
+    health_check: ProfileHealthCheck = Field(default_factory=ProfileHealthCheck)
+    tickets: ProfileTicketListResponse = Field(default_factory=ProfileTicketListResponse)
+
+
+class FreezeRequest(BaseModel):
+    date_freeze: Optional[datetime] = None
+    date_unfreeze: Optional[datetime] = None
+
+
+class ActionMessage(BaseModel):
+    ok: bool = True
+    message: str
