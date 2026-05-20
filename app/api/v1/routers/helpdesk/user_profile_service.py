@@ -717,7 +717,7 @@ async def get_user_profile(
         )
     else:
         tariff_res = await _load_tariff_bundle(session, user_id, personal)
-        tickets = ProfileTicketListResponse(total=0, page=1, per_page=tickets_per_page, items=[])
+        tickets = ProfileTicketListResponse(total=0, page=1, per_page=1, items=[])
 
     online = _online_from_radacct_summary(is_online, last_end)
     tariff, netflow_note, netflow_tariff = tariff_res

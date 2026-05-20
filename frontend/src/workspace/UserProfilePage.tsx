@@ -701,8 +701,14 @@ export default function UserProfilePage() {
             <p className="up-muted">Загрузка…</p>
           ) : ticketsErr ? (
             <p className="up-muted up-error">{ticketsErr}</p>
-          ) : tickets.length === 0 ? (
-            <p className="up-muted">Обращений не найдено</p>
+          ) : ticketsTotal === 0 ? (
+            <div className="up-tickets-empty" role="status">
+              <div className="up-tickets-empty__title">Обращений пока не было</div>
+              <p className="up-tickets-empty__text">
+                У этого абонента ещё не создавались обращения в техническую поддержку. Новое
+                обращение можно зарегистрировать по кнопке «Регистрация звонка» выше.
+              </p>
+            </div>
           ) : (
             <>
               <table className="dt up-tickets">

@@ -910,18 +910,22 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 .up-balance-val.bad{color:var(--red)}
 .up-actions{display:flex;flex-wrap:wrap;gap:6px}
 .up-tariff-title{margin-bottom:10px}
-.up-tariff-empty{
+.up-tariff-empty,
+.up-tickets-empty{
   margin-top:4px;padding:16px 18px;border-radius:10px;text-align:center;
   background:var(--bg);border:1.5px solid var(--ln)
 }
-.up-tariff-empty__title{
+.up-tariff-empty__title,
+.up-tickets-empty__title{
   margin:0 0 8px;font-size:15px;font-weight:800;color:var(--ink);letter-spacing:.2px
 }
-.up-tariff-empty__text{
+.up-tariff-empty__text,
+.up-tickets-empty__text{
   margin:0;font-size:13px;font-weight:600;line-height:1.55;color:var(--i2)
 }
 .up-tariff-empty__text strong{color:var(--ink);font-weight:800}
-[data-theme="dark"] .up-tariff-empty{
+[data-theme="dark"] .up-tariff-empty,
+[data-theme="dark"] .up-tickets-empty{
   background:rgba(255,255,255,.04);border-color:var(--lm)
 }
 .up-tariff-ended-banner{
