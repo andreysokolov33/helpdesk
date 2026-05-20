@@ -81,6 +81,42 @@ class ProfileTicketListResponse(BaseModel):
     items: list[ProfileTicket] = Field(default_factory=list)
 
 
+class PaymentHistoryItem(BaseModel):
+    msk_date: datetime
+    msk_date_label: str
+    state: str
+    state_label: str
+    payment_type: str
+    type_label: str
+    amount: float
+
+
+class PaymentHistoryListResponse(BaseModel):
+    total: int = 0
+    page: int = Field(default=1, ge=1)
+    per_page: int = Field(default=10, ge=1, le=50)
+    items: list[PaymentHistoryItem] = Field(default_factory=list)
+
+
+class TariffHistoryItem(BaseModel):
+    activated_at: datetime
+    activated_at_label: str
+    row_kind: Literal["tariff", "dop"]
+    type_label: str
+    type_hint: Optional[str] = None
+    active_tariff: bool = False
+    deactivation_at_label: Optional[str] = None
+    price: Optional[float] = None
+    price_label: str
+
+
+class TariffHistoryListResponse(BaseModel):
+    total: int = 0
+    page: int = Field(default=1, ge=1)
+    per_page: int = Field(default=10, ge=1, le=50)
+    items: list[TariffHistoryItem] = Field(default_factory=list)
+
+
 class UserProfileResponse(BaseModel):
     personal: ProfilePersonal
     online: ProfileOnline

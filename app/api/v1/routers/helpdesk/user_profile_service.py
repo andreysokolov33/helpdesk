@@ -11,6 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.helpdesk.user_profile_schemas import (
     ActionMessage,
+    PaymentHistoryItem,
+    PaymentHistoryListResponse,
+    TariffHistoryItem,
+    TariffHistoryListResponse,
     ProfileHealthCheck,
     ProfileOnline,
     ProfilePersonal,
@@ -22,7 +26,11 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
 from app.api.v1.routers.helpdesk.user_profile_utils import (
     bytes_to_mb,
     coalesce_int,
+    PAY_STATE_LABELS,
+    PAY_TYPE_LABELS,
     format_dt_msk,
+    format_dop_type_label,
+    format_money_ru,
     format_mb,
     format_seconds_remaining,
     format_speed_display,
@@ -427,6 +435,176 @@ async def load_user_tickets_page(
     )
     items = [_row_to_profile_ticket(row) for row in r.mappings().all()]
     return ProfileTicketListResponse(total=total, page=page, per_page=per_page, items=items)
+
+
+def _row_to_payment_item(row: Any) -> PaymentHistoryItem:
+    msk = row["msk_date"]
+    if msk is not None and msk.tzinfo is None:
+        msk = msk.replace(tzinfo=timezone.utc)
+    state = str(row["state"] or "in")
+    pay_type = str(row["payment_type"] or "")
+    amount = float(row["amount"] or 0)
+    return PaymentHistoryItem(
+        msk_date=msk,
+        msk_date_label=format_dt_msk(msk, time_sep=" ") or "—",
+        state=state,
+        state_label=PAY_STATE_LABELS.get(state, state),
+        payment_type=pay_type,
+        type_label=PAY_TYPE_LABELS.get(pay_type, pay_type or "—"),
+        amount=amount,
+    )
+
+
+async def load_user_payments_page(
+    session: AsyncSession,
+    user_id: int,
+    page: int = 1,
+    per_page: int = 10,
+) -> PaymentHistoryListResponse:
+    total = int(
+        (
+            await session.execute(
+                text(
+                    """
+                    SELECT count(*)::int
+                    FROM payments.pays p
+                    WHERE p.uid = :uid
+                    """
+                ),
+                {"uid": user_id},
+            )
+        ).scalar_one()
+        or 0
+    )
+    offset = (page - 1) * per_page
+    r = await session.execute(
+        text(
+            """
+            SELECT
+                COALESCE(
+                    CASE WHEN p.date_in > 0
+                        THEN timezone('Europe/Moscow', to_timestamp(p.date_in))
+                        ELSE NULL
+                    END,
+                    p.date_in_tz
+                ) AS msk_date,
+                p.state::text AS state,
+                p.type AS payment_type,
+                p.amount AS amount
+            FROM payments.pays p
+            WHERE p.uid = :uid
+            ORDER BY msk_date DESC NULLS LAST
+            LIMIT :limit OFFSET :offset
+            """
+        ),
+        {"uid": user_id, "limit": per_page, "offset": offset},
+    )
+    items = [_row_to_payment_item(row) for row in r.mappings().all()]
+    return PaymentHistoryListResponse(total=total, page=page, per_page=per_page, items=items)
+
+
+_TARIFF_HISTORY_COUNT = """
+    SELECT (
+        (SELECT count(*)::int FROM service.activated_services WHERE uid = :uid)
+        + (SELECT count(*)::int FROM service.activated_dops WHERE uid = :uid)
+    ) AS total
+"""
+
+_TARIFF_HISTORY_PAGE = """
+    WITH combined AS (
+        SELECT
+            t.activation_timestamp AS activated_at,
+            'tariff'::text AS row_kind,
+            s.real_type::text AS real_type,
+            t.deactivation_date,
+            t.packet_size,
+            t.days,
+            t.price,
+            NULL::text AS dop_name,
+            t.sname
+        FROM service.activated_services t
+        LEFT JOIN service.service s ON s.sname = t.sname
+        WHERE t.uid = :uid
+        UNION ALL
+        SELECT
+            ad.activation_timestamp::timestamptz AS activated_at,
+            'dop'::text AS row_kind,
+            NULL::text AS real_type,
+            NULL::timestamptz AS deactivation_date,
+            NULL::bigint AS packet_size,
+            NULL::int AS days,
+            ad.price,
+            ad.dop_name,
+            NULL::text AS sname
+        FROM service.activated_dops ad
+        WHERE ad.uid = :uid
+    )
+    SELECT * FROM combined
+    ORDER BY activated_at DESC NULLS LAST
+    LIMIT :limit OFFSET :offset
+"""
+
+
+def _tariff_type_label(real_type: Optional[str]) -> str:
+    if real_type == "default" or not real_type:
+        return "Лимитный"
+    return "Безлимитный"
+
+
+def _row_to_tariff_history_item(row: Any) -> TariffHistoryItem:
+    activated = row["activated_at"]
+    if activated is not None and activated.tzinfo is None:
+        activated = activated.replace(tzinfo=timezone.utc)
+    kind = row["row_kind"]
+    price_val = row.get("price")
+    price = float(price_val) if price_val is not None else None
+    deact = row.get("deactivation_date")
+    if deact is not None and hasattr(deact, "tzinfo") and deact.tzinfo is None:
+        deact = deact.replace(tzinfo=timezone.utc)
+    if kind == "dop":
+        type_label, type_hint = format_dop_type_label(row.get("dop_name"))
+        active_tariff = False
+        deact_label = "—"
+    else:
+        type_label = _tariff_type_label(row.get("real_type"))
+        type_hint = None
+        active_tariff = deact is None
+        deact_label = (
+            "Активный тариф"
+            if active_tariff
+            else (format_dt_msk(deact, time_sep=" ", short_year=True) or "—")
+        )
+
+    return TariffHistoryItem(
+        activated_at=activated,
+        activated_at_label=format_dt_msk(activated, time_sep=" ", short_year=True) or "—",
+        row_kind=kind,
+        type_label=type_label,
+        type_hint=type_hint,
+        active_tariff=active_tariff,
+        deactivation_at_label=deact_label,
+        price=price,
+        price_label=format_money_ru(price),
+    )
+
+
+async def load_user_tariff_history_page(
+    session: AsyncSession,
+    user_id: int,
+    page: int = 1,
+    per_page: int = 10,
+) -> TariffHistoryListResponse:
+    total = int(
+        (await session.execute(text(_TARIFF_HISTORY_COUNT), {"uid": user_id})).scalar_one()
+        or 0
+    )
+    offset = (page - 1) * per_page
+    r = await session.execute(
+        text(_TARIFF_HISTORY_PAGE),
+        {"uid": user_id, "limit": per_page, "offset": offset},
+    )
+    items = [_row_to_tariff_history_item(row) for row in r.mappings().all()]
+    return TariffHistoryListResponse(total=total, page=page, per_page=per_page, items=items)
 
 
 def _build_health_check(personal: ProfilePersonal, online: ProfileOnline, tariff: Optional[ProfileTariffActive], balance: float) -> ProfileHealthCheck:

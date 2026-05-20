@@ -12,6 +12,21 @@ from zoneinfo import ZoneInfo
 
 _MSK = ZoneInfo("Europe/Moscow")
 
+PAY_TYPE_LABELS: dict[str, str] = {
+    "qr": "QR",
+    "yandex": "ЮMoney",
+    "sberbank": "Сбербанк",
+    "gazprom": "Газпромбанк",
+    "alfa": "Альфа-Банк",
+}
+
+PAY_STATE_LABELS: dict[str, str] = {
+    "payed": "Оплачено",
+    "canceled": "Отменено",
+    "in": "В обработке",
+    "refund": "Возврат",
+}
+
 
 def bytes_to_mb(value: int | None) -> float:
     if value is None:
@@ -129,12 +144,44 @@ def jur_traffic_overrun_mb(
     return None
 
 
-def format_dt_msk(dt: datetime | None, *, time_sep: str = ", ") -> str | None:
+def format_dt_msk(dt: datetime | None, *, time_sep: str = ", ", short_year: bool = False) -> str | None:
     if not dt:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(_MSK).strftime(f"%d.%m.%Y{time_sep}%H:%M")
+    local = dt.astimezone(_MSK)
+    if short_year:
+        return local.strftime(f"%d.%m.%y{time_sep}%H:%M")
+    return local.strftime(f"%d.%m.%Y{time_sep}%H:%M")
+
+
+def format_money_ru(amount: float | None) -> str:
+    """Сумма в ₽: тысячи через узкий пробел, без ,00 если целое."""
+    if amount is None:
+        return "—"
+    value = round(float(amount), 2)
+    if abs(value - round(value)) < 1e-9:
+        body = f"{int(round(value)):,}".replace(",", "\u202f")
+        return f"{body}\u202f₽"
+    whole = int(value)
+    kop = int(round((value - whole) * 100))
+    body = f"{whole:,}".replace(",", "\u202f")
+    return f"{body},{kop:02d}\u202f₽"
+
+
+def format_dop_type_label(dop_name: Optional[str]) -> tuple[str, Optional[str]]:
+    """Подпись типа для activated_dops; hint — полное имя для tooltip."""
+    raw = (dop_name or "").strip()
+    if not raw:
+        return "Опция", None
+    if raw.lower().startswith("увеличение"):
+        m = re.search(r"на\s+(\d+)\s+дн", raw, re.IGNORECASE)
+        if m:
+            return f"Продление на {m.group(1)} дн.", raw
+        tail = re.search(r"(на\s+\d+\s+дн(?:ей|я)?\.?)\s*$", raw, re.IGNORECASE)
+        if tail:
+            return f"Продление {tail.group(1).strip()}", raw
+    return raw, raw
 
 
 async def resolve_freeze_reason_label(

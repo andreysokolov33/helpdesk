@@ -1094,6 +1094,106 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 [data-theme="dark"] .fc-hotspot-auth__addr{color:#f4f8fc}
 [data-theme="light"] .fc-hotspot-auth__addr{color:#0a1e36}
 .up-fc-html a.fc-hotspot-auth__addr,.up-fc-html .fc-hotspot-auth a{text-decoration:none;color:inherit}
+
+/* История платежей (профиль → Статистика) */
+.up-stats .up-stub:has(.up-payments),.up-stats .up-stub:has(.up-tariffs){overflow:hidden}
+.up-payments{
+  min-width:0;display:flex;flex-direction:column;min-height:0;flex:1 1 auto;height:100%
+}
+.up-payments-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+.up-payments-table th{
+  white-space:nowrap;padding:0 4px 5px 0;font-size:9px;font-weight:700;
+  letter-spacing:.4px;line-height:1.25
+}
+.up-payments-table td{padding:4px 4px 4px 0;line-height:1.3;vertical-align:middle;border-bottom:1px solid var(--ln)}
+.up-payments-table tr:last-child td{border-bottom:none}
+.up-payments-table th:nth-child(1),.up-payments-table td:nth-child(1){width:32%}
+.up-payments-table th:nth-child(2),.up-payments-table td:nth-child(2){width:20%}
+.up-payments-table th:nth-child(3),.up-payments-table td:nth-child(3){width:20%}
+.up-payments-table th:nth-child(4),.up-payments-table td:nth-child(4){width:28%}
+.up-payments-date{
+  white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--ink);font-size:12px
+}
+.up-payments-th-amt,.up-payments-amt{text-align:right}
+.up-payments-amt{
+  font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink);
+  white-space:nowrap;padding-right:1px
+}
+.up-payments-pager{
+  flex-shrink:0;margin-top:6px;padding-top:6px;gap:8px
+}
+.up-payments-pager .ch-page-btn{padding:6px 11px;font-size:12px}
+.up-payments-pager .ch-page-info{font-size:11px}
+.up-pay-badge{
+  display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;
+  line-height:1.25;white-space:nowrap;border:1px solid var(--ln);vertical-align:middle
+}
+.up-pay-state--payed{background:var(--obg);color:var(--ok);border-color:rgba(63,190,114,.4)}
+.up-pay-state--canceled{background:var(--rbg);color:var(--red);border-color:var(--rsf)}
+.up-pay-state--in{background:var(--wbg);color:var(--wn);border-color:rgba(240,168,48,.35)}
+[data-theme="dark"] .up-pay-state--in{background:rgba(240,168,48,.12);color:#f0c878}
+.up-pay-state--refund{background:var(--nbg);color:var(--i2)}
+.up-pay-type--qr{background:#e8f1ff;color:#1450a0;border-color:#c5daf5}
+.up-pay-type--yandex{background:#fff8e6;color:#8a5a0a;border-color:#f0d9b0}
+.up-pay-type--sberbank{background:#e8f5ee;color:#0d6b3d;border-color:#bfe3cf}
+.up-pay-type--gazprom{background:#f0e8ff;color:#5b3d9e;border-color:#dcd0f5}
+.up-pay-type--alfa{background:#ffe8e0;color:#b33a18;border-color:#ffd0c4}
+.up-pay-type--unknown,.up-pay-type--cash{background:var(--nbg);color:var(--i2)}
+[data-theme="dark"] .up-pay-type--qr{background:rgba(80,160,255,.16);color:#9fd0ff;border-color:rgba(120,190,255,.28)}
+[data-theme="dark"] .up-pay-type--yandex{background:var(--wbg);color:var(--wn);border-color:rgba(240,168,48,.35)}
+[data-theme="dark"] .up-pay-type--sberbank{background:rgba(63,190,114,.14);color:#7ee0a4;border-color:rgba(63,190,114,.28)}
+[data-theme="dark"] .up-pay-type--gazprom{background:rgba(180,140,255,.12);color:#c9b4ff;border-color:rgba(180,140,255,.28)}
+[data-theme="dark"] .up-pay-type--alfa{background:rgba(255,120,80,.12);color:#ffb39a;border-color:rgba(255,120,80,.28)}
+
+/* История подключённых тарифов (общая сетка с платежами) */
+.up-tariffs{
+  min-width:0;display:flex;flex-direction:column;min-height:0;flex:1 1 auto;height:100%
+}
+.up-tariffs-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+.up-tariffs-table th{
+  white-space:nowrap;padding:0 4px 5px 0;font-size:9px;font-weight:700;
+  letter-spacing:.4px;line-height:1.25;text-transform:uppercase;color:var(--i3)
+}
+.up-tariffs-table td{padding:4px 4px 4px 0;line-height:1.3;vertical-align:middle;border-bottom:1px solid var(--ln)}
+.up-tariffs-table tr:last-child td{border-bottom:none}
+.up-tariffs-th-date,.up-tariffs-date,.up-tariffs-until{text-align:left}
+.up-tariffs-th-type,.up-tariffs-type{text-align:left}
+.up-tariffs-th-amt,.up-tariffs-amt{text-align:right}
+.up-tariffs-table th:nth-child(1),.up-tariffs-table td:nth-child(1){width:28%}
+.up-tariffs-table th:nth-child(2),.up-tariffs-table td:nth-child(2){width:30%}
+.up-tariffs-table th:nth-child(3),.up-tariffs-table td:nth-child(3){width:26%}
+.up-tariffs-table th:nth-child(4),.up-tariffs-table td:nth-child(4){width:16%}
+.up-tariffs-date,.up-tariffs-until{
+  white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--ink);font-size:12px
+}
+.up-tariffs-type .up-tariff-badge{vertical-align:middle;max-width:100%}
+.up-tariffs-amt{
+  font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink);
+  white-space:nowrap;padding-right:1px
+}
+.up-tariffs-active{
+  display:inline-block;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;
+  line-height:1.25;white-space:nowrap;background:var(--obg);color:var(--ok);
+  border:1px solid rgba(63,190,114,.45)
+}
+[data-theme="dark"] .up-tariffs-active{
+  background:rgba(63,190,114,.14);color:#7ee0a4;border-color:rgba(63,190,114,.35)
+}
+.up-tariffs-pager{flex-shrink:0;margin-top:6px;padding-top:6px;gap:8px}
+.up-tariffs-pager .ch-page-btn{padding:6px 11px;font-size:12px}
+.up-tariffs-pager .ch-page-info{font-size:11px}
+.up-tariff-badge{
+  display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  font-size:10px;font-weight:700;padding:3px 7px;border-radius:999px;
+  line-height:1.25;white-space:nowrap;border:1px solid var(--ln);vertical-align:middle
+}
+.up-tariff-badge--limited{background:#e8f1ff;color:#1450a0;border-color:#c5daf5}
+.up-tariff-badge--unlim{background:#f0e8ff;color:#5b3d9e;border-color:#dcd0f5}
+.up-tariff-badge--dop{background:#fff8e6;color:#8a5a0a;border-color:#f0d9b0}
+[data-theme="dark"] .up-tariff-badge--limited{background:rgba(80,160,255,.16);color:#9fd0ff;border-color:rgba(120,190,255,.28)}
+[data-theme="dark"] .up-tariff-badge--unlim{background:rgba(180,140,255,.12);color:#c9b4ff;border-color:rgba(180,140,255,.28)}
+[data-theme="dark"] .up-tariff-badge--dop{background:var(--wbg);color:var(--wn);border-color:rgba(240,168,48,.35)}
 .up-fc-ok-msg{margin:0;font-size:13px;font-weight:600;color:var(--ok)}
 .up-fc-managers{margin-top:14px;padding-top:12px;border-top:1px solid var(--ln)}
 .up-fc-managers-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--i3);margin-bottom:8px}

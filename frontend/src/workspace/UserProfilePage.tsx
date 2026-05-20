@@ -15,6 +15,8 @@ import {
 import { copyPhone, formatPhoneDisplay } from "@/utils/phone";
 import { AuthPageHelp } from "@/components/AuthPageHelp";
 import FastCheckPanel from "@/components/FastCheckPanel";
+import PaymentsHistoryPanel from "@/components/PaymentsHistoryPanel";
+import TariffsHistoryPanel from "@/components/TariffsHistoryPanel";
 import { PasswordResetModal } from "@/components/PasswordResetModal";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 import { categoryBadgeClass, supportLineBadgeClass, supportLineLabel } from "@/utils/ticketLabels";
@@ -592,6 +594,10 @@ export default function UserProfilePage() {
                     userId={p.user_id}
                     onDisconnect={() => postDisconnect(p.user_id).then(() => reload())}
                   />
+                ) : report === "payments" ? (
+                  <PaymentsHistoryPanel userId={p.user_id} />
+                ) : report === "tariffs" ? (
+                  <TariffsHistoryPanel userId={p.user_id} />
                 ) : (
                   <p className="up-muted">Раздел «{REPORTS.find((x) => x.id === report)?.label}» — скоро</p>
                 )}

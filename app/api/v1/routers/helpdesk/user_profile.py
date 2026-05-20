@@ -13,6 +13,8 @@ from app.api.v1.routers.helpdesk.fast_check_schemas import FastCheckResponse
 from app.api.v1.routers.helpdesk.user_profile_schemas import (
     ActionMessage,
     FreezeRequest,
+    PaymentHistoryListResponse,
+    TariffHistoryListResponse,
     ProfileTicketListResponse,
     UserProfileResponse,
 )
@@ -22,6 +24,28 @@ from app.api.v1.routers.helpdesk import user_profile_service as svc
 from app.database import get_db
 
 router = APIRouter(prefix="/v1/helpdesk/users", tags=["Helpdesk — абонент"])
+
+
+@router.get("/{user_id}/payments", response_model=PaymentHistoryListResponse)
+async def list_user_payments(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=50),
+    _user: dict = Depends(require_tracker_user),
+    db: AsyncSession = Depends(get_db),
+) -> PaymentHistoryListResponse:
+    return await svc.load_user_payments_page(db, user_id, page=page, per_page=per_page)
+
+
+@router.get("/{user_id}/tariff-history", response_model=TariffHistoryListResponse)
+async def list_user_tariff_history(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=50),
+    _user: dict = Depends(require_tracker_user),
+    db: AsyncSession = Depends(get_db),
+) -> TariffHistoryListResponse:
+    return await svc.load_user_tariff_history_page(db, user_id, page=page, per_page=per_page)
 
 
 @router.get("/{user_id}/profile/tickets", response_model=ProfileTicketListResponse)

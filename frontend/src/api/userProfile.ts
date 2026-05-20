@@ -163,6 +163,70 @@ export function postFastCheck(userId: number): Promise<FastCheckResponse> {
   return api<FastCheckResponse>(`/api/v1/helpdesk/users/${userId}/fast-check`, { method: "POST" });
 }
 
+export type PaymentHistoryItem = {
+  msk_date: string;
+  msk_date_label: string;
+  state: string;
+  state_label: string;
+  payment_type: string;
+  type_label: string;
+  amount: number;
+};
+
+export type PaymentHistoryListResponse = {
+  total: number;
+  page: number;
+  per_page: number;
+  items: PaymentHistoryItem[];
+};
+
+export function fetchUserPayments(
+  userId: number,
+  page = 1,
+  perPage = 10,
+): Promise<PaymentHistoryListResponse> {
+  const q = new URLSearchParams({
+    page: String(page),
+    per_page: String(perPage),
+  });
+  return api<PaymentHistoryListResponse>(
+    `/api/v1/helpdesk/users/${userId}/payments?${q}`,
+  );
+}
+
+export type TariffHistoryItem = {
+  activated_at: string;
+  activated_at_label: string;
+  row_kind: "tariff" | "dop";
+  type_label: string;
+  type_hint: string | null;
+  active_tariff: boolean;
+  deactivation_at_label: string | null;
+  price: number | null;
+  price_label: string;
+};
+
+export type TariffHistoryListResponse = {
+  total: number;
+  page: number;
+  per_page: number;
+  items: TariffHistoryItem[];
+};
+
+export function fetchUserTariffHistory(
+  userId: number,
+  page = 1,
+  perPage = 10,
+): Promise<TariffHistoryListResponse> {
+  const q = new URLSearchParams({
+    page: String(page),
+    per_page: String(perPage),
+  });
+  return api<TariffHistoryListResponse>(
+    `/api/v1/helpdesk/users/${userId}/tariff-history?${q}`,
+  );
+}
+
 export type PasswordResetState = {
   has_ppp_sessions: boolean;
   active_code: string | null;

@@ -20,19 +20,12 @@ from app.api.v1.routers.helpdesk.user_profile_service import (
     _load_personal,
 )
 from app.api.v1.routers.helpdesk.user_profile_utils import (
+    PAY_TYPE_LABELS,
     freeze_info_html,
     resolve_freeze_reason_label,
 )
 from app.api.v1.routers.users.dao import UsersDAO
 from app.models.users import FastCheckDatabase
-
-_PAY_TYPE_LABELS: dict[str, str] = {
-    "qr": "QR",
-    "yandex": "ЮMoney",
-    "sberbank": "Сбербанк",
-    "gazprom": "Газпромбанк",
-    "alfa": "Альфа-Банк",
-}
 
 _UNLIM_SESSION_LIMIT = 2
 
@@ -194,7 +187,7 @@ def _payments_list_html(payments: list[dict[str, Any]], *, pending: bool) -> str
     title = "Ожидают зачисления" if pending else "Не завершены"
     rows = "".join(
         f"<li>{p.get('date_in_tz')}: <strong>{p.get('amount')} ₽</strong> — "
-        f"{_PAY_TYPE_LABELS.get(str(p.get('type') or ''), str(p.get('type') or 'оплата'))}"
+        f"{PAY_TYPE_LABELS.get(str(p.get('type') or ''), str(p.get('type') or 'оплата'))}"
         f"{' (ожидание банка)' if pending else ''}</li>"
         for p in payments
     )
