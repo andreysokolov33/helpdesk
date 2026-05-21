@@ -1,0 +1,39 @@
+# Secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Git / IDE
+.git
+.gitignore
+.cursor
+.vscode
+.idea
+
+# Python
+__pycache__
+*.py[cod]
+.venv
+venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+
+# Node (собирается в отдельном stage)
+frontend/node_modules
+frontend/dist
+
+# Runtime / локальные артефакты
+logs
+uploads
+temp
+*.log
+
+# Прочее
+.DS_Store
+README.md
+**/*.md
+!requirements.txt

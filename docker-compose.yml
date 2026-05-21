@@ -1,0 +1,52 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      MODE: ${MODE:-PROD}
+      HOST: 0.0.0.0
+      PORT: 8000
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - helpdesk_logs:/app/logs
+      - helpdesk_uploads:/app/uploads
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-helpdesk}
+      POSTGRES_PASSWORD: ${DB_PASS:-helpdesk}
+      POSTGRES_DB: ${DB_NAME:-helpdesk}
+    volumes:
+      - helpdesk_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-helpdesk} -d ${DB_NAME:-helpdesk}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  helpdesk_pgdata:
+  helpdesk_logs:
+  helpdesk_uploads:
