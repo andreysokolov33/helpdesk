@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    image: ${HELPDESK_IMAGE:-helpdesk:latest}
     ports:
       - "${APP_PORT:-8000}:8000"
     env_file:

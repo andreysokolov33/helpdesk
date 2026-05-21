@@ -20,6 +20,12 @@ class SensitiveDataFilter(logging.Filter):
         'password': re.compile(r'password["\']?\s*[:=]\s*["\']?[^"\'\s]+["\']?', re.IGNORECASE),
         'token': re.compile(r'token["\']?\s*[:=]\s*["\']?[^"\'\s]+["\']?', re.IGNORECASE),
         'secret': re.compile(r'secret["\']?\s*[:=]\s*["\']?[^"\'\s]+["\']?', re.IGNORECASE),
+        'grace_tokens': re.compile(r'grace_tokens:[0-9a-f-]{36}', re.IGNORECASE),
+        'revoked_acc': re.compile(r'revoked_acc:[0-9a-f-]{36}', re.IGNORECASE),
+        'redis_key_jti': re.compile(
+            r'key=(?:grace_tokens|revoked_acc):[0-9a-f-]{36}',
+            re.IGNORECASE,
+        ),
     }
 
     SENSITIVE_KEYS: Set[str] = {
@@ -219,7 +225,11 @@ def setup_logger(
     logger.setLevel(level)
     logger.handlers = []
     logger.propagate = propagate
-    
+
+    root = logging.getLogger()
+    if not any(isinstance(f, SensitiveDataFilter) for f in root.filters):
+        root.addFilter(SensitiveDataFilter())
+
     # Добавляем фильтры
     logger.addFilter(ContextFilter())  # ← Добавляем request_id автоматически
     logger.addFilter(SensitiveDataFilter())

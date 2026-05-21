@@ -11,7 +11,12 @@ from starlette.types import ASGIApp, Scope, Receive, Send
 from starlette.datastructures import Headers
 from fastapi import Response
 # Твои импорты — проверь корректность путей
-from app.core.auth_utils import decode_jwt_token, create_token
+from app.core.auth_utils import (
+    auth_cookie_options_from_scope,
+    create_token,
+    decode_jwt_token,
+    _resolve_cookie_secure,
+)
 from app.api.v1.routers.auth.dao import (
     OssUserTokensDAO as AbsUserTokensDAO,
     SkystreamUserProjectAccessDAO,
@@ -21,6 +26,18 @@ from app.config import settings
 from app.database import redis_client, async_session_maker
 
 logger = logging.getLogger("auth_middleware")
+
+_REDIS_KEY_SAFE_PREFIXES = ("grace_tokens:", "revoked_acc:", "operator:")
+
+
+def _redis_key_log_label(key: str) -> str:
+    for prefix in _REDIS_KEY_SAFE_PREFIXES:
+        if key.startswith(prefix):
+            return f"{prefix}***"
+    if ":" in key:
+        return key.split(":", 1)[0] + ":***"
+    return "***"
+
 
 class AuthMiddleware:
     def __init__(self, app: ASGIApp, login_path: str = "/login"):
@@ -46,7 +63,7 @@ class AuthMiddleware:
         try:
             return await redis_client.get(key)
         except Exception as e:
-            logger.warning(f"Redis GET failed for key={key}: {e}")
+            logger.debug("Redis GET failed for %s: %s", _redis_key_log_label(key), e)
             return None
 
     async def _redis_set(self, key: str, value: str, ex: Optional[int] = None) -> bool:
@@ -54,7 +71,7 @@ class AuthMiddleware:
             await redis_client.set(key, value, ex=ex)
             return True
         except Exception as e:
-            logger.warning(f"Redis SET failed for key={key}: {e}")
+            logger.debug("Redis SET failed for %s: %s", _redis_key_log_label(key), e)
             return False
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
@@ -107,9 +124,10 @@ class AuthMiddleware:
                 res = Response(status_code=401, content=json.dumps({"detail": "Unauthorized"}))
             
             # ПРИНУДИТЕЛЬНАЯ ОЧИСТКА КУК ПРИ ОШИБКЕ
-            res.delete_cookie("oss_acc_token", path="/")
-            res.delete_cookie("oss_ref_token", path="/")
-            res.delete_cookie("oss_login", path="/")
+            cookie_opts = auth_cookie_options_from_scope(scope)
+            res.delete_cookie("oss_acc_token", **cookie_opts)
+            res.delete_cookie("oss_ref_token", **cookie_opts)
+            res.delete_cookie("oss_login", **cookie_opts)
             
             await res(scope, receive, send)
             return
@@ -227,7 +245,7 @@ class AuthMiddleware:
                 token_record = await AbsUserTokensDAO.find_by_refresh_jti(db, jti)
                 
                 if not token_record:
-                    logger.warning(f"REFRESH: Token record {jti} NOT FOUND in database")
+                    logger.warning("REFRESH: Token record not found in database")
                     return None, None
 
                 # 3. Проверяем существование и активность пользователя
@@ -266,11 +284,17 @@ class AuthMiddleware:
                                     for name, kv in data.items():
                                         exp = datetime.fromisoformat(kv["expires"].replace("Z", "+00:00"))
                                         new_cookies[name] = {"value": kv["value"], "expires": exp}
-                                    logger.info(f"REFRESH: Grace Period ({int(diff)}s) for {jti}, returning cached tokens")
+                                    logger.debug(
+                                        "REFRESH: Grace period (%ss), returning cached session",
+                                        int(diff),
+                                    )
                                     return user_data, new_cookies
                             except Exception as e:
-                                logger.warning(f"REFRESH: Grace cache read failed: {e}")
-                            logger.info(f"REFRESH: Grace Period ({int(diff)}s) for {jti}, no cached tokens")
+                                logger.warning("REFRESH: Grace cache read failed: %s", e)
+                            logger.debug(
+                                "REFRESH: Grace period (%ss), no cached session",
+                                int(diff),
+                            )
                             return user_data, None
                         
                         # Б. Аварийное восстановление (если токен отозван давно, но браузер застрял)
@@ -281,7 +305,7 @@ class AuthMiddleware:
                             # прошла успешно в БД, но не в браузере. 
                             # Мы НЕ можем вернуть старый токен, поэтому заставляем пользователя 
                             # перелогиниться, очистив всё (это сделает Шаг 5 в __call__).
-                            logger.warning(f"REFRESH: Browser stuck with old JTI {jti}. Force logout.")
+                            logger.warning("REFRESH: Browser stuck with old session. Force logout.")
                             return None, None
 
                     return None, None
@@ -291,7 +315,7 @@ class AuthMiddleware:
                     exp_at = exp_at.replace(tzinfo=timezone.utc)
                 
                 if exp_at < datetime.now(timezone.utc):
-                    logger.warning(f"REFRESH: Token {jti} EXPIRED in database at {exp_at}")
+                    logger.warning("REFRESH: Token expired in database at %s", exp_at)
                     return None, None
 
                 # 6. ГЕНЕРАЦИЯ НОВЫХ ТОКЕНОВ И РОТАЦИЯ
@@ -377,8 +401,12 @@ class AuthMiddleware:
 
     def _generate_cookie_header(self, name, value, expires, scope) -> str:
         """Сборка строки заголовка Set-Cookie."""
-        is_secure = scope.get("scheme") == "https"
-        if settings.MODE == "DEV": is_secure = False
+        headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+        forwarded = headers.get("x-forwarded-proto") if settings.PROXY_HEADERS else None
+        is_secure = _resolve_cookie_secure(
+            scheme=scope.get("scheme"),
+            forwarded_proto=forwarded,
+        )
         
         # 1. Вычисляем Max-Age (разница в секундах между сейчас и временем истечения)
         now = datetime.now(timezone.utc)

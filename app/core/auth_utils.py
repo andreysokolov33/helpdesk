@@ -12,6 +12,30 @@ from app.config import settings
 
 logger = logging.getLogger("abs")
 
+_COOKIE_BASE = {"path": "/", "httponly": True, "samesite": "lax"}
+
+
+def _resolve_cookie_secure(*, scheme: str | None, forwarded_proto: str | None) -> bool:
+    if settings.MODE == "DEV":
+        return False
+    if settings.PROXY_HEADERS and forwarded_proto:
+        return forwarded_proto.split(",")[0].strip().lower() == "https"
+    return (scheme or "http").lower() == "https"
+
+
+def auth_cookie_options(request) -> dict:
+    """Параметры Set-Cookie: Secure только за HTTPS (или DEV без Secure)."""
+    forwarded = request.headers.get("x-forwarded-proto") if settings.PROXY_HEADERS else None
+    secure = _resolve_cookie_secure(scheme=request.url.scheme, forwarded_proto=forwarded)
+    return {**_COOKIE_BASE, "secure": secure}
+
+
+def auth_cookie_options_from_scope(scope: dict) -> dict:
+    headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+    forwarded = headers.get("x-forwarded-proto") if settings.PROXY_HEADERS else None
+    secure = _resolve_cookie_secure(scheme=scope.get("scheme"), forwarded_proto=forwarded)
+    return {**_COOKIE_BASE, "secure": secure}
+
 
 async def create_token(user: dict, token_type: str = "access") -> tuple[str, datetime, str]:
     user_id = user["id"]

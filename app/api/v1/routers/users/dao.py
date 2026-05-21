@@ -864,7 +864,7 @@ class AbsUserTokensDAO(BaseDAO):
             token_obj = result.scalar_one_or_none()
             
             if not token_obj:
-                logger.warning(f"Token with JTI {refresh_jti} not found in DB")
+                logger.warning("Token record not found in DB")
                 return None
                 
             return _model_to_dict(token_obj)

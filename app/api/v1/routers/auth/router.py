@@ -14,7 +14,7 @@ from app.api.v1.routers.auth.dao import (
     SubscriberDAO,
 )
 from app.api.v1.routers.auth.schemas import LoginRequest
-from app.core.auth_utils import create_token, decode_jwt_token
+from app.core.auth_utils import auth_cookie_options, create_token, decode_jwt_token
 from app.database import background_db_session, get_db
 from app.utils.redis_functions import (
     get_block_time_left,
@@ -58,13 +58,14 @@ def _get_device_info(request: Request) -> str:
 
 
 async def _set_auth_cookies(
+    request: Request,
     response: Response,
     access_token: str,
     access_expire,
     refresh_token: str,
     refresh_expire,
 ) -> None:
-    common = {"path": "/", "httponly": True, "samesite": "lax", "secure": True}
+    common = auth_cookie_options(request)
     response.set_cookie(key="oss_acc_token", value=access_token, expires=access_expire, **common)
     response.set_cookie(key="oss_ref_token", value=refresh_token, expires=refresh_expire, **common)
     response.set_cookie(key="oss_login", value="1", expires=access_expire, **common)
@@ -163,6 +164,7 @@ async def login(
     refresh_token, refresh_expire, refresh_jti = await create_token(user, token_type="refresh")
 
     await _set_auth_cookies(
+        request=request,
         response=response,
         access_token=access_token,
         access_expire=access_expire,
@@ -212,7 +214,8 @@ async def logout(
                 db, filter_by={"refresh_jti": refresh_jti, "is_revoked": False}
             )
 
+    cookie_opts = auth_cookie_options(request)
     for cookie_name in ("oss_acc_token", "oss_ref_token", "oss_login"):
-        response.delete_cookie(key=cookie_name, path="/")
+        response.delete_cookie(key=cookie_name, **cookie_opts)
 
     return {"message": "Successfully logged out"}

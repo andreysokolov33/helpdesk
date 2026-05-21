@@ -323,14 +323,6 @@ function TariffCard({
             </span>
           </div>
           <div className="up-kv">
-            <span className="up-k">Обратный канал ↑</span>
-            <span className="up-v">{tariff.rate_up}</span>
-          </div>
-          <div className="up-kv">
-            <span className="up-k">Прямой канал ↓</span>
-            <span className="up-v">{tariff.rate_down}</span>
-          </div>
-          <div className="up-kv">
             <span className="up-k">
               {tariff.speed_unlimited ? "Суточный трафик (остаток / лимит)" : "Трафик (остаток / всего)"}
             </span>
