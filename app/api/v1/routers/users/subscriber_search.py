@@ -9,6 +9,7 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.oss import JurClientList
+from app.models.stations import IpGroup
 from app.models.users import User, UserDetails
 
 _DIGITS_RE = re.compile(r"\D+")
@@ -115,6 +116,15 @@ def _subscriber_columns(ud_sq):
         else_=func.nullif(func.trim(func.coalesce(jcl.inn, "")), ""),
     ).label("id_doc")
 
+    station_id = case(
+        (u.id_grp > 0, u.id_grp),
+        else_=None,
+    ).label("station_id")
+    hotspot_id = case(
+        (IpGroup.id_hotspot > 0, IpGroup.id_hotspot),
+        else_=None,
+    ).label("hotspot_id")
+
     return (
         u.id.label("id"),
         u.login.label("login"),
@@ -126,6 +136,8 @@ def _subscriber_columns(ud_sq):
         email,
         phone,
         id_doc,
+        station_id,
+        hotspot_id,
     )
 
 
@@ -142,6 +154,8 @@ def _row_to_hit(row: Any) -> dict[str, Any]:
     else:
         id_doc = (row.id_doc or "").strip() or None
 
+    station_id = getattr(row, "station_id", None)
+    hotspot_id = getattr(row, "hotspot_id", None)
     return {
         "id": int(row.id),
         "login": (row.login or "").strip(),
@@ -150,6 +164,8 @@ def _row_to_hit(row: Any) -> dict[str, Any]:
         "phone": (row.phone or "").strip() or None,
         "id_doc": id_doc,
         "is_juridical": is_jur,
+        "station_id": int(station_id) if station_id else None,
+        "hotspot_id": int(hotspot_id) if hotspot_id else None,
     }
 
 
@@ -213,6 +229,8 @@ async def run_subscriber_search(
     cols = _subscriber_columns(ud_sq)
     u = User
     jcl = JurClientList
+    ig = IpGroup
+    ig_join = ig.id == u.id_grp
 
     seen: set[int] = set()
     out: list[dict[str, Any]] = []
@@ -229,6 +247,7 @@ async def run_subscriber_search(
             select(*cols)
             .select_from(u)
             .outerjoin(ud_sq, ud_join)
+            .outerjoin(ig, ig_join)
             .outerjoin(jcl, jcl.id == u.juridical_id)
             .where(u.id == uid)
             .limit(1)
@@ -267,6 +286,7 @@ async def run_subscriber_search(
         select(*cols)
         .select_from(u)
         .outerjoin(ud_sq, ud_join)
+        .outerjoin(ig, ig_join)
         .outerjoin(jcl, jcl.id == u.juridical_id)
         .where(or_(*user_conds))
         .distinct(u.id)
@@ -305,6 +325,7 @@ async def run_subscriber_search(
         select(*cols)
         .select_from(u)
         .join(ud_sq, ud_join)
+        .outerjoin(ig, ig_join)
         .outerjoin(jcl, jcl.id == u.juridical_id)
         .where(or_(*details_conds))
         .distinct(u.id)
@@ -334,6 +355,7 @@ async def run_subscriber_search(
         select(*cols)
         .select_from(u)
         .outerjoin(ud_sq, ud_join)
+        .outerjoin(ig, ig_join)
         .join(jcl, jcl.id == u.juridical_id)
         .where(or_(*jur_conds))
         .distinct(u.id)

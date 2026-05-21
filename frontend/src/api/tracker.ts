@@ -64,6 +64,33 @@ const _WAIT = new Set([
   "no_technician",
 ]);
 
+export type RegisterCallPayload = {
+  body: string;
+  subscriber_unknown: boolean;
+  user_id: number | null;
+  caller_name?: string | null;
+  station_id?: number | null;
+  hotspot_id?: number | null;
+};
+
+export type RegisterCallResponse = { id: number };
+
+export async function registerCall(payload: RegisterCallPayload): Promise<RegisterCallResponse> {
+  const res = await fetch("/api/v1/helpdesk/tracker/register-call", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as { detail?: string } & Partial<RegisterCallResponse>;
+  if (!res.ok) {
+    const msg = typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  if (data.id == null) throw new Error("Некорректный ответ сервера");
+  return { id: data.id };
+}
+
 export function trackerApiRowToTicketRow(row: TrackerTicketListItem): TicketRow {
   let status: TicketRow["status"] = "work";
   if (row.status === "pending" || row.status === "open") status = "new";

@@ -6,6 +6,8 @@ export type SubscriberSearchHit = {
   phone: string | null;
   id_doc: string | null;
   is_juridical: number;
+  station_id?: number | null;
+  hotspot_id?: number | null;
 };
 
 export type DeskSearchResponse = {

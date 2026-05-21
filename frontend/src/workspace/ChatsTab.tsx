@@ -99,9 +99,7 @@ export default function ChatsTab() {
   }, [listMode, listPage, perPage]);
 
   function openChatFromApi(row: TrackerTicketListItem) {
-    const tr = trackerApiRowToTicketRow(row);
-    navigate(`/chats?id=${row.id}`, { state: { ticketRow: tr } });
-    setListMode(false);
+    navigate(`/tickets/${row.id}`);
   }
 
   function back() {

@@ -8,7 +8,7 @@ import ChatsTab from "@/workspace/ChatsTab";
 import StatsTab from "@/workspace/StatsTab";
 import KbTab from "@/workspace/KbTab";
 import UserProfilePage from "@/workspace/UserProfilePage";
-import TicketStub from "@/workspace/TicketStub";
+import TicketPage from "@/workspace/TicketPage";
 
 export default function App() {
   return (
@@ -23,7 +23,7 @@ export default function App() {
             <Route path="stats" element={<StatsTab />} />
             <Route path="kb" element={<KbTab />} />
             <Route path="users/:userId" element={<UserProfilePage />} />
-            <Route path="tickets/:ticketId" element={<TicketStub />} />
+            <Route path="tickets/:ticketId" element={<TicketPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

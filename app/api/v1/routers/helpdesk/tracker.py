@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy import String, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
-from app.api.v1.routers.helpdesk.schemas import TrackerTicketListItem, TrackerTicketListResponse
+from app.api.v1.routers.helpdesk.schemas import (
+    RegisterCallRequest,
+    RegisterCallResponse,
+    TicketDetailResponse,
+    TicketMarkReadRequest,
+    TicketMessageItem,
+    TicketMessagesResponse,
+    TicketSendMessageResponse,
+    TrackerTicketListItem,
+    TrackerTicketListResponse,
+)
+from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
 from app.constants import (
     PRIORITY_DICT,
     SOURCE_DISPLAY,
@@ -19,7 +31,14 @@ from app.constants import (
 )
 from app.database import get_db
 from app.models.oss import JurClientList
-from app.models.users import SkystreamUsers, TicketCategory, TrackerTickets, User, UserDetails
+from app.models.users import (
+    SkystreamUsers,
+    TicketCategory,
+    TrackerTicketLineHistory,
+    TrackerTickets,
+    User,
+    UserDetails,
+)
 
 router = APIRouter(prefix="/v1/helpdesk/tracker", tags=["Helpdesk — трекер"])
 
@@ -232,3 +251,178 @@ async def list_tracker_tickets(
         )
 
     return TrackerTicketListResponse(total=total, page=page, per_page=per_page, items=items)
+
+
+_CALL_PLACEHOLDER_TITLE = "Звонок"
+
+
+@router.post("/register-call", response_model=RegisterCallResponse)
+async def register_call(
+    payload: RegisterCallRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> RegisterCallResponse:
+    """
+    Регистрация входящего звонка: создаёт тикет в users.tracker_tickets без категории и SLA.
+    """
+    body_text = payload.body.strip()
+    if not body_text:
+        raise HTTPException(status_code=400, detail="Укажите, что говорит клиент")
+
+    caller_name: str | None = None
+    if payload.subscriber_unknown:
+        caller_name = (payload.caller_name or "").strip()
+        if not caller_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Укажите, как представился клиент",
+            )
+        ticket_user_id = None
+        person_type = "cs"
+        station_id = None
+        hotspot_id = None
+    else:
+        if payload.user_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Выберите абонента или отметьте «Не удалось определить»",
+            )
+        ticket_user_id = int(payload.user_id)
+        person_type = "user"
+        station_id = payload.station_id
+        hotspot_id = payload.hotspot_id
+
+    now = datetime.now(timezone.utc)
+    author_id = int(user["user_id"])
+
+    ticket = TrackerTickets(
+        author=author_id,
+        user_id=ticket_user_id,
+        support_line=1,
+        status="in_progress",
+        title=_CALL_PLACEHOLDER_TITLE,
+        body=body_text,
+        priority="middle",
+        source="call_center",
+        complexity="L1",
+        person_type=person_type,
+        caller_name=caller_name,
+        object_type="user",
+        station_id=station_id,
+        hotspot_id=hotspot_id,
+        vno=1,
+        updated_at=now,
+    )
+    db.add(ticket)
+    await db.flush()
+
+    db.add(
+        TrackerTicketLineHistory(
+            ticket_id=int(ticket.id),
+            support_line=1,
+            start_time=now,
+            changed_by=author_id,
+            state="active",
+        )
+    )
+    db.add(
+        TrackerTicketLineHistory(
+            ticket_id=int(ticket.id),
+            support_line=None,
+            start_time=now,
+            changed_by=author_id,
+            event_type="created",
+            payload={"status": "in_progress", "source": "call_center"},
+        )
+    )
+    await db.commit()
+
+    return RegisterCallResponse(id=int(ticket.id))
+
+
+@router.get("/{ticket_id}", response_model=TicketDetailResponse)
+async def get_ticket(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketDetailResponse:
+    data = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
+    return TicketDetailResponse(**data)
+
+
+@router.get("/{ticket_id}/messages", response_model=TicketMessagesResponse)
+async def get_ticket_messages(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketMessagesResponse:
+    detail = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
+    mode = detail["chat_mode"]
+    viewer_id = int(user["user_id"])
+
+    if mode == "tracker":
+        raw = await ticket_svc.load_tracker_messages(
+            db, ticket_id, viewer_id, str(user.get("role") or "")
+        )
+    else:
+        raw = await ticket_svc.load_mail_messages(
+            db,
+            ticket_id,
+            detail.get("user_id"),
+            viewer_id,
+        )
+        unread = [m["id"] for m in raw if m["side"] == "client" and not m.get("has_read") and m["id"] > 0]
+        if unread:
+            await ticket_svc.mark_mail_messages_read(db, ticket_id, viewer_id, unread)
+
+    return TicketMessagesResponse(
+        chat_mode=mode,
+        messages=[TicketMessageItem(**m) for m in raw],
+    )
+
+
+@router.post("/{ticket_id}/messages/read")
+async def mark_ticket_messages_read(
+    ticket_id: int,
+    payload: TicketMarkReadRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> dict[str, str]:
+    await ticket_svc.mark_mail_messages_read(
+        db, ticket_id, int(user["user_id"]), payload.message_ids
+    )
+    return {"status": "ok"}
+
+
+@router.post("/{ticket_id}/messages", response_model=TicketSendMessageResponse)
+async def send_ticket_message(
+    ticket_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+    text: str = Form(""),
+    file: UploadFile | None = File(None),
+) -> TicketSendMessageResponse:
+    detail = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
+    operator_id = int(user["user_id"])
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    if detail["chat_mode"] == "tracker":
+        raw = await ticket_svc.send_tracker_reply(db, ticket_id, operator_id, text)
+    else:
+        if not detail.get("user_id"):
+            raise HTTPException(
+                status_code=400,
+                detail="Нельзя ответить: абонент не определён",
+            )
+        raw = await ticket_svc.send_mail_reply(
+            db,
+            ticket_id,
+            int(detail["user_id"]),
+            operator_id,
+            text,
+            client_ip=client_ip,
+            file=file,
+        )
+
+    return TicketSendMessageResponse(message=TicketMessageItem(**raw))
