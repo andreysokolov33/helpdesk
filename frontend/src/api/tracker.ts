@@ -35,6 +35,61 @@ export type TrackerTicketListResponse = {
   items: TrackerTicketListItem[];
 };
 
+/** Подписи коммуникационного слоя в колонке «Статус» (не workflow-status). */
+export const COMMUNICATION_LABELS = {
+  needs_reply: "Нужен ответ",
+  awaiting_subscriber: "Ждём абонента",
+} as const;
+
+/** Закрытые/терминальные — в списке показываем workflow-подпись, не коммуникацию. */
+const TRACKER_CLOSED_STATUSES = new Set([
+  "resolved",
+  "closed",
+  "cancelled",
+  "deferred",
+  "not_resolved",
+]);
+
+export type TicketStatusColumn =
+  | { kind: "comm"; state: keyof typeof COMMUNICATION_LABELS; label: string }
+  | { kind: "workflow"; status: string; label: string };
+
+/**
+ * Колонка «Статус» в /chats:
+ * — незакрытые: waiting_client без непрочитанного → «Ждём абонента», иначе «Нужен ответ»;
+ * — закрытые (вкладка closed): workflow-подпись из status_label.
+ */
+export function ticketListStatusColumn(
+  row: Pick<
+    TrackerTicketListItem,
+    "has_unread" | "communication_state" | "status" | "status_label"
+  >,
+): TicketStatusColumn {
+  if (TRACKER_CLOSED_STATUSES.has(row.status)) {
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+  if (
+    row.status === "waiting_client" &&
+    !row.has_unread &&
+    row.communication_state !== "needs_reply"
+  ) {
+    return {
+      kind: "comm",
+      state: "awaiting_subscriber",
+      label: COMMUNICATION_LABELS.awaiting_subscriber,
+    };
+  }
+  return { kind: "comm", state: "needs_reply", label: COMMUNICATION_LABELS.needs_reply };
+}
+
+/** @deprecated используйте ticketListStatusColumn */
+export function ticketListCommunicationBadge(
+  row: Pick<TrackerTicketListItem, "has_unread" | "communication_state" | "communication_label" | "status">,
+): { state: keyof typeof COMMUNICATION_LABELS; label: string } | null {
+  const col = ticketListStatusColumn(row);
+  return col.kind === "comm" ? { state: col.state, label: col.label } : null;
+}
+
 export async function fetchOpenTrackerTickets(params: {
   page: number;
   per_page: number;

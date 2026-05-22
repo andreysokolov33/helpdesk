@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { fetchOpenTrackerTickets, trackerApiRowToTicketRow, type TrackerTicketListItem } from "@/api/tracker";
+import {
+  fetchOpenTrackerTickets,
+  ticketListStatusColumn,
+  trackerApiRowToTicketRow,
+  type TrackerTicketListItem,
+} from "@/api/tracker";
 import { formatTicketUpdatedLocal, formatWorkDurationSince } from "@/utils/ticketFormat";
 import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT, type TicketRow } from "@/data/mockCc";
 
@@ -197,7 +202,9 @@ export default function ChatsTab() {
             </div>
 
             <div className="ch-list-body">
-              {listRows.map((row) => (
+              {listRows.map((row) => {
+                const statusCol = ticketListStatusColumn(row);
+                return (
                 <div
                   key={row.id}
                   className={`ch-row${row.has_unread ? " ch-row--unread" : ""}`}
@@ -248,15 +255,15 @@ export default function ChatsTab() {
                     ) : null}
                   </div>
                   <div className="ch-status-cell">
-                    {row.communication_label ? (
-                      <span
-                        className={`ch-comm ch-comm--${row.communication_state ?? "none"}`}
-                        title={row.communication_label}
-                      >
-                        {row.communication_label}
+                    {statusCol.kind === "comm" ? (
+                      <span className={`ch-comm ch-comm--${statusCol.state}`} title={statusCol.label}>
+                        {statusCol.label}
                       </span>
-                    ) : null}
-                    <span className={`ch-status ch-status--${row.status}`}>{row.status_label}</span>
+                    ) : (
+                      <span className={`ch-status ch-status--${statusCol.status}`} title={statusCol.label}>
+                        {statusCol.label}
+                      </span>
+                    )}
                   </div>
                   <span
                     className={`ch-priority ch-priority--${row.priority ?? "middle"}`}
@@ -281,7 +288,8 @@ export default function ChatsTab() {
                     {formatTicketUpdatedLocal(row.updated_at || row.date_of_create)}
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
