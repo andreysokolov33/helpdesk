@@ -22,6 +22,8 @@ export type TrackerTicketListItem = {
   assignee_role: string | null;
   assignee_is_viewer: boolean;
   has_unread: boolean;
+  communication_state: "needs_reply" | "awaiting_subscriber" | null;
+  communication_label: string | null;
   date_of_create: string;
   updated_at: string | null;
 };
@@ -98,7 +100,8 @@ export function trackerApiRowToTicketRow(row: TrackerTicketListItem): TicketRow 
   else if (_WAIT.has(row.status)) status = "wait";
 
   let dot: TicketRow["dot"] = "i2";
-  if (row.priority === "critical" || row.priority === "high") dot = "red";
+  if (row.communication_state === "needs_reply" || row.has_unread) dot = "red";
+  else if (row.communication_state === "awaiting_subscriber") dot = "wn";
   else if (_WAIT.has(row.status)) dot = "wn";
 
   const t = row.updated_at || row.date_of_create;

@@ -11,6 +11,19 @@ const initialMsgs: ChatMsg[] = [
   { id: "2", side: "ag", text: "Здравствуйте! Сейчас помогу", time: "14:05" },
 ];
 
+function CallCenterPhoneIcon() {
+  return (
+    <svg className="ch-call-ico-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6.5 4.5h3l2 4-2.5 1.5a11 11 0 005.5 5.5L15 13l4 2v3a2 2 0 01-2 2A15 15 0 014 6.5a2 2 0 012-2z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function ChatsTab() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -177,6 +190,7 @@ export default function ChatsTab() {
             <div className="ch-list-meta-row ch-list-thead">
               <span>Тикет</span>
               <span>Статус</span>
+              <span>Приоритет</span>
               <span>В работе</span>
               <span>Исполнитель</span>
               <span>Обновлён</span>
@@ -199,8 +213,13 @@ export default function ChatsTab() {
                 >
                   <div className="ch-row-main">
                     <div className="ch-row-head">
+                      {row.source === "call_center" ? (
+                        <span className="ch-call-ico" title="Зарегистрирован после звонка на горячую линию">
+                          <CallCenterPhoneIcon />
+                        </span>
+                      ) : null}
                       <span className="ch-row-id">#{row.id}</span>
-                      {row.has_unread ? <span className="ch-unread-dot" title="Непрочитанные сообщения" /> : null}
+                      {row.has_unread ? <span className="ch-unread-dot" title="Нужен ответ" /> : null}
                       <span
                         className={
                           row.object_type === "user" && (row.subscriber_is_juridical ?? 0) === 2
@@ -228,7 +247,23 @@ export default function ChatsTab() {
                       </span>
                     ) : null}
                   </div>
-                  <span className={`ch-status ch-status--${row.status}`}>{row.status_label}</span>
+                  <div className="ch-status-cell">
+                    {row.communication_label ? (
+                      <span
+                        className={`ch-comm ch-comm--${row.communication_state ?? "none"}`}
+                        title={row.communication_label}
+                      >
+                        {row.communication_label}
+                      </span>
+                    ) : null}
+                    <span className={`ch-status ch-status--${row.status}`}>{row.status_label}</span>
+                  </div>
+                  <span
+                    className={`ch-priority ch-priority--${row.priority ?? "middle"}`}
+                    title={row.priority_label ?? "Средний"}
+                  >
+                    {row.priority_label ?? "Средний"}
+                  </span>
                   <span className="ch-muted ch-mono">{formatWorkDurationSince(row.date_of_create, nowPulse)}</span>
                   <div className="ch-exec-cell">
                     <span
