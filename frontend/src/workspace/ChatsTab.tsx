@@ -186,7 +186,7 @@ export default function ChatsTab() {
               {listRows.map((row) => (
                 <div
                   key={row.id}
-                  className="ch-row"
+                  className={`ch-row${row.has_unread ? " ch-row--unread" : ""}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => openChatFromApi(row)}
@@ -200,6 +200,7 @@ export default function ChatsTab() {
                   <div className="ch-row-main">
                     <div className="ch-row-head">
                       <span className="ch-row-id">#{row.id}</span>
+                      {row.has_unread ? <span className="ch-unread-dot" title="Непрочитанные сообщения" /> : null}
                       <span
                         className={
                           row.object_type === "user" && (row.subscriber_is_juridical ?? 0) === 2

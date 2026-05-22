@@ -21,6 +21,7 @@ export type TrackerTicketListItem = {
   assignee_name: string | null;
   assignee_role: string | null;
   assignee_is_viewer: boolean;
+  has_unread: boolean;
   date_of_create: string;
   updated_at: string | null;
 };

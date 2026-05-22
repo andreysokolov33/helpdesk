@@ -187,6 +187,15 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 .ch-row{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(100px,128px) 92px minmax(120px,160px) minmax(108px,132px);gap:10px;width:100%;text-align:left;padding:12px 12px;border:none;border-bottom:1px solid var(--ln);background:var(--p);cursor:pointer;align-items:center;transition:background var(--a)}
 .ch-row:last-child{border-bottom:none}
 .ch-row:hover{background:var(--bg)}
+.ch-row--unread{background:rgba(255,45,26,.04)}
+[data-theme="light"] .ch-row--unread{background:rgba(255,19,0,.06)}
+.ch-row--unread:hover{background:rgba(255,45,26,.08)}
+.ch-unread-dot{
+  flex-shrink:0;
+  width:8px;height:8px;border-radius:50%;
+  background:var(--red);
+  box-shadow:0 0 0 2px var(--p);
+}
 .ch-row-main{display:flex;flex-direction:column;gap:4px;min-width:0;justify-self:stretch}
 .ch-row-head{display:flex;flex-direction:row;align-items:baseline;gap:8px;min-width:0;width:100%}
 .ch-row-id{flex-shrink:0;font-size:12px;font-weight:800;color:var(--red);line-height:1.35}

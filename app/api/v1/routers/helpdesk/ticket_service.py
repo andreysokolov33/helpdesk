@@ -9,11 +9,19 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import select, text
+from sqlalchemy import Boolean, DateTime, String, case, cast, literal_column, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.config import settings
-from app.constants import PRIORITY_DICT, SOURCE_DISPLAY, STATUS_DISPLAY, TRACKER_OPEN_STATUSES
+from app.constants import (
+    PRIORITY_DICT,
+    SOURCE_DISPLAY,
+    STATUS_DISPLAY,
+    TRACKER_CLOSED_STATUSES,
+    TRACKER_HELPDESK_LIST_SOURCES,
+    TRACKER_OPEN_STATUSES,
+    TRACKER_WAITING_OPERATOR_STATUSES,
+)
+from app.models.users import TrackerTickets
 from app.models.users import (
     TrackerMessageAttachment,
     TrackerMessages,
@@ -21,6 +29,338 @@ from app.models.users import (
 )
 
 TRACKER_CHAT_SOURCES = frozenset({"ks", "partner", "tech", "incidents", "abs"})
+STAFF_READ_PERSON_TYPES = ("skystream", "call_centre")
+_MAIL_IS_CLIENT = """
+    CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
+         THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
+         ELSE COALESCE(um.answer, 0) END = 0
+"""
+_TICKET_TBL = "users.tracker_tickets"
+_STAFF_READ_IN_SQL = ", ".join(f"'{t}'" for t in STAFF_READ_PERSON_TYPES)
+
+
+def _sql_staff_read_exists(alias_r: str = "r") -> str:
+    return f"{alias_r}.person_type IN ({_STAFF_READ_IN_SQL})"
+
+
+def ticket_has_unread_sql(tbl: str = _TICKET_TBL) -> str:
+    """Коррелированное условие: есть непрочитанные сообщения абонента."""
+    mail = f"""
+    EXISTS (
+        SELECT 1 FROM users.user_mail um
+        WHERE (
+            um.ticket_id = {tbl}.id
+            OR EXISTS (
+                SELECT 1 FROM users.tracker_ticket_mail_links l
+                WHERE l.ticket_id = {tbl}.id AND l.user_mail_id = um.id
+            )
+        )
+        AND ({_MAIL_IS_CLIENT})
+        AND NOT EXISTS (
+            SELECT 1 FROM users.user_mail_reads r
+            WHERE r.msg_id = um.id AND {_sql_staff_read_exists()}
+        )
+    )
+    """
+    tracker = f"""
+    EXISTS (
+        SELECT 1 FROM users.tracker_messages tm
+        WHERE tm.ticket_id = {tbl}.id
+          AND COALESCE(tm.person_type, 'skystream') = 'user'
+          AND NOT EXISTS (
+            SELECT 1 FROM users.tracker_messages_reads r
+            WHERE r.msg_id = tm.id AND {_sql_staff_read_exists()}
+          )
+    )
+    """
+    return f"""
+    (
+        COALESCE({tbl}.source, 'call_center') = 'abs' AND ({tracker})
+    ) OR (
+        COALESCE({tbl}.source, 'call_center') <> 'abs' AND ({mail})
+    )
+    """
+
+
+def _sql_mail_unread_min_time(tbl: str = _TICKET_TBL) -> str:
+    return f"""
+    (SELECT MIN(COALESCE(um.date_tz, to_timestamp(um.date)))
+     FROM users.user_mail um
+     WHERE (
+         um.ticket_id = {tbl}.id
+         OR EXISTS (
+             SELECT 1 FROM users.tracker_ticket_mail_links l
+             WHERE l.ticket_id = {tbl}.id AND l.user_mail_id = um.id
+         )
+     )
+       AND ({_MAIL_IS_CLIENT})
+       AND NOT EXISTS (
+           SELECT 1 FROM users.user_mail_reads r
+           WHERE r.msg_id = um.id AND {_sql_staff_read_exists()}
+       ))
+    """
+
+
+def _sql_tracker_unread_min_time(tbl: str = _TICKET_TBL) -> str:
+    return f"""
+    (SELECT MIN(tm.created_at)
+     FROM users.tracker_messages tm
+     WHERE tm.ticket_id = {tbl}.id
+       AND COALESCE(tm.person_type, 'skystream') = 'user'
+       AND NOT EXISTS (
+           SELECT 1 FROM users.tracker_messages_reads r
+           WHERE r.msg_id = tm.id AND {_sql_staff_read_exists()}
+       ))
+    """
+
+
+def ticket_waiting_since_sql(tbl: str = _TICKET_TBL) -> str:
+    """Момент, с которого абонент ждёт реакции (ASC = дольше ждёт — выше в списке)."""
+    unread = ticket_has_unread_sql(tbl)
+    mail_min = _sql_mail_unread_min_time(tbl)
+    tracker_min = _sql_tracker_unread_min_time(tbl)
+    return f"""
+    CASE
+        WHEN ({unread}) AND COALESCE({tbl}.source, 'call_center') <> 'abs'
+            THEN {mail_min}
+        WHEN ({unread}) AND COALESCE({tbl}.source, 'call_center') = 'abs'
+            THEN {tracker_min}
+        WHEN COALESCE({tbl}.source, 'call_center') = 'lk'
+             AND {tbl}.first_response_at IS NULL
+            THEN {tbl}.date_of_create
+        ELSE COALESCE(
+            {tbl}.last_client_message_at,
+            {tbl}.updated_at,
+            {tbl}.date_of_create
+        )
+    END
+    """
+
+
+def ticket_list_has_unread_label():
+    return literal_column(f"({ticket_has_unread_sql()})", type_=Boolean).label("calc_has_unread")
+
+
+def _enum_status_sql(statuses: tuple[str, ...]) -> str:
+    return ", ".join(f"'{s}'::users.tracker_status" for s in statuses)
+
+
+def _mail_client_filter(alias: str = "um") -> str:
+    return f"""
+    CASE WHEN {alias}.user_id IS NOT NULL AND {alias}.person_type IS NOT NULL
+         THEN CASE WHEN {alias}.person_type = 'user' THEN 0 ELSE 1 END
+         ELSE COALESCE({alias}.answer, 0) END = 0
+    """
+
+
+def _build_tracker_list_page_sql(*, closed: bool) -> str:
+    """Список /chats: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
+    statuses = TRACKER_CLOSED_STATUSES if closed else TRACKER_OPEN_STATUSES
+    status_in = _enum_status_sql(statuses)
+    waiting_in = _enum_status_sql(TRACKER_WAITING_OPERATOR_STATUSES)
+    sources_in = ", ".join(f"'{s}'" for s in TRACKER_HELPDESK_LIST_SOURCES)
+    mail_client = _mail_client_filter("um")
+    staff = _STAFF_READ_IN_SQL
+
+    return f"""
+    WITH filtered AS (
+        SELECT tt.id
+        FROM users.tracker_tickets tt
+        WHERE tt.status IN ({status_in})
+          AND COALESCE(tt.source, 'call_center') IN ({sources_in})
+    ),
+    mail_msgs AS (
+        SELECT f.id AS ticket_id,
+               COALESCE(um.date_tz, to_timestamp(um.date)) AS msg_at
+        FROM filtered f
+        JOIN users.user_mail um ON um.ticket_id = f.id
+        WHERE ({mail_client})
+          AND NOT EXISTS (
+              SELECT 1 FROM users.user_mail_reads r
+              WHERE r.msg_id = um.id AND r.person_type IN ({staff})
+          )
+        UNION ALL
+        SELECT f.id,
+               COALESCE(um.date_tz, to_timestamp(um.date))
+        FROM filtered f
+        JOIN users.tracker_ticket_mail_links l ON l.ticket_id = f.id
+        JOIN users.user_mail um ON um.id = l.user_mail_id
+        WHERE ({mail_client})
+          AND NOT EXISTS (
+              SELECT 1 FROM users.user_mail_reads r
+              WHERE r.msg_id = um.id AND r.person_type IN ({staff})
+          )
+    ),
+    mail_unread AS (
+        SELECT ticket_id, MIN(msg_at) AS oldest_unread_at
+        FROM mail_msgs
+        GROUP BY ticket_id
+    ),
+    tracker_unread AS (
+        SELECT tm.ticket_id, MIN(tm.created_at) AS oldest_unread_at
+        FROM users.tracker_messages tm
+        JOIN filtered f ON f.id = tm.ticket_id
+        WHERE COALESCE(tm.person_type, 'skystream') = 'user'
+          AND NOT EXISTS (
+              SELECT 1 FROM users.tracker_messages_reads r
+              WHERE r.msg_id = tm.id AND r.person_type IN ({staff})
+          )
+        GROUP BY tm.ticket_id
+    ),
+    queue AS (
+        SELECT
+            tt.id,
+            tt.title,
+            tt.object_type,
+            tt.status,
+            tt.priority,
+            tt.support_line,
+            tt.source,
+            tt.user_id,
+            tt.assigned_to,
+            tt.category_id,
+            tt.date_of_create,
+            tt.updated_at,
+            tt.first_response_at,
+            tt.last_client_message_at,
+            (COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL)
+                OR (COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL)
+                AS calc_has_unread,
+            CASE
+                WHEN COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL
+                    THEN mu.oldest_unread_at
+                WHEN COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL
+                    THEN tu.oldest_unread_at
+                WHEN COALESCE(tt.source, 'call_center') = 'lk' AND tt.first_response_at IS NULL
+                    THEN tt.date_of_create
+                ELSE COALESCE(tt.last_client_message_at, tt.updated_at, tt.date_of_create)
+            END AS waiting_since
+        FROM users.tracker_tickets tt
+        JOIN filtered f ON f.id = tt.id
+        LEFT JOIN mail_unread mu ON mu.ticket_id = tt.id
+        LEFT JOIN tracker_unread tu ON tu.ticket_id = tt.id
+    )
+    SELECT
+        q.id,
+        q.title,
+        q.object_type,
+        q.status::text AS status,
+        q.priority::text AS priority,
+        q.support_line,
+        q.source,
+        q.user_id,
+        q.assigned_to,
+        q.date_of_create,
+        q.updated_at,
+        q.calc_has_unread,
+        u.login AS subscriber_login,
+        u.is_juridical AS sub_is_juridical,
+        ud.surname AS ud_surname,
+        ud.name AS ud_name,
+        ud.patronymic AS ud_patronymic,
+        jur.short_name_organization AS jur_short_name,
+        tc.name AS category_name,
+        tcp.name AS category_parent_name,
+        assignee.full_name AS assignee_name,
+        assignee.role AS assignee_role
+    FROM queue q
+    LEFT JOIN users."user" u ON q.user_id = u.id AND q.object_type = 'user'
+    LEFT JOIN LATERAL (
+        SELECT ud.surname, ud.name, ud.patronymic
+        FROM users.user_details ud
+        WHERE ud.user_id = u.id AND ud.is_actual IS TRUE
+        ORDER BY ud.id DESC
+        LIMIT 1
+    ) ud ON TRUE
+    LEFT JOIN oss.jur_client_list jur ON jur.id = u.juridical_id
+    LEFT JOIN users.ticket_categories tc ON q.category_id = tc.id
+    LEFT JOIN users.ticket_categories tcp ON tc.parent_id = tcp.id
+    LEFT JOIN users.skystream_users assignee ON q.assigned_to = assignee.id
+    ORDER BY
+        CASE WHEN q.support_line = 1 THEN 0 ELSE 1 END,
+        CASE
+            WHEN q.assigned_to = :viewer_id THEN 0
+            WHEN q.assigned_to IS NULL THEN 1
+            ELSE 2
+        END,
+        CASE WHEN q.calc_has_unread THEN 0 ELSE 1 END,
+        CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
+        CASE q.priority::text
+            WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'middle' THEN 2 WHEN 'low' THEN 3 ELSE 4
+        END,
+        CASE WHEN q.status IN ({waiting_in}) THEN 1 ELSE 0 END,
+        q.waiting_since ASC NULLS LAST,
+        q.id ASC
+    LIMIT :per_page OFFSET :offset
+    """
+
+
+async def fetch_tracker_list_page(
+    db: AsyncSession,
+    *,
+    viewer_id: int,
+    closed: bool,
+    page: int,
+    per_page: int,
+) -> tuple[int, list[dict[str, Any]]]:
+    statuses = TRACKER_CLOSED_STATUSES if closed else TRACKER_OPEN_STATUSES
+    status_in = _enum_status_sql(statuses)
+    sources_in = ", ".join(f"'{s}'" for s in TRACKER_HELPDESK_LIST_SOURCES)
+
+    count_row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM users.tracker_tickets tt
+                WHERE tt.status IN ({status_in})
+                  AND COALESCE(tt.source, 'call_center') IN ({sources_in})
+                """
+            ),
+        )
+    ).mappings().first()
+    total = int(count_row["total"] if count_row else 0)
+
+    page_sql = _build_tracker_list_page_sql(closed=closed)
+    rows = (
+        await db.execute(
+            text(page_sql),
+            {"viewer_id": viewer_id, "per_page": per_page, "offset": (page - 1) * per_page},
+        )
+    ).mappings().all()
+    return total, [dict(r) for r in rows]
+
+
+def ticket_list_order_by(viewer_id: int) -> tuple:
+    """
+    Очередь 1-й линии: линия 1 → мои → без исполнителя → чужие → непрочитанные →
+    ЛК без 1-го ответа → приоритет → не «ожидание» → давность ожидания.
+    """
+    unread = ticket_has_unread_sql()
+    waiting = ticket_waiting_since_sql()
+    return (
+        case((TrackerTickets.support_line == 1, 0), else_=1),
+        case(
+            (TrackerTickets.assigned_to == viewer_id, 0),
+            (TrackerTickets.assigned_to.is_(None), 1),
+            else_=2,
+        ),
+        text(f"CASE WHEN ({unread}) THEN 0 ELSE 1 END"),
+        text(
+            f"CASE WHEN COALESCE({_TICKET_TBL}.source, 'call_center') = 'lk'"
+            f" AND {_TICKET_TBL}.first_response_at IS NULL THEN 0 ELSE 1 END"
+        ),
+        case(
+            (cast(TrackerTickets.priority, String) == "critical", 0),
+            (cast(TrackerTickets.priority, String) == "high", 1),
+            (cast(TrackerTickets.priority, String) == "middle", 2),
+            (cast(TrackerTickets.priority, String) == "low", 3),
+            else_=4,
+        ),
+        case((TrackerTickets.status.in_(TRACKER_WAITING_OPERATOR_STATUSES), 1), else_=0),
+        literal_column(waiting, type_=DateTime(timezone=True)).asc().nulls_last(),
+        TrackerTickets.id.asc(),
+    )
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _MEDIA_ROOT = os.path.abspath(settings.MEDIA_DIR)
 _IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
@@ -29,6 +369,30 @@ _ALLOWED_EXT = _IMAGE_EXT | {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
 
 def chat_mode_for_source(source: str | None) -> str:
     return "tracker" if (source or "call_center") in TRACKER_CHAT_SOURCES else "mail"
+
+
+async def fetch_tickets_has_unread(
+    db: AsyncSession,
+    ticket_ids: list[int],
+    sources: dict[int, str | None],
+) -> set[int]:
+    """Тикеты с непрочитанными сообщениями абонента (прочитал любой сотрудник — не непрочитано)."""
+    if not ticket_ids:
+        return set()
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT tt.id
+                FROM users.tracker_tickets tt
+                WHERE tt.id = ANY(:ticket_ids)
+                  AND ({ticket_has_unread_sql('tt')})
+                """
+            ),
+            {"ticket_ids": ticket_ids},
+        )
+    ).scalars().all()
+    return {int(x) for x in rows}
 
 
 def _moscow_ts() -> int:
@@ -291,11 +655,11 @@ async def load_mail_messages(
             await db.execute(
                 text(
                     """
-                    SELECT msg_id FROM users.user_mail_reads
-                    WHERE msg_id = ANY(:ids) AND user_id = :viewer_id
+                    SELECT DISTINCT msg_id FROM users.user_mail_reads
+                    WHERE msg_id = ANY(:ids) AND person_type = ANY(:staff_types)
                     """
                 ),
-                {"ids": msg_ids, "viewer_id": viewer_id},
+                {"ids": msg_ids, "staff_types": list(STAFF_READ_PERSON_TYPES)},
             )
         ).scalars().all()
         read_ids = {int(x) for x in read_rows}
@@ -360,6 +724,23 @@ async def load_tracker_messages(
     msg_ids = [int(r["id"]) for r in rows]
     att_map = await _attachments_map(db, msg_ids, tracker=True)
 
+    staff_read_ids: set[int] = set()
+    if msg_ids:
+        staff_read_ids = {
+            int(x)
+            for x in (
+                await db.execute(
+                    text(
+                        """
+                        SELECT DISTINCT msg_id FROM users.tracker_messages_reads
+                        WHERE msg_id = ANY(:ids) AND person_type = ANY(:staff_types)
+                        """
+                    ),
+                    {"ids": msg_ids, "staff_types": list(STAFF_READ_PERSON_TYPES)},
+                )
+            ).scalars().all()
+        }
+
     messages: list[dict[str, Any]] = []
     for r in rows:
         mid = int(r["id"])
@@ -379,12 +760,49 @@ async def load_tracker_messages(
                 "text": (r.get("body") or "").strip(),
                 "author_name": r.get("author_name") or ("Вы" if is_own else "—"),
                 "created_at_iso": _iso(r.get("created_at")),
-                "has_read": is_own,
+                "has_read": is_own or mid in staff_read_ids,
                 "legacy_file_url": None,
                 "attachments": att_map.get(mid, []),
             }
         )
     return messages
+
+
+async def mark_tracker_messages_read(
+    db: AsyncSession,
+    ticket_id: int,
+    viewer_id: int,
+    message_ids: list[int],
+) -> None:
+    if not message_ids:
+        return
+    for mid in message_ids:
+        if mid <= 0:
+            continue
+        exists = (
+            await db.execute(
+                text(
+                    """
+                    SELECT 1 FROM users.tracker_messages
+                    WHERE id = :mid AND ticket_id = :tid LIMIT 1
+                    """
+                ),
+                {"mid": mid, "tid": ticket_id},
+            )
+        ).scalar()
+        if not exists:
+            continue
+        await db.execute(
+            text(
+                """
+                INSERT INTO users.tracker_messages_reads (msg_id, user_id, person_type, read_time)
+                VALUES (:msg_id, :user_id, 'skystream', NOW())
+                ON CONFLICT (msg_id, user_id, person_type) DO NOTHING
+                """
+            ),
+            {"msg_id": mid, "user_id": viewer_id},
+        )
+    await db.commit()
 
 
 async def mark_mail_messages_read(
@@ -419,6 +837,28 @@ async def mark_mail_messages_read(
     await db.commit()
 
 
+async def maybe_set_first_response_at(
+    db: AsyncSession,
+    ticket_id: int,
+    operator_role: str | None,
+) -> None:
+    """SLA ЛК: первый ответ support фиксируется в tracker_tickets.first_response_at."""
+    if (operator_role or "").lower() != "support":
+        return
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET first_response_at = NOW()
+            WHERE id = :ticket_id
+              AND source = 'lk'
+              AND first_response_at IS NULL
+            """
+        ),
+        {"ticket_id": ticket_id},
+    )
+
+
 async def send_mail_reply(
     db: AsyncSession,
     ticket_id: int,
@@ -428,6 +868,7 @@ async def send_mail_reply(
     *,
     client_ip: str = "0.0.0.0",
     file: UploadFile | None = None,
+    operator_role: str | None = None,
 ) -> dict[str, Any]:
     text_body = text_body.strip()
     if not text_body and (not file or not file.filename):
@@ -493,6 +934,7 @@ async def send_mail_reply(
         ),
         {"now": now, "ticket_id": ticket_id},
     )
+    await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()
 
     return {
@@ -511,6 +953,8 @@ async def send_tracker_reply(
     ticket_id: int,
     operator_id: int,
     text_body: str,
+    *,
+    operator_role: str | None = None,
 ) -> dict[str, Any]:
     text_body = text_body.strip()
     if not text_body:
@@ -530,6 +974,7 @@ async def send_tracker_reply(
         text("UPDATE users.tracker_tickets SET updated_at = :now WHERE id = :tid"),
         {"now": now, "tid": ticket_id},
     )
+    await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()
 
     return {

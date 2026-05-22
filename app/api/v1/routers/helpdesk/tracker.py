@@ -4,9 +4,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from sqlalchemy import String, and_, cast, func, select
+from sqlalchemy.exc import NotSupportedError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
 from app.api.v1.routers.helpdesk.schemas import (
@@ -21,24 +20,9 @@ from app.api.v1.routers.helpdesk.schemas import (
     TrackerTicketListResponse,
 )
 from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
-from app.constants import (
-    PRIORITY_DICT,
-    SOURCE_DISPLAY,
-    STATUS_DISPLAY,
-    TRACKER_CLOSED_STATUSES,
-    TRACKER_HELPDESK_LIST_SOURCES,
-    TRACKER_OPEN_STATUSES,
-)
+from app.constants import PRIORITY_DICT, SOURCE_DISPLAY, STATUS_DISPLAY
 from app.database import get_db
-from app.models.oss import JurClientList
-from app.models.users import (
-    SkystreamUsers,
-    TicketCategory,
-    TrackerTicketLineHistory,
-    TrackerTickets,
-    User,
-    UserDetails,
-)
+from app.models.users import TrackerTicketLineHistory, TrackerTickets
 
 router = APIRouter(prefix="/v1/helpdesk/tracker", tags=["Helpdesk — трекер"])
 
@@ -118,89 +102,51 @@ async def list_tracker_tickets(
     ),
 ) -> TrackerTicketListResponse:
     """
-    Список тикетов `users.tracker_tickets` с пагинацией.
-    По умолчанию только незакрытые (`closed=false`), источник lk / ks / abs.
+    Список тикетов `users.tracker_tickets` с пагинацией и QoS-сортировкой для 1-й линии.
+    По умолчанию только незакрытые (`closed=false`), источники lk / call_center / abs.
     """
-    status_as_text = cast(TrackerTickets.status, String)
-    status_filter = (
-        status_as_text.in_(TRACKER_CLOSED_STATUSES)
-        if closed
-        else status_as_text.in_(TRACKER_OPEN_STATUSES)
-    )
-    source_as_text = cast(TrackerTickets.source, String)
-    source_filter = source_as_text.in_(TRACKER_HELPDESK_LIST_SOURCES)
-    list_filter = and_(status_filter, source_filter)
-
-    u = aliased(User)
-    tc = aliased(TicketCategory)
-    tcp = aliased(TicketCategory)
-    assignee = aliased(SkystreamUsers)
-    jur = aliased(JurClientList)
-
-    ud_win = (
-        select(
-            UserDetails.user_id,
-            UserDetails.surname,
-            UserDetails.name,
-            UserDetails.patronymic,
-            func.row_number()
-            .over(partition_by=UserDetails.user_id, order_by=UserDetails.id.desc())
-            .label("rn"),
-        ).where(UserDetails.is_actual.is_(True))
-    ).subquery()
-    ud1 = aliased(ud_win, name="ud1")
-
-    count_stmt = select(func.count()).select_from(TrackerTickets).where(list_filter)
-    total = int((await db.execute(count_stmt)).scalar_one())
-
-    stmt = (
-        select(
-            TrackerTickets,
-            u.login.label("subscriber_login"),
-            u.is_juridical.label("sub_is_juridical"),
-            ud1.c.surname.label("ud_surname"),
-            ud1.c.name.label("ud_name"),
-            ud1.c.patronymic.label("ud_patronymic"),
-            jur.short_name_organization.label("jur_short_name"),
-            tc.name.label("category_name"),
-            tcp.name.label("category_parent_name"),
-            assignee.full_name.label("assignee_name"),
-            assignee.role.label("assignee_role"),
-        )
-        .outerjoin(u, and_(TrackerTickets.user_id == u.id, TrackerTickets.object_type == "user"))
-        .outerjoin(ud1, and_(ud1.c.user_id == u.id, ud1.c.rn == 1))
-        .outerjoin(jur, jur.id == u.juridical_id)
-        .outerjoin(tc, TrackerTickets.category_id == tc.id)
-        .outerjoin(tcp, tc.parent_id == tcp.id)
-        .outerjoin(assignee, TrackerTickets.assigned_to == assignee.id)
-        .where(list_filter)
-        .order_by(
-            TrackerTickets.updated_at.desc().nullslast(),
-            TrackerTickets.date_of_create.desc(),
-        )
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-    )
-
-    result = await db.execute(stmt)
-    items: list[TrackerTicketListItem] = []
     viewer_skystream_id = int(user["user_id"])
-    for row in result.all():
-        (
-            tt,
-            sub_login,
-            sub_is_juridical,
-            ud_surname,
-            ud_name,
-            ud_patronymic,
-            jur_short,
-            cat_name,
-            cat_parent,
-            assignee_name,
-            assignee_role,
-        ) = row
 
-        assigned_id = int(tt.assigned_to) if tt.assigned_to is not None else None
+    def _is_stale_prepared_cache(exc: BaseException) -> bool:
+        cur: BaseException | None = exc
+        while cur is not None:
+            if "InvalidCachedStatement" in type(cur).__name__:
+                return True
+            cur = cur.__cause__ or cur.__context__
+        return False
+
+    total = 0
+    rows: list[dict[str, Any]] = []
+    for attempt in range(2):
+        try:
+            total, rows = await ticket_svc.fetch_tracker_list_page(
+                db,
+                viewer_id=viewer_skystream_id,
+                closed=closed,
+                page=page,
+                per_page=per_page,
+            )
+            break
+        except NotSupportedError as exc:
+            if attempt == 0 and _is_stale_prepared_cache(exc):
+                continue
+            raise
+
+    items: list[TrackerTicketListItem] = []
+    for m in rows:
+        sub_login = m.get("subscriber_login")
+        sub_is_juridical = m.get("sub_is_juridical")
+        ud_surname = m.get("ud_surname")
+        ud_name = m.get("ud_name")
+        ud_patronymic = m.get("ud_patronymic")
+        jur_short = m.get("jur_short_name")
+        cat_name = m.get("category_name")
+        cat_parent = m.get("category_parent_name")
+        assignee_name = m.get("assignee_name")
+        assignee_role = m.get("assignee_role")
+        has_unread = bool(m.get("calc_has_unread"))
+
+        assigned_id = int(m["assigned_to"]) if m.get("assigned_to") is not None else None
         assignee_is_viewer = bool(assigned_id is not None and assigned_id == viewer_skystream_id)
 
         if cat_name and cat_parent:
@@ -208,13 +154,13 @@ async def list_tracker_tickets(
         else:
             category_label = cat_name or cat_parent
 
-        st = str(tt.status)
-        pr = str(tt.priority) if tt.priority is not None else None
-        src = tt.source
+        st = str(m["status"])
+        pr = str(m["priority"]) if m.get("priority") is not None else None
+        src = m.get("source")
 
         sub_name, profile_uid, sub_ij = _subscriber_list_fields(
-            str(tt.object_type),
-            int(tt.user_id) if tt.user_id is not None else None,
+            str(m["object_type"]),
+            int(m["user_id"]) if m.get("user_id") is not None else None,
             sub_login,
             int(sub_is_juridical) if sub_is_juridical is not None else None,
             ud_surname,
@@ -225,19 +171,19 @@ async def list_tracker_tickets(
 
         items.append(
             TrackerTicketListItem(
-                id=int(tt.id),
-                title=tt.title,
-                object_type=str(tt.object_type),
+                id=int(m["id"]),
+                title=m["title"],
+                object_type=str(m["object_type"]),
                 status=st,
                 status_label=STATUS_DISPLAY.get(st, st),
                 priority=pr,
                 priority_label=PRIORITY_DICT.get(pr, pr) if pr else None,
-                support_line=int(tt.support_line),
-                support_line_label=_support_line_label(int(tt.support_line)),
+                support_line=int(m["support_line"]),
+                support_line_label=_support_line_label(int(m["support_line"])),
                 source=src,
                 source_label=SOURCE_DISPLAY.get(src or "call_center", src or "call_center"),
                 category_label=category_label,
-                user_id=int(tt.user_id) if tt.user_id is not None else None,
+                user_id=int(m["user_id"]) if m.get("user_id") is not None else None,
                 subscriber_profile_user_id=profile_uid,
                 subscriber_is_juridical=sub_ij,
                 subscriber_name=sub_name or None,
@@ -245,8 +191,9 @@ async def list_tracker_tickets(
                 assignee_name=assignee_name,
                 assignee_role=assignee_role,
                 assignee_is_viewer=assignee_is_viewer,
-                date_of_create=tt.date_of_create,
-                updated_at=tt.updated_at,
+                has_unread=has_unread,
+                date_of_create=m["date_of_create"],
+                updated_at=m.get("updated_at"),
             )
         )
 
@@ -364,6 +311,9 @@ async def get_ticket_messages(
         raw = await ticket_svc.load_tracker_messages(
             db, ticket_id, viewer_id, str(user.get("role") or "")
         )
+        unread = [m["id"] for m in raw if m["side"] == "client" and not m.get("has_read") and m["id"] > 0]
+        if unread:
+            await ticket_svc.mark_tracker_messages_read(db, ticket_id, viewer_id, unread)
     else:
         raw = await ticket_svc.load_mail_messages(
             db,
@@ -407,8 +357,11 @@ async def send_ticket_message(
     operator_id = int(user["user_id"])
     client_ip = request.client.host if request.client else "127.0.0.1"
 
+    operator_role = str(user.get("role") or "")
     if detail["chat_mode"] == "tracker":
-        raw = await ticket_svc.send_tracker_reply(db, ticket_id, operator_id, text)
+        raw = await ticket_svc.send_tracker_reply(
+            db, ticket_id, operator_id, text, operator_role=operator_role
+        )
     else:
         if not detail.get("user_id"):
             raise HTTPException(
@@ -423,6 +376,7 @@ async def send_ticket_message(
             text,
             client_ip=client_ip,
             file=file,
+            operator_role=operator_role,
         )
 
     return TicketSendMessageResponse(message=TicketMessageItem(**raw))

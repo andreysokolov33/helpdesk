@@ -67,12 +67,17 @@ TRACKER_OPEN_STATUSES = (
     'waiting_client', 'waiting_technician', 'no_technician', 'waiting_parts', 'waiting_logistics',
     'cc_handover', 'waiting_cs',
 )
+# Статусы «ожидание сторонней стороны» — ниже в очереди оператора 1-й линии
+TRACKER_WAITING_OPERATOR_STATUSES = (
+    'waiting_client', 'waiting_technician', 'waiting_parts', 'waiting_logistics',
+    'waiting_cs', 'deferred',
+)
 # Закрытые / завершённые
 TRACKER_CLOSED_STATUSES = (
     'resolved', 'closed', 'cancelled', 'deferred', 'not_resolved')
 
-# Список тикетов helpdesk: только эти источники (users.tracker_tickets.source)
-TRACKER_HELPDESK_LIST_SOURCES = ('lk', 'ks', 'abs')
+# Список тикетов helpdesk (/chats): только эти источники (users.tracker_tickets.source)
+TRACKER_HELPDESK_LIST_SOURCES = ('lk', 'call_center', 'abs')
 
 # Вкладка «Закрытые» в блоке инцидентов на профиле абонента (без «отложен»)
 PROFILE_INCIDENT_CLOSED_STATUSES = (

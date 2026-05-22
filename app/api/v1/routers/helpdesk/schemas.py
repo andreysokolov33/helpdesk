@@ -30,6 +30,8 @@ class TrackerTicketListItem(BaseModel):
     assignee_role: Optional[str] = None
     assignee_is_viewer: bool = False
     """True, если тикет назначен на текущего оператора (users.skystream_users.id)."""
+    has_unread: bool = False
+    """Есть сообщения абонента, которые ещё не прочитал ни один сотрудник."""
     date_of_create: datetime
     updated_at: Optional[datetime] = None
 
