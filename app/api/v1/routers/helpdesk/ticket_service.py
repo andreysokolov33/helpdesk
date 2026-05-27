@@ -29,8 +29,8 @@ from app.models.users import (
     UserMailAttachment,
 )
 
-TRACKER_CHAT_SOURCES = frozenset({"ks", "partner", "tech", "incidents", "abs"})
 STAFF_READ_PERSON_TYPES = ("skystream", "call_centre")
+STAFF_OUTBOUND_SIDES = frozenset({"me", "support", "engineer"})
 _MAIL_IS_CLIENT = """
     CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
          THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
@@ -38,6 +38,121 @@ _MAIL_IS_CLIENT = """
 """
 _TICKET_TBL = "users.tracker_tickets"
 _STAFF_READ_IN_SQL = ", ".join(f"'{t}'" for t in STAFF_READ_PERSON_TYPES)
+
+
+def _format_subscriber_name(name: str | None) -> str:
+    """Имя абонента из user_details.name; с заглавной буквы или «Абонент»."""
+    raw = (name or "").strip()
+    if not raw:
+        return "Абонент"
+    return raw.capitalize() if len(raw) > 1 else raw.upper()
+
+
+async def fetch_subscriber_display_name(
+    db: AsyncSession,
+    user_id: int | None,
+) -> str:
+    if not user_id:
+        return "Абонент"
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT ud.name
+                FROM users.user_details ud
+                WHERE ud.user_id = :uid
+                  AND NULLIF(TRIM(ud.name), '') IS NOT NULL
+                ORDER BY CASE WHEN ud.is_actual IS TRUE THEN 0 ELSE 1 END, ud.id DESC
+                LIMIT 1
+                """
+            ),
+            {"uid": user_id},
+        )
+    ).scalar()
+    return _format_subscriber_name(str(row) if row is not None else None)
+
+
+def _staff_side_and_name(
+    *,
+    author_id: int | None,
+    viewer_id: int,
+    full_name: str | None,
+    role: str | None,
+) -> tuple[str, str]:
+    """(side, author_name): me | support | engineer."""
+    aid = int(author_id or 0)
+    if aid and aid == viewer_id:
+        return ("me", "Вы")
+    role_l = (role or "").strip().lower()
+    name = (full_name or "").strip()
+    if role_l == "support":
+        return ("support", name or "КЦ")
+    return ("engineer", "Инженер")
+
+
+def _classify_mail_message(
+    *,
+    viewer_id: int,
+    is_bot: bool,
+    is_out: bool,
+    person_type: str | None,
+    author_id: int | None,
+    staff_full_name: str | None,
+    staff_role: str | None,
+    subscriber_name: str = "Абонент",
+) -> tuple[str, str]:
+    if is_bot:
+        return ("bot", "Бот")
+    pt = (person_type or "").strip().lower()
+    if is_out:
+        if pt == "skystream" or pt in STAFF_READ_PERSON_TYPES:
+            side, name = _staff_side_and_name(
+                author_id=author_id,
+                viewer_id=viewer_id,
+                full_name=staff_full_name,
+                role=staff_role,
+            )
+            return (side, name)
+        return ("me", "КЦ")
+    if pt in ("", "user"):
+        return ("client", subscriber_name)
+    if pt == "skystream" or pt in STAFF_READ_PERSON_TYPES:
+        side, name = _staff_side_and_name(
+            author_id=author_id,
+            viewer_id=viewer_id,
+            full_name=staff_full_name,
+            role=staff_role,
+        )
+        return (side, name)
+    if pt in ("partner", "tech"):
+        return ("partner", "Партнёр")
+    return ("client", subscriber_name)
+
+
+def _classify_tracker_message(
+    *,
+    viewer_id: int,
+    author_id: int,
+    person_type: str | None,
+    staff_full_name: str | None,
+    staff_role: str | None,
+    subscriber_name: str = "Абонент",
+) -> tuple[str, str]:
+    pt = (person_type or "skystream").lower()
+    if author_id == viewer_id:
+        return ("me", "Вы")
+    if pt == "user":
+        return ("client", subscriber_name)
+    if pt in ("partner", "tech"):
+        return ("partner", staff_full_name or "Партнёр")
+    if pt == "skystream" or pt in STAFF_READ_PERSON_TYPES:
+        return _staff_side_and_name(
+            author_id=author_id,
+            viewer_id=viewer_id,
+            full_name=staff_full_name,
+            role=staff_role,
+        )
+    return ("engineer", "Инженер")
 
 
 def _sql_staff_read_exists(alias_r: str = "r") -> str:
@@ -76,9 +191,9 @@ def ticket_has_unread_sql(tbl: str = _TICKET_TBL) -> str:
     """
     return f"""
     (
-        COALESCE({tbl}.source, 'call_center') = 'abs' AND ({tracker})
+        COALESCE({tbl}.source, 'call_center') = 'lk' AND ({mail})
     ) OR (
-        COALESCE({tbl}.source, 'call_center') <> 'abs' AND ({mail})
+        COALESCE({tbl}.source, 'call_center') <> 'lk' AND ({tracker})
     )
     """
 
@@ -122,9 +237,9 @@ def ticket_waiting_since_sql(tbl: str = _TICKET_TBL) -> str:
     tracker_min = _sql_tracker_unread_min_time(tbl)
     return f"""
     CASE
-        WHEN ({unread}) AND COALESCE({tbl}.source, 'call_center') <> 'abs'
+        WHEN ({unread}) AND COALESCE({tbl}.source, 'call_center') = 'lk'
             THEN {mail_min}
-        WHEN ({unread}) AND COALESCE({tbl}.source, 'call_center') = 'abs'
+        WHEN ({unread}) AND COALESCE({tbl}.source, 'call_center') <> 'lk'
             THEN {tracker_min}
         WHEN COALESCE({tbl}.source, 'call_center') = 'lk'
              AND {tbl}.first_response_at IS NULL
@@ -224,28 +339,28 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
             tt.updated_at,
             tt.first_response_at,
             tt.last_client_message_at,
-            (COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL)
-                OR (COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL)
+            (COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL)
+                OR (COALESCE(tt.source, 'call_center') <> 'lk' AND tu.ticket_id IS NOT NULL)
                 AS calc_has_unread,
             (
                 NOT (
-                    (COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL)
-                    OR (COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL)
+                    (COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL)
+                    OR (COALESCE(tt.source, 'call_center') <> 'lk' AND tu.ticket_id IS NOT NULL)
                 )
                 AND tt.status = 'waiting_client'::users.tracker_status
             ) AS calc_awaiting_subscriber,
             CASE
                 WHEN (
-                    (COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL)
-                    OR (COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL)
+                    (COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL)
+                    OR (COALESCE(tt.source, 'call_center') <> 'lk' AND tu.ticket_id IS NOT NULL)
                 ) THEN 'needs_reply'
                 WHEN tt.status = 'waiting_client'::users.tracker_status THEN 'awaiting_subscriber'
                 ELSE 'needs_reply'
             END AS communication_state,
             CASE
-                WHEN COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL
+                WHEN COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL
                     THEN mu.oldest_unread_at
-                WHEN COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL
+                WHEN COALESCE(tt.source, 'call_center') <> 'lk' AND tu.ticket_id IS NOT NULL
                     THEN tu.oldest_unread_at
                 WHEN COALESCE(tt.source, 'call_center') = 'lk' AND tt.first_response_at IS NULL
                     THEN tt.date_of_create
@@ -395,7 +510,12 @@ _ALLOWED_EXT = _IMAGE_EXT | {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
 
 
 def chat_mode_for_source(source: str | None) -> str:
-    return "tracker" if (source or "call_center") in TRACKER_CHAT_SOURCES else "mail"
+    """lk → user_mail; остальные источники (call_center, ks, abs, …) → tracker_messages."""
+    return "mail" if (source or "call_center").strip() == "lk" else "tracker"
+
+
+def is_lk_ticket_source(source: str | None) -> bool:
+    return (source or "").strip() == "lk"
 
 
 async def fetch_tickets_has_unread(
@@ -432,6 +552,352 @@ def _iso(dt: datetime | None) -> str | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).isoformat()
+
+
+def _message_edit_meta(
+    *,
+    updated_at: datetime | None,
+    is_edited_flag: bool | None = None,
+) -> dict[str, Any]:
+    """is_edited и updated_at_iso для сообщения в чате."""
+    edited = bool(is_edited_flag) if is_edited_flag is not None else updated_at is not None
+    ua = updated_at if isinstance(updated_at, datetime) else None
+    if is_edited_flag is None:
+        edited = ua is not None
+    return {
+        "is_edited": edited,
+        "updated_at_iso": _iso(ua) if edited and ua else None,
+    }
+
+
+def _text_snippet(text: str | None, limit: int = 100) -> str:
+    raw = (text or "").replace("\n", " ").strip()
+    if len(raw) <= limit:
+        return raw
+    return raw[: limit - 1] + "…"
+
+
+def _parse_reply_to_id(raw: str | int | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        val = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
+def _reply_preview_dict(msg: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(msg["id"]),
+        "author_name": msg.get("author_name"),
+        "text": _text_snippet(msg.get("text") or ""),
+        "is_deleted": False,
+    }
+
+
+def _deleted_reply_preview(reply_id: int) -> dict[str, Any]:
+    return {
+        "id": reply_id,
+        "author_name": None,
+        "text": "Сообщение удалено",
+        "is_deleted": True,
+    }
+
+
+def enrich_reply_previews(messages: list[dict[str, Any]]) -> None:
+    by_id = {int(m["id"]): m for m in messages if int(m.get("id") or 0) > 0}
+    for m in messages:
+        rid = _parse_reply_to_id(m.get("reply_to_id"))
+        if not rid:
+            m["reply_preview"] = None
+            continue
+        ref = by_id.get(rid)
+        m["reply_preview"] = _reply_preview_dict(ref) if ref else None
+
+
+async def fetch_reply_previews_missing(
+    db: AsyncSession,
+    reply_ids: list[int],
+    *,
+    chat_mode: str,
+    viewer_id: int,
+    subscriber_display_name: str,
+) -> dict[int, dict[str, Any]]:
+    if not reply_ids:
+        return {}
+    if chat_mode == "mail":
+        answer_expr = """
+            CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
+                 THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
+                 ELSE um.answer END
+        """
+        rows = (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT um.id AS msg_id, um.id_user_from, um.text AS text_raw, um.person_type,
+                        um.user_id, ({answer_expr}) AS answer,
+                        su.full_name AS staff_full_name,
+                        su.role AS staff_role
+                    FROM users.user_mail um
+                    LEFT JOIN users.skystream_users su
+                        ON um.user_id = su.id AND COALESCE(um.person_type, '') = 'skystream'
+                    WHERE um.id = ANY(:ids)
+                    """
+                ),
+                {"ids": reply_ids},
+            )
+        ).mappings().all()
+        out: dict[int, dict[str, Any]] = {}
+        for r in rows:
+            mid = int(r["msg_id"])
+            side, author_name = _classify_mail_message(
+                viewer_id=viewer_id,
+                is_bot=int(r.get("id_user_from") or 0) == 0,
+                is_out=int(r["answer"] or 0) == 1,
+                person_type=r.get("person_type"),
+                author_id=int(r["user_id"]) if r.get("user_id") is not None else None,
+                staff_full_name=r.get("staff_full_name"),
+                staff_role=r.get("staff_role"),
+                subscriber_name=subscriber_display_name,
+            )
+            out[mid] = {
+                "id": mid,
+                "author_name": author_name,
+                "text": _text_snippet(r.get("text_raw")),
+                "is_deleted": False,
+            }
+        return out
+
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT tm.id, tm.body, tm.author_id, tm.person_type,
+                    su.full_name AS staff_full_name,
+                    su.role AS staff_role
+                FROM users.tracker_messages tm
+                LEFT JOIN users.skystream_users su ON su.id = tm.author_id
+                WHERE tm.id = ANY(:ids)
+                """
+            ),
+            {"ids": reply_ids},
+        )
+    ).mappings().all()
+    out = {}
+    for r in rows:
+        mid = int(r["id"])
+        side, author_name = _classify_tracker_message(
+            viewer_id=viewer_id,
+            author_id=int(r["author_id"]),
+            person_type=r.get("person_type"),
+            staff_full_name=r.get("staff_full_name"),
+            staff_role=r.get("staff_role"),
+            subscriber_name=subscriber_display_name,
+        )
+        out[mid] = {
+            "id": mid,
+            "author_name": author_name,
+            "text": _text_snippet(r.get("body")),
+            "is_deleted": False,
+        }
+    return out
+
+
+async def attach_reply_previews(
+    db: AsyncSession,
+    messages: list[dict[str, Any]],
+    *,
+    chat_mode: str,
+    viewer_id: int,
+    subscriber_display_name: str,
+) -> None:
+    enrich_reply_previews(messages)
+    missing: list[int] = []
+    for m in messages:
+        rid = _parse_reply_to_id(m.get("reply_to_id"))
+        if rid and not m.get("reply_preview"):
+            missing.append(rid)
+    if not missing:
+        return
+    fetched = await fetch_reply_previews_missing(
+        db,
+        list(set(missing)),
+        chat_mode=chat_mode,
+        viewer_id=viewer_id,
+        subscriber_display_name=subscriber_display_name,
+    )
+    for m in messages:
+        rid = _parse_reply_to_id(m.get("reply_to_id"))
+        if not rid or m.get("reply_preview"):
+            continue
+        if rid in fetched:
+            m["reply_preview"] = fetched[rid]
+        else:
+            m["reply_preview"] = _deleted_reply_preview(rid)
+
+
+async def _assert_own_mail_message(
+    db: AsyncSession,
+    ticket_id: int,
+    message_id: int,
+    operator_id: int,
+) -> None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1 FROM users.user_mail um
+                WHERE um.id = :mid AND um.ticket_id = :tid
+                  AND um.user_id = :op_id
+                  AND COALESCE(um.person_type, 'skystream') = 'skystream'
+                  AND (
+                    CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
+                         THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
+                         ELSE um.answer END
+                  ) = 1
+                LIMIT 1
+                """
+            ),
+            {"mid": message_id, "tid": ticket_id, "op_id": operator_id},
+        )
+    ).scalar()
+    if not row:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено или нельзя изменить")
+
+
+async def _assert_own_tracker_message(
+    db: AsyncSession,
+    ticket_id: int,
+    message_id: int,
+    operator_id: int,
+) -> None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1 FROM users.tracker_messages tm
+                WHERE tm.id = :mid AND tm.ticket_id = :tid
+                  AND tm.author_id = :op_id
+                  AND COALESCE(tm.person_type, 'skystream') = 'skystream'
+                LIMIT 1
+                """
+            ),
+            {"mid": message_id, "tid": ticket_id, "op_id": operator_id},
+        )
+    ).scalar()
+    if not row:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено или нельзя изменить")
+
+
+async def _assert_reply_target(
+    db: AsyncSession,
+    ticket_id: int,
+    reply_to_id: int | None,
+    *,
+    chat_mode: str,
+) -> None:
+    if not reply_to_id:
+        return
+    if chat_mode == "mail":
+        ok = (
+            await db.execute(
+                text(
+                    "SELECT 1 FROM users.user_mail WHERE id = :rid AND ticket_id = :tid LIMIT 1"
+                ),
+                {"rid": reply_to_id, "tid": ticket_id},
+            )
+        ).scalar()
+    else:
+        ok = (
+            await db.execute(
+                text(
+                    """
+                    SELECT 1 FROM users.tracker_messages
+                    WHERE id = :rid AND ticket_id = :tid LIMIT 1
+                    """
+                ),
+                {"rid": reply_to_id, "tid": ticket_id},
+            )
+        ).scalar()
+    if not ok:
+        raise HTTPException(status_code=400, detail="Сообщение для ответа не найдено в этом тикете")
+
+
+async def load_mail_subscriber_read_receipts(
+    db: AsyncSession,
+    ticket_id: int,
+) -> dict[int, str]:
+    """ЛК: прочтение исходящих оператором сообщений абонентом (user_mail_reads.person_type=user)."""
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT um.id AS msg_id,
+                    COALESCE(
+                        (
+                            SELECT MIN(r.read_time)
+                            FROM users.user_mail_reads r
+                            WHERE r.msg_id = um.id AND r.person_type = 'user'
+                        ),
+                        CASE WHEN um.read::text IN ('1', 't', 'true') THEN um.date_tz END
+                    ) AS read_time
+                FROM users.user_mail um
+                WHERE um.ticket_id = :ticket_id
+                  AND NOT ({_MAIL_IS_CLIENT})
+                """
+            ),
+            {"ticket_id": ticket_id},
+        )
+    ).mappings().all()
+    out: dict[int, str] = {}
+    for r in rows:
+        rt = r.get("read_time")
+        if isinstance(rt, datetime):
+            out[int(r["msg_id"])] = _iso(rt) or ""
+    return out
+
+
+async def load_tracker_engineer_read_receipts(
+    db: AsyncSession,
+    ticket_id: int,
+) -> dict[int, str]:
+    """call_center и др.: прочтение исходящих skystream-сообщений инженером."""
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT tm.id AS msg_id, MIN(r.read_time) AS read_time
+                FROM users.tracker_messages tm
+                INNER JOIN users.tracker_messages_reads r ON r.msg_id = tm.id
+                INNER JOIN users.skystream_users su
+                    ON su.id = r.user_id AND LOWER(COALESCE(su.role, '')) = 'engineer'
+                WHERE tm.ticket_id = :ticket_id
+                  AND COALESCE(tm.person_type, 'skystream') = 'skystream'
+                GROUP BY tm.id
+                """
+            ),
+            {"ticket_id": ticket_id},
+        )
+    ).mappings().all()
+    out: dict[int, str] = {}
+    for r in rows:
+        rt = r.get("read_time")
+        if isinstance(rt, datetime):
+            out[int(r["msg_id"])] = _iso(rt) or ""
+    return out
+
+
+def _attach_recipient_read_at(
+    messages: list[dict[str, Any]],
+    receipts: dict[int, str],
+) -> None:
+    for m in messages:
+        if m.get("side") in STAFF_OUTBOUND_SIDES:
+            m["recipient_read_at_iso"] = receipts.get(int(m["id"]))
+        else:
+            m["recipient_read_at_iso"] = None
 
 
 def _media_url(file_path: str | None) -> str | None:
@@ -636,6 +1102,9 @@ async def load_ticket_detail(
     if not sub_name and d.get("caller_name"):
         sub_name = str(d["caller_name"]).strip()
 
+    uid = int(d["user_id"]) if d.get("user_id") is not None else None
+    subscriber_display_name = await fetch_subscriber_display_name(db, uid)
+
     return {
         "id": int(d["id"]),
         "title": d.get("title") or f"Тикет #{ticket_id}",
@@ -657,6 +1126,7 @@ async def load_ticket_detail(
         "user_id": int(d["user_id"]) if d.get("user_id") is not None else None,
         "caller_name": d.get("caller_name"),
         "subscriber_name": sub_name or None,
+        "subscriber_display_name": subscriber_display_name,
         "subscriber_login": sub_login or None,
         "subscriber_online": bool(d.get("subscriber_online")),
         "subscriber_is_juridical": int(d.get("is_juridical") or 0),
@@ -727,27 +1197,36 @@ async def load_mail_messages(
     viewer_id: int,
     *,
     include_initial_body: str | None = None,
+    since_id: int = 0,
+    subscriber_display_name: str = "Абонент",
 ) -> list[dict[str, Any]]:
     answer_expr = """
         CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
              THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
              ELSE um.answer END
     """
+    since_sql = " AND um.id > :since_id" if since_id > 0 else ""
     rows = (
         await db.execute(
             text(
                 f"""
-                SELECT um.id AS msg_id, um.id_user_from, um.date_tz, ({answer_expr}) AS answer,
+                SELECT um.id AS msg_id, um.id_user_from, um.date_tz, um.updated_at,
+                    um.person_type, um.user_id,
+                    ({answer_expr}) AS answer,
                     um.text AS text_raw,
                     CASE WHEN um.file_new IS NULL OR um.file_new IN ('0', '') THEN NULL
                          ELSE um.file_new END AS legacy_file,
-                    um.relay_msg_id
+                    um.relay_msg_id,
+                    su.full_name AS staff_full_name,
+                    su.role AS staff_role
                 FROM users.user_mail um
-                WHERE um.ticket_id = :ticket_id
+                LEFT JOIN users.skystream_users su
+                    ON um.user_id = su.id AND COALESCE(um.person_type, '') = 'skystream'
+                WHERE um.ticket_id = :ticket_id{since_sql}
                 ORDER BY COALESCE(um.date_tz, to_timestamp(um.date)), um.id
                 """
             ),
-            {"ticket_id": ticket_id},
+            {"ticket_id": ticket_id, "since_id": since_id},
         )
     ).mappings().all()
 
@@ -758,14 +1237,21 @@ async def load_mail_messages(
                 await db.execute(
                     text(
                         f"""
-                        SELECT um.id AS msg_id, um.id_user_from, um.date_tz, ({answer_expr}) AS answer,
+                        SELECT um.id AS msg_id, um.id_user_from, um.date_tz, um.updated_at,
+                            um.person_type, um.user_id,
+                            ({answer_expr}) AS answer,
                             um.text AS text_raw,
                             CASE WHEN um.file_new IS NULL OR um.file_new IN ('0', '') THEN NULL
                                  ELSE um.file_new END AS legacy_file,
-                            um.relay_msg_id
+                            um.relay_msg_id,
+                            su.full_name AS staff_full_name,
+                            su.role AS staff_role
                         FROM users.user_mail um
+                        LEFT JOIN users.skystream_users su
+                            ON um.user_id = su.id AND COALESCE(um.person_type, '') = 'skystream'
                         WHERE um.id BETWEEN :start_id AND :end_id
                           AND :subscriber_id IN (um.id_user_from, um.id_user_to)
+                          {since_sql}
                         ORDER BY COALESCE(um.date_tz, to_timestamp(um.date)), um.id
                         """
                     ),
@@ -802,32 +1288,45 @@ async def load_mail_messages(
         is_out = int(r["answer"] or 0) == 1
         dt = r.get("date_tz")
         legacy = r.get("legacy_file")
-        if is_bot:
-            side = "bot"
-        elif is_out:
-            side = "agent"
-        else:
-            side = "client"
+        side, author_name = _classify_mail_message(
+            viewer_id=viewer_id,
+            is_bot=is_bot,
+            is_out=is_out,
+            person_type=r.get("person_type"),
+            author_id=int(r["user_id"]) if r.get("user_id") is not None else None,
+            staff_full_name=r.get("staff_full_name"),
+            staff_role=r.get("staff_role"),
+            subscriber_name=subscriber_display_name,
+        )
+        is_incoming_client = side == "client"
+        edit_meta = _message_edit_meta(updated_at=r.get("updated_at"))
         messages.append(
             {
                 "id": mid,
                 "side": side,
                 "text": (r.get("text_raw") or "").strip(),
+                "author_name": author_name,
                 "created_at_iso": _iso(dt) if isinstance(dt, datetime) else None,
-                "has_read": True if is_bot else mid in read_ids or is_out,
+                "has_read": True if is_bot or side == "me" else mid in read_ids or not is_incoming_client,
+                "reply_to_id": _parse_reply_to_id(r.get("relay_msg_id")),
+                **edit_meta,
                 "legacy_file_url": _media_url(legacy) if legacy else None,
                 "attachments": att_map.get(mid, []),
             }
         )
 
-    if not messages and include_initial_body and include_initial_body.strip():
+    if not messages and include_initial_body and include_initial_body.strip() and since_id <= 0:
         messages.append(
             {
                 "id": 0,
                 "side": "client",
                 "text": include_initial_body.strip(),
+                "author_name": subscriber_display_name,
                 "created_at_iso": None,
                 "has_read": True,
+                "reply_to_id": None,
+                "is_edited": False,
+                "updated_at_iso": None,
                 "legacy_file_url": None,
                 "attachments": [],
                 "is_initial": True,
@@ -842,20 +1341,26 @@ async def load_tracker_messages(
     ticket_id: int,
     viewer_id: int,
     viewer_role: str,
+    *,
+    since_id: int = 0,
+    subscriber_display_name: str = "Абонент",
 ) -> list[dict[str, Any]]:
+    since_sql = " AND tm.id > :since_id" if since_id > 0 else ""
     rows = (
         await db.execute(
             text(
-                """
-                SELECT tm.id, tm.body, tm.created_at, tm.author_id, tm.person_type,
-                    su.full_name AS author_name
+                f"""
+                SELECT tm.id, tm.body, tm.created_at, tm.updated_at, tm.author_id, tm.person_type,
+                    tm.reply_to_id, tm.is_edited,
+                    su.full_name AS staff_full_name,
+                    su.role AS staff_role
                 FROM users.tracker_messages tm
                 LEFT JOIN users.skystream_users su ON su.id = tm.author_id
-                WHERE tm.ticket_id = :ticket_id
+                WHERE tm.ticket_id = :ticket_id{since_sql}
                 ORDER BY tm.created_at, tm.id
                 """
             ),
-            {"ticket_id": ticket_id},
+            {"ticket_id": ticket_id, "since_id": since_id},
         )
     ).mappings().all()
 
@@ -883,27 +1388,113 @@ async def load_tracker_messages(
     for r in rows:
         mid = int(r["id"])
         author_id = int(r["author_id"])
-        is_own = author_id == viewer_id
-        pt = (r.get("person_type") or "skystream").lower()
-        if is_own:
-            side = "agent"
-        elif pt in ("partner", "tech"):
-            side = "partner"
-        else:
-            side = "client" if pt == "user" else "agent"
+        side, author_name = _classify_tracker_message(
+            viewer_id=viewer_id,
+            author_id=author_id,
+            person_type=r.get("person_type"),
+            staff_full_name=r.get("staff_full_name"),
+            staff_role=r.get("staff_role"),
+            subscriber_name=subscriber_display_name,
+        )
+        is_own = side == "me"
+        edit_meta = _message_edit_meta(
+            updated_at=r.get("updated_at"),
+            is_edited_flag=bool(r.get("is_edited")),
+        )
         messages.append(
             {
                 "id": mid,
                 "side": side,
                 "text": (r.get("body") or "").strip(),
-                "author_name": r.get("author_name") or ("Вы" if is_own else "—"),
+                "author_name": author_name,
                 "created_at_iso": _iso(r.get("created_at")),
-                "has_read": is_own or mid in staff_read_ids,
+                "has_read": is_own or mid in staff_read_ids or side != "client",
+                "reply_to_id": _parse_reply_to_id(r.get("reply_to_id")),
+                **edit_meta,
                 "legacy_file_url": None,
                 "attachments": att_map.get(mid, []),
             }
         )
     return messages
+
+
+async def list_ticket_messages(
+    db: AsyncSession,
+    ticket_id: int,
+    viewer_id: int,
+    viewer_role: str,
+    *,
+    limit: int = 40,
+    before_id: int | None = None,
+    after_id: int | None = None,
+    around_id: int | None = None,
+    since_id: int = 0,
+) -> tuple[list[dict[str, Any]], str, dict[int, str], bool, bool]:
+    from app.api.v1.routers.helpdesk import ticket_chat_pages as chat_pages
+
+    detail = await load_ticket_detail(db, ticket_id, viewer_id)
+    mode = detail["chat_mode"]
+    sub_display = detail.get("subscriber_display_name") or await fetch_subscriber_display_name(
+        db, detail.get("user_id")
+    )
+
+    is_poll = since_id > 0 and before_id is None and after_id is None and around_id is None
+
+    if mode == "tracker":
+        raw, has_older, has_newer = await chat_pages.load_tracker_messages_paged(
+            db,
+            ticket_id,
+            viewer_id,
+            viewer_role,
+            subscriber_display_name=sub_display,
+            limit=limit,
+            before_id=before_id,
+            after_id=after_id,
+            around_id=around_id,
+            since_id=since_id,
+        )
+        if not is_poll:
+            unread = [
+                m["id"]
+                for m in raw
+                if m["side"] == "client" and not m.get("has_read") and m["id"] > 0
+            ]
+            if unread:
+                await mark_tracker_messages_read(db, ticket_id, viewer_id, unread)
+        receipts = await load_tracker_engineer_read_receipts(db, ticket_id)
+    else:
+        raw, has_older, has_newer = await chat_pages.load_mail_messages_paged(
+            db,
+            ticket_id,
+            detail.get("user_id"),
+            viewer_id,
+            subscriber_display_name=sub_display,
+            limit=limit,
+            before_id=before_id,
+            after_id=after_id,
+            around_id=around_id,
+            since_id=since_id,
+            include_initial_body=detail.get("body"),
+        )
+        if not is_poll:
+            unread = [
+                m["id"]
+                for m in raw
+                if m["side"] == "client" and not m.get("has_read") and m["id"] > 0
+            ]
+            if unread:
+                await mark_mail_messages_read(db, ticket_id, viewer_id, unread)
+        receipts = await load_mail_subscriber_read_receipts(db, ticket_id)
+
+    _attach_recipient_read_at(raw, receipts)
+    await attach_reply_previews(
+        db,
+        raw,
+        chat_mode=mode,
+        viewer_id=viewer_id,
+        subscriber_display_name=sub_display,
+    )
+    return raw, mode, receipts, has_older, has_newer
 
 
 async def mark_tracker_messages_read(
@@ -997,6 +1588,149 @@ async def maybe_set_first_response_at(
     )
 
 
+async def edit_ticket_message(
+    db: AsyncSession,
+    ticket_id: int,
+    message_id: int,
+    operator_id: int,
+    viewer_role: str,
+    text_body: str,
+) -> dict[str, Any]:
+    detail = await load_ticket_detail(db, ticket_id, operator_id)
+    mode = detail["chat_mode"]
+    sub_display = detail.get("subscriber_display_name") or "Абонент"
+    text_body = text_body.strip()
+    if not text_body:
+        raise HTTPException(status_code=400, detail="Введите текст сообщения")
+
+    if mode == "mail":
+        await _assert_own_mail_message(db, ticket_id, message_id, operator_id)
+        await db.execute(
+            text(
+                """
+                UPDATE users.user_mail
+                SET text = :text, updated_at = NOW()
+                WHERE id = :mid AND ticket_id = :tid
+                """
+            ),
+            {"text": text_body, "mid": message_id, "tid": ticket_id},
+        )
+    else:
+        await _assert_own_tracker_message(db, ticket_id, message_id, operator_id)
+        now = datetime.now(timezone.utc)
+        await db.execute(
+            text(
+                """
+                UPDATE users.tracker_messages
+                SET body = :text, is_edited = TRUE, updated_at = :now
+                WHERE id = :mid AND ticket_id = :tid
+                """
+            ),
+            {"text": text_body, "now": now, "mid": message_id, "tid": ticket_id},
+        )
+    await db.execute(
+        text("UPDATE users.tracker_tickets SET updated_at = NOW() WHERE id = :tid"),
+        {"tid": ticket_id},
+    )
+    await db.commit()
+
+    if mode == "mail":
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT date_tz, updated_at, relay_msg_id,
+                        CASE WHEN file_new IS NULL OR file_new IN ('0', '') THEN NULL
+                             ELSE file_new END AS legacy_file
+                    FROM users.user_mail WHERE id = :mid AND ticket_id = :tid
+                    """
+                ),
+                {"mid": message_id, "tid": ticket_id},
+            )
+        ).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Сообщение не найдено")
+        msg: dict[str, Any] = {
+            "id": message_id,
+            "side": "me",
+            "text": text_body,
+            "author_name": "Вы",
+            "created_at_iso": _iso(row.get("date_tz")),
+            "has_read": True,
+            "recipient_read_at_iso": None,
+            "reply_to_id": _parse_reply_to_id(row.get("relay_msg_id")),
+            **_message_edit_meta(updated_at=row.get("updated_at")),
+            "legacy_file_url": _media_url(row.get("legacy_file")),
+            "attachments": [],
+        }
+    else:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT created_at, updated_at, reply_to_id, is_edited
+                    FROM users.tracker_messages WHERE id = :mid AND ticket_id = :tid
+                    """
+                ),
+                {"mid": message_id, "tid": ticket_id},
+            )
+        ).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Сообщение не найдено")
+        msg = {
+            "id": message_id,
+            "side": "me",
+            "text": text_body,
+            "author_name": "Вы",
+            "created_at_iso": _iso(row.get("created_at")),
+            "has_read": True,
+            "recipient_read_at_iso": None,
+            "reply_to_id": _parse_reply_to_id(row.get("reply_to_id")),
+            **_message_edit_meta(
+                updated_at=row.get("updated_at"),
+                is_edited_flag=bool(row.get("is_edited")),
+            ),
+            "legacy_file_url": None,
+            "attachments": [],
+        }
+
+    await attach_reply_previews(
+        db,
+        [msg],
+        chat_mode=mode,
+        viewer_id=operator_id,
+        subscriber_display_name=sub_display,
+    )
+    return msg
+
+
+async def delete_ticket_message(
+    db: AsyncSession,
+    ticket_id: int,
+    message_id: int,
+    operator_id: int,
+) -> None:
+    detail = await load_ticket_detail(db, ticket_id, operator_id)
+    mode = detail["chat_mode"]
+    if mode == "mail":
+        await _assert_own_mail_message(db, ticket_id, message_id, operator_id)
+        await db.execute(
+            text("DELETE FROM users.user_mail WHERE id = :mid AND ticket_id = :tid"),
+            {"mid": message_id, "tid": ticket_id},
+        )
+    else:
+        await _assert_own_tracker_message(db, ticket_id, message_id, operator_id)
+        await db.execute(
+            text("DELETE FROM users.tracker_messages WHERE id = :mid AND ticket_id = :tid"),
+            {"mid": message_id, "tid": ticket_id},
+        )
+    await db.execute(
+        text("UPDATE users.tracker_tickets SET updated_at = NOW() WHERE id = :tid"),
+        {"tid": ticket_id},
+    )
+    await db.commit()
+
+
 async def send_mail_reply(
     db: AsyncSession,
     ticket_id: int,
@@ -1007,6 +1741,7 @@ async def send_mail_reply(
     client_ip: str = "0.0.0.0",
     file: UploadFile | None = None,
     operator_role: str | None = None,
+    reply_to_id: int | None = None,
 ) -> dict[str, Any]:
     text_body = text_body.strip()
     if not text_body and (not file or not file.filename):
@@ -1023,6 +1758,8 @@ async def send_mail_reply(
     if int(ticket["user_id"] or 0) != chat_id:
         raise HTTPException(status_code=400, detail="Абонент не привязан к тикету")
 
+    await _assert_reply_target(db, ticket_id, reply_to_id, chat_mode="mail")
+
     file_path = ""
     real_file = None
     moscow_ts = _moscow_ts()
@@ -1035,12 +1772,14 @@ async def send_mail_reply(
                 """
                 INSERT INTO users.user_mail (
                     text, id_user_from, id_user_to, read, answer, date, file_new,
-                    user_id, person_type, user_chat, ticket_id, ip_address, date_tz
+                    user_id, person_type, user_chat, ticket_id, ip_address, date_tz,
+                    relay_msg_id
                 )
                 VALUES (
                     :text, :from_id, :to_id, '0', 1, :ts, :file_new,
                     :op_id, 'skystream', :chat_id, :ticket_id,
-                    CAST(:ip AS inet), NOW()
+                    CAST(:ip AS inet), NOW(),
+                    :relay_msg_id
                 )
                 RETURNING id, date_tz
                 """
@@ -1055,6 +1794,7 @@ async def send_mail_reply(
                 "chat_id": chat_id,
                 "ticket_id": ticket_id,
                 "ip": client_ip or "127.0.0.1",
+                "relay_msg_id": str(reply_to_id) if reply_to_id else None,
             },
         )
     ).mappings().first()
@@ -1075,15 +1815,32 @@ async def send_mail_reply(
     await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()
 
-    return {
+    out: dict[str, Any] = {
         "id": msg_id,
-        "side": "agent",
+        "side": "me",
         "text": text_body,
+        "author_name": "Вы",
         "created_at_iso": _iso(created if isinstance(created, datetime) else now),
         "has_read": True,
+        "recipient_read_at_iso": None,
+        "reply_to_id": reply_to_id,
+        "is_edited": False,
         "legacy_file_url": _media_url(file_path) if file_path else None,
         "attachments": [],
     }
+    if reply_to_id:
+        enrich_reply_previews([out])
+        if not out.get("reply_preview"):
+            previews = await fetch_reply_previews_missing(
+                db,
+                [reply_to_id],
+                chat_mode="mail",
+                viewer_id=operator_id,
+                subscriber_display_name="Абонент",
+            )
+            prev = previews.get(reply_to_id)
+            out["reply_preview"] = prev if prev else _deleted_reply_preview(reply_to_id)
+    return out
 
 
 async def send_tracker_reply(
@@ -1093,10 +1850,13 @@ async def send_tracker_reply(
     text_body: str,
     *,
     operator_role: str | None = None,
+    reply_to_id: int | None = None,
 ) -> dict[str, Any]:
     text_body = text_body.strip()
     if not text_body:
         raise HTTPException(status_code=400, detail="Введите текст сообщения")
+
+    await _assert_reply_target(db, ticket_id, reply_to_id, chat_mode="tracker")
 
     now = datetime.now(timezone.utc)
     msg = TrackerMessages(
@@ -1105,6 +1865,7 @@ async def send_tracker_reply(
         body=text_body,
         created_at=now,
         person_type="skystream",
+        reply_to_id=reply_to_id,
     )
     db.add(msg)
     await db.flush()
@@ -1115,15 +1876,31 @@ async def send_tracker_reply(
     await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()
 
-    return {
+    out: dict[str, Any] = {
         "id": int(msg.id),
-        "side": "agent",
+        "side": "me",
         "text": text_body,
         "author_name": "Вы",
         "created_at_iso": _iso(now),
         "has_read": True,
+        "recipient_read_at_iso": None,
+        "reply_to_id": reply_to_id,
+        "is_edited": False,
         "attachments": [],
     }
+    if reply_to_id:
+        enrich_reply_previews([out])
+        if not out.get("reply_preview"):
+            previews = await fetch_reply_previews_missing(
+                db,
+                [reply_to_id],
+                chat_mode="tracker",
+                viewer_id=operator_id,
+                subscriber_display_name="Абонент",
+            )
+            prev = previews.get(reply_to_id)
+            out["reply_preview"] = prev if prev else _deleted_reply_preview(reply_to_id)
+    return out
 
 
 async def _save_upload(file: UploadFile, chat_id: int) -> tuple[str, str | None]:

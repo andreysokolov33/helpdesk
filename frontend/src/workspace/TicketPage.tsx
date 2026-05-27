@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
+import TicketDeleteMessageModal from "@/components/TicketDeleteMessageModal";
+import TicketDeliveryTicks from "@/components/TicketDeliveryTicks";
+import TicketMessageContextMenu, { type MessageMenuAction } from "@/components/TicketMessageContextMenu";
+import TicketChatScrollDown from "@/components/TicketChatScrollDown";
+import TicketMessageReplyQuote from "@/components/TicketMessageReplyQuote";
 import { postDisconnect, type FastCheckResponse } from "@/api/userProfile";
 import TicketClassifyModal, { type ClassifyAction } from "@/workspace/TicketClassifyModal";
 import TicketFastCheckDrawer from "@/workspace/TicketFastCheckDrawer";
@@ -16,25 +21,37 @@ import {
   fetchTicketMessages,
   formatMsgTime,
   formatTicketCreated,
+  deleteTicketMessage,
+  normalizeReadReceipts,
   sendTicketMessage,
+  updateTicketMessage,
   type TicketDetail,
   type TicketMessage,
 } from "@/api/ticket";
+import {
+  applyReadReceiptsToMessages,
+  canMessageContextMenu,
+  mergeReadReceipts,
+  mergeTicketMessages,
+  ticketAuthorLabel,
+  ticketAvatarLetter,
+  ticketBblClass,
+  ticketMavClass,
+  ticketMsgRowClass,
+} from "@/utils/ticketMessages";
+import {
+  CHAT_PAGE_SIZE,
+  CHAT_SCROLL_EDGE_PX,
+  isChatAtBottom,
+  isChatNearBottom,
+  isChatNearTop,
+  maxLoadedMessageId,
+  minLoadedMessageId,
+  preserveScrollOnPrepend,
+  scrollChatToBottom,
+} from "@/utils/ticketChatScroll";
 
-function sideLabel(msg: TicketMessage): string {
-  if (msg.side === "bot") return "Бот";
-  if (msg.side === "client") return "Абонент";
-  if (msg.side === "partner") return msg.author_name || "Партнёр";
-  if (msg.author_name) return msg.author_name;
-  return "КЦ";
-}
-
-function avatarLetter(msg: TicketMessage, subscriberName: string): string {
-  if (msg.side === "client") return subscriberName.trim()[0]?.toUpperCase() || "А";
-  if (msg.side === "note") return "З";
-  if (msg.side === "bot") return "Б";
-  return "К";
-}
+const MSG_POLL_MS = 5000;
 
 type AttachBlockProps = { msg: TicketMessage };
 
@@ -76,9 +93,21 @@ export default function TicketPage() {
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesRef = useRef<TicketMessage[]>([]);
+  const readReceiptsRef = useRef<Record<number, string>>({});
+  const atBottomRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const loadingNewerRef = useRef(false);
 
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [hasNewer, setHasNewer] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [loadingNewer, setLoadingNewer] = useState(false);
+  const [atBottom, setAtBottom] = useState(true);
+  const [pendingNewCount, setPendingNewCount] = useState(0);
+  const [highlightId, setHighlightId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -91,6 +120,23 @@ export default function TicketPage() {
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkCache, setCheckCache] = useState<FastCheckResponse | null>(null);
   const [checkLoading, setCheckLoading] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; msg: TicketMessage } | null>(null);
+  const [replyTo, setReplyTo] = useState<TicketMessage | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TicketMessage | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    setContextMenu(null);
+    setReplyTo(null);
+    setEditingId(null);
+    setDeleteTarget(null);
+    setHasOlder(false);
+    setHasNewer(false);
+    setPendingNewCount(0);
+    setAtBottom(true);
+    atBottomRef.current = true;
+  }, [ticketId]);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(ticketId) || ticketId <= 0) {
@@ -101,13 +147,30 @@ export default function TicketPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, m] = await Promise.all([fetchTicketDetail(ticketId), fetchTicketMessages(ticketId)]);
+      const [d, m] = await Promise.all([
+        fetchTicketDetail(ticketId),
+        fetchTicketMessages(ticketId, { limit: CHAT_PAGE_SIZE }),
+      ]);
+      const receipts = normalizeReadReceipts(m.read_receipts);
+      readReceiptsRef.current = receipts;
       setDetail(d);
-      setMessages(m.messages);
+      setMessages(applyReadReceiptsToMessages(m.messages, receipts));
+      setHasOlder(Boolean(m.has_older));
+      setHasNewer(Boolean(m.has_newer));
+      setPendingNewCount(0);
+      atBottomRef.current = true;
+      setAtBottom(true);
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (el) scrollChatToBottom(el);
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
       setDetail(null);
       setMessages([]);
+      setHasOlder(false);
+      setHasNewer(false);
+      readReceiptsRef.current = {};
     } finally {
       setLoading(false);
     }
@@ -118,9 +181,200 @@ export default function TicketPage() {
   }, [load]);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    messagesRef.current = messages;
   }, [messages]);
+
+  const pollMessages = useCallback(async () => {
+    if (!Number.isFinite(ticketId) || ticketId <= 0) return;
+    const sinceId = maxLoadedMessageId(messagesRef.current);
+    try {
+      const res = await fetchTicketMessages(ticketId, { sinceId });
+      const incomingReceipts = normalizeReadReceipts(res.read_receipts);
+      const receipts = mergeReadReceipts(readReceiptsRef.current, incomingReceipts);
+      const hasNew = res.messages.length > 0;
+      const hasReceiptUpdates = Object.keys(incomingReceipts).length > 0;
+      if (!hasNew && !hasReceiptUpdates) return;
+      readReceiptsRef.current = receipts;
+      setMessages((prev) =>
+        applyReadReceiptsToMessages(hasNew ? mergeTicketMessages(prev, res.messages) : prev, receipts),
+      );
+      if (atBottomRef.current && hasNew) {
+        setHasNewer(false);
+      }
+      if (atBottomRef.current) {
+        if (hasNew) {
+          requestAnimationFrame(() => {
+            const el = scrollRef.current;
+            if (el) scrollChatToBottom(el);
+          });
+        }
+        setPendingNewCount(0);
+      } else if (hasNew) {
+        setPendingNewCount((c) => c + res.messages.length);
+      }
+    } catch {
+      /* поллинг не мешает работе чата */
+    }
+  }, [ticketId]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!hasOlder || loadingOlderRef.current) return;
+    const minId = minLoadedMessageId(messagesRef.current);
+    if (minId == null) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    const prevHeight = el.scrollHeight;
+    const prevTop = el.scrollTop;
+    try {
+      const res = await fetchTicketMessages(ticketId, { beforeId: minId, limit: CHAT_PAGE_SIZE });
+      const receipts = mergeReadReceipts(
+        readReceiptsRef.current,
+        normalizeReadReceipts(res.read_receipts),
+      );
+      readReceiptsRef.current = receipts;
+      setHasOlder(Boolean(res.has_older));
+      setMessages((prev) =>
+        applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+      );
+      requestAnimationFrame(() => {
+        const box = scrollRef.current;
+        if (box) preserveScrollOnPrepend(box, prevHeight, prevTop);
+      });
+    } catch {
+      /* тихо */
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [ticketId, hasOlder]);
+
+  const loadNewerMessages = useCallback(async () => {
+    if (!hasNewer || loadingNewerRef.current) return;
+    const maxId = maxLoadedMessageId(messagesRef.current);
+    if (maxId <= 0) return;
+    loadingNewerRef.current = true;
+    setLoadingNewer(true);
+    try {
+      const res = await fetchTicketMessages(ticketId, { afterId: maxId, limit: CHAT_PAGE_SIZE });
+      const receipts = mergeReadReceipts(
+        readReceiptsRef.current,
+        normalizeReadReceipts(res.read_receipts),
+      );
+      readReceiptsRef.current = receipts;
+      setHasNewer(Boolean(res.has_newer));
+      setMessages((prev) =>
+        applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+      );
+    } catch {
+      /* тихо */
+    } finally {
+      loadingNewerRef.current = false;
+      setLoadingNewer(false);
+    }
+  }, [ticketId, hasNewer]);
+
+  const goToChatBottom = useCallback(async () => {
+    setPendingNewCount(0);
+    let more = true;
+    let guard = 0;
+    while (more && guard < 12) {
+      const maxId = maxLoadedMessageId(messagesRef.current);
+      if (maxId <= 0) break;
+      try {
+        const res = await fetchTicketMessages(ticketId, { afterId: maxId, limit: CHAT_PAGE_SIZE });
+        const receipts = mergeReadReceipts(
+          readReceiptsRef.current,
+          normalizeReadReceipts(res.read_receipts),
+        );
+        readReceiptsRef.current = receipts;
+        more = Boolean(res.has_newer);
+        setHasNewer(more);
+        if (res.messages.length) {
+          setMessages((prev) =>
+            applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+          );
+        } else {
+          more = false;
+        }
+      } catch {
+        more = false;
+      }
+      guard += 1;
+    }
+    atBottomRef.current = true;
+    setAtBottom(true);
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) scrollChatToBottom(el);
+    });
+  }, [ticketId]);
+
+  const flashMessage = useCallback((id: number) => {
+    setHighlightId(id);
+    window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2000);
+  }, []);
+
+  const scrollToMessage = useCallback(
+    async (id: number) => {
+      if (id <= 0) return;
+      const existing = scrollRef.current?.querySelector(`[data-msg-id="${id}"]`);
+      if (existing) {
+        existing.scrollIntoView({ behavior: "smooth", block: "center" });
+        flashMessage(id);
+        return;
+      }
+      try {
+        const res = await fetchTicketMessages(ticketId, { aroundId: id, limit: CHAT_PAGE_SIZE });
+        const receipts = mergeReadReceipts(
+          readReceiptsRef.current,
+          normalizeReadReceipts(res.read_receipts),
+        );
+        readReceiptsRef.current = receipts;
+        setHasOlder(Boolean(res.has_older));
+        setHasNewer(Boolean(res.has_newer));
+        setMessages((prev) =>
+          applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+        );
+        setPendingNewCount(0);
+        atBottomRef.current = false;
+        setAtBottom(false);
+        requestAnimationFrame(() => {
+          const el = scrollRef.current?.querySelector(`[data-msg-id="${id}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            flashMessage(id);
+          }
+        });
+      } catch (e: unknown) {
+        window.alert(e instanceof Error ? e.message : "Не удалось перейти к сообщению");
+      }
+    },
+    [ticketId, flashMessage],
+  );
+
+  useEffect(() => {
+    if (loading || error || !detail) return;
+    const id = window.setInterval(() => void pollMessages(), MSG_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [loading, error, detail, pollMessages]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const bottom = isChatAtBottom(el, CHAT_SCROLL_EDGE_PX);
+      atBottomRef.current = bottom;
+      setAtBottom(bottom);
+      if (bottom) setPendingNewCount(0);
+      if (isChatNearTop(el, CHAT_SCROLL_EDGE_PX)) void loadOlderMessages();
+      if (!bottom && isChatNearBottom(el, CHAT_SCROLL_EDGE_PX) && hasNewer) void loadNewerMessages();
+    };
+    onScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [loading, detail?.id, loadOlderMessages, loadNewerMessages, hasNewer]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowPulse(Date.now()), 60_000);
@@ -147,18 +401,98 @@ export default function TicketPage() {
     setCheckOpen(true);
   }
 
+  function clearComposerMode() {
+    setReplyTo(null);
+    setEditingId(null);
+  }
+
+  function focusComposer() {
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function handleMessageMenuAction(action: MessageMenuAction, msg: TicketMessage) {
+    setContextMenu(null);
+    if (action === "copy") {
+      const text = msg.text?.trim() || "";
+      if (!text) return;
+      void navigator.clipboard.writeText(text).catch(() => {
+        window.alert("Не удалось скопировать текст");
+      });
+      return;
+    }
+    if (action === "reply") {
+      setEditingId(null);
+      setReplyTo(msg);
+      setFile(null);
+      focusComposer();
+      return;
+    }
+    if (action === "edit") {
+      setReplyTo(null);
+      setEditingId(msg.id);
+      setInput(msg.text || "");
+      setFile(null);
+      focusComposer();
+      return;
+    }
+    if (action === "delete") {
+      setDeleteTarget(msg);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteTicketMessage(ticketId, deleteTarget.id);
+      setMessages((prev) => prev.filter((m) => m.id !== deleteTarget.id));
+      if (replyTo?.id === deleteTarget.id) setReplyTo(null);
+      if (editingId === deleteTarget.id) {
+        setEditingId(null);
+        setInput("");
+      }
+      setDeleteTarget(null);
+    } catch (e: unknown) {
+      window.alert(e instanceof Error ? e.message : "Не удалось удалить");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function submit() {
     const t = input.trim();
-    if (!t && !file) return;
+    if (!t && !file && !editingId) return;
     if (!detail?.can_reply && detail?.chat_mode === "mail") return;
+    if (editingId && !t) return;
     setSending(true);
     try {
-      const msg = await sendTicketMessage(ticketId, t, file);
-      setMessages((prev) => [...prev, msg]);
-      setInput("");
-      setFile(null);
+      if (editingId) {
+        const updated = await updateTicketMessage(ticketId, editingId, t);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === editingId ? { ...m, ...updated } : m)),
+        );
+        setEditingId(null);
+        setInput("");
+        setFile(null);
+      } else {
+        const msg = await sendTicketMessage(ticketId, t, file, replyTo?.id ?? null);
+        setMessages((prev) =>
+          applyReadReceiptsToMessages(mergeTicketMessages(prev, [msg]), readReceiptsRef.current),
+        );
+        atBottomRef.current = true;
+        setAtBottom(true);
+        setPendingNewCount(0);
+        setHasNewer(false);
+        setInput("");
+        setFile(null);
+        setReplyTo(null);
+        requestAnimationFrame(() => {
+          const el = scrollRef.current;
+          if (el) scrollChatToBottom(el);
+        });
+      }
     } catch (e: unknown) {
-      window.alert(e instanceof Error ? e.message : "Не удалось отправить");
+      window.alert(e instanceof Error ? e.message : editingId ? "Не удалось сохранить" : "Не удалось отправить");
     } finally {
       setSending(false);
     }
@@ -187,7 +521,8 @@ export default function TicketPage() {
     );
   }
 
-  const subName = detail.subscriber_name || detail.caller_name || "Абонент";
+  const subName =
+    detail.subscriber_display_name || detail.subscriber_name || detail.caller_name || "Абонент";
   const introBody = detail.body?.trim() || "";
   const chatMessages = messages.filter((m) => !m.is_initial);
   const hasIntro = introBody.length > 0;
@@ -257,8 +592,14 @@ export default function TicketPage() {
             />
           ) : null}
           <div className="czone tk-chat-main">
-            <div className="cscrl tk-chat-scroll" ref={scrollRef}>
-              <div className="tk-chat-feed">
+            <div className="tk-chat-viewport">
+              <div className="cscrl tk-chat-scroll" ref={scrollRef}>
+                <div className="tk-chat-feed">
+                {loadingOlder ? (
+                  <div className="tk-chat-load-hint" aria-live="polite">
+                    Загрузка предыдущих сообщений…
+                  </div>
+                ) : null}
                 {hasIntro ? (
                   <div className="tk-intro" role="note">
                     <div className="tk-intro__eyebrow">Суть обращения</div>
@@ -283,7 +624,7 @@ export default function TicketPage() {
                       <div key={m.id} className="msg bot">
                         <div className="mc2">
                           <div className="bbl bot">
-                            <div className="tk-msg-label">{sideLabel(m)}</div>
+                            <div className="tk-msg-label">{ticketAuthorLabel(m, subName)}</div>
                             <MessageBody text={m.text} />
                             <AttachmentsBlock msg={m} />
                           </div>
@@ -291,21 +632,60 @@ export default function TicketPage() {
                         </div>
                       </div>
                     ) : (
-                      <div key={m.id} className={`msg ${m.side === "client" ? "cl" : "me"}`}>
-                        <div className={`mav ${m.side === "client" ? "cl" : "ag"}`}>{avatarLetter(m, subName)}</div>
+                      <div
+                        key={m.id}
+                        data-msg-id={m.id}
+                        className={`${ticketMsgRowClass(m.side)}${highlightId === m.id ? " tk-msg--highlight" : ""}`}
+                        onContextMenu={(e) => {
+                          if (!canMessageContextMenu(m.side, m.id)) return;
+                          e.preventDefault();
+                          setContextMenu({ x: e.clientX, y: e.clientY, msg: m });
+                        }}
+                      >
+                        <div className={ticketMavClass(m.side)}>{ticketAvatarLetter(m, subName)}</div>
                         <div className="mc2">
-                          <div className={`bbl ${m.side === "client" ? "cl" : "ag"}`}>
-                            <div className="tk-msg-label">{sideLabel(m)}</div>
+                          <div className={ticketBblClass(m.side)}>
+                            <div className="tk-msg-label">{ticketAuthorLabel(m, subName)}</div>
+                            {m.reply_preview ? (
+                              <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
+                            ) : null}
                             <MessageBody text={m.text} />
                             <AttachmentsBlock msg={m} />
                           </div>
-                          <div className="mtm">{formatMsgTime(m.created_at_iso) || "—"}</div>
+                          <div className="mtm">
+                            <span>
+                              {formatMsgTime(m.created_at_iso) || "—"}
+                              {m.is_edited ? (
+                                <span className="tk-msg-edited" title={m.updated_at_iso || undefined}>
+                                  {" "}
+                                  · изменено
+                                  {m.updated_at_iso ? ` ${formatMsgTime(m.updated_at_iso)}` : ""}
+                                </span>
+                              ) : null}
+                            </span>
+                            <TicketDeliveryTicks
+                              side={m.side}
+                              recipientReadAtIso={m.recipient_read_at_iso}
+                              ticketSource={detail.source}
+                            />
+                          </div>
                         </div>
                       </div>
                     ),
                   )
                 )}
+                {loadingNewer ? (
+                  <div className="tk-chat-load-hint tk-chat-load-hint--bottom" aria-live="polite">
+                    Загрузка…
+                  </div>
+                ) : null}
               </div>
+            </div>
+              <TicketChatScrollDown
+                visible={!atBottom}
+                pendingCount={pendingNewCount}
+                onClick={() => void goToChatBottom()}
+              />
             </div>
 
             <div className="tk-composer">
@@ -316,16 +696,65 @@ export default function TicketPage() {
                 </div>
               ) : (
                 <>
+                  {replyTo ? (
+                    <div className="tk-composer-mode">
+                      <div className="tk-composer-mode__label">Ответ на сообщение</div>
+                      <TicketMessageReplyQuote
+                        preview={
+                          replyTo.reply_preview ?? {
+                            id: replyTo.id,
+                            author_name: ticketAuthorLabel(replyTo, subName),
+                            text: replyTo.text.slice(0, 100),
+                          }
+                        }
+                        onJump={scrollToMessage}
+                      />
+                      <button
+                        type="button"
+                        className="tk-composer-mode__close"
+                        onClick={() => setReplyTo(null)}
+                        aria-label="Отменить ответ"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
+                  {editingId ? (
+                    <div className="tk-composer-mode tk-composer-mode--edit">
+                      <span className="tk-composer-mode__label">Редактирование сообщения</span>
+                      <button
+                        type="button"
+                        className="tk-composer-mode__close"
+                        onClick={() => {
+                          setEditingId(null);
+                          setInput("");
+                        }}
+                        aria-label="Отменить редактирование"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="tk-composer__box">
                     <textarea
                       ref={inputRef}
                       className="tk-composer__input"
                       rows={1}
-                      placeholder="Ответ клиенту…"
+                      placeholder={
+                        editingId ? "Измените текст сообщения…" : replyTo ? "Ваш ответ…" : "Ответ клиенту…"
+                      }
                       value={input}
                       disabled={sending}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          if (editingId || replyTo) {
+                            e.preventDefault();
+                            clearComposerMode();
+                            setInput("");
+                          }
+                          return;
+                        }
                         if (e.ctrlKey && e.key === "Enter") {
                           e.preventDefault();
                           submit();
@@ -333,7 +762,10 @@ export default function TicketPage() {
                       }}
                     />
                     <div className="tk-composer__actions">
-                      <label className="tk-composer__attach" title="Прикрепить файл">
+                      <label
+                        className={`tk-composer__attach${editingId ? " tk-composer__attach--disabled" : ""}`}
+                        title={editingId ? "При редактировании вложения недоступны" : "Прикрепить файл"}
+                      >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
                           <path
                             d="M14 8l-4.2 4.2a3 3 0 104.2 4.2l5-5a4 4 0 00-5.7-5.7l-5.8 5.8"
@@ -345,6 +777,7 @@ export default function TicketPage() {
                         <input
                           type="file"
                           hidden
+                          disabled={Boolean(editingId)}
                           accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
                           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                         />
@@ -352,9 +785,9 @@ export default function TicketPage() {
                       <button
                         type="button"
                         className="tk-composer__send"
-                        disabled={sending || (!input.trim() && !file)}
+                        disabled={sending || (!input.trim() && !file && !editingId)}
                         onClick={submit}
-                        title="Отправить"
+                        title={editingId ? "Сохранить" : "Отправить"}
                       >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
                           <path
@@ -376,11 +809,32 @@ export default function TicketPage() {
                       </button>
                     </div>
                   ) : null}
-                  <div className="tk-composer__hint">Ctrl+Enter — отправить</div>
+                  <div className="tk-composer__hint">
+                    {editingId ? "Ctrl+Enter — сохранить · Esc — отмена" : "Ctrl+Enter — отправить · Esc — отмена ответа"}
+                  </div>
                 </>
               )}
             </div>
           </div>
+
+          {contextMenu ? (
+            <TicketMessageContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              message={contextMenu.msg}
+              onAction={handleMessageMenuAction}
+              onClose={() => setContextMenu(null)}
+            />
+          ) : null}
+
+          <TicketDeleteMessageModal
+            open={Boolean(deleteTarget)}
+            busy={deleting}
+            onClose={() => {
+              if (!deleting) setDeleteTarget(null);
+            }}
+            onConfirm={() => void confirmDelete()}
+          />
 
           <aside className={`tk-sidebar ip${sideOpen ? "" : " closed"}`} aria-label="Информация о тикете">
             <div className="tk-sidebar__accent" aria-hidden />

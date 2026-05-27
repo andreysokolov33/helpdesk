@@ -106,6 +106,13 @@ class TicketAttachmentItem(BaseModel):
     is_image: bool = False
 
 
+class TicketMessageReplyPreview(BaseModel):
+    id: int
+    author_name: str | None = None
+    text: str = ""
+    is_deleted: bool = False
+
+
 class TicketMessageItem(BaseModel):
     id: int
     side: str
@@ -113,9 +120,18 @@ class TicketMessageItem(BaseModel):
     created_at_iso: str | None = None
     has_read: bool = True
     author_name: str | None = None
+    recipient_read_at_iso: str | None = None
+    reply_to_id: int | None = None
+    is_edited: bool = False
+    updated_at_iso: str | None = None
+    reply_preview: TicketMessageReplyPreview | None = None
     legacy_file_url: str | None = None
     attachments: list[TicketAttachmentItem] = []
     is_initial: bool = False
+
+
+class TicketMessageEditRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=20000)
 
 
 class TicketDetailResponse(BaseModel):
@@ -137,6 +153,7 @@ class TicketDetailResponse(BaseModel):
     user_id: int | None = None
     caller_name: str | None = None
     subscriber_name: str | None = None
+    subscriber_display_name: str | None = None
     subscriber_login: str | None = None
     subscriber_online: bool = False
     subscriber_is_juridical: int = 0
@@ -156,6 +173,9 @@ class TicketDetailResponse(BaseModel):
 class TicketMessagesResponse(BaseModel):
     messages: list[TicketMessageItem]
     chat_mode: str
+    read_receipts: dict[int, str] = Field(default_factory=dict)
+    has_older: bool = False
+    has_newer: bool = False
 
 
 class TicketMarkReadRequest(BaseModel):

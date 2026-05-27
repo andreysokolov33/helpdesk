@@ -7,12 +7,24 @@ export type TicketAttachment = {
   is_image?: boolean;
 };
 
+export type TicketMessageReplyPreview = {
+  id: number;
+  author_name?: string | null;
+  text: string;
+  is_deleted?: boolean;
+};
+
 export type TicketMessage = {
   id: number;
-  side: "client" | "agent" | "partner" | "bot" | string;
+  side: "client" | "support" | "engineer" | "partner" | "bot" | "me" | string;
   text: string;
   created_at_iso?: string | null;
   has_read: boolean;
+  recipient_read_at_iso?: string | null;
+  reply_to_id?: number | null;
+  is_edited?: boolean;
+  updated_at_iso?: string | null;
+  reply_preview?: TicketMessageReplyPreview | null;
   author_name?: string | null;
   legacy_file_url?: string | null;
   attachments: TicketAttachment[];
@@ -38,6 +50,7 @@ export type TicketDetail = {
   user_id?: number | null;
   caller_name?: string | null;
   subscriber_name?: string | null;
+  subscriber_display_name?: string | null;
   subscriber_login?: string | null;
   subscriber_online?: boolean;
   subscriber_is_juridical: number;
@@ -68,23 +81,84 @@ export async function fetchTicketDetail(ticketId: number): Promise<TicketDetail>
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}`);
 }
 
-export async function fetchTicketMessages(ticketId: number): Promise<{ messages: TicketMessage[]; chat_mode: string }> {
-  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages`);
+export type FetchTicketMessagesOpts = {
+  sinceId?: number;
+  beforeId?: number;
+  afterId?: number;
+  aroundId?: number;
+  limit?: number;
+};
+
+export type TicketMessagesResult = {
+  messages: TicketMessage[];
+  chat_mode: string;
+  read_receipts?: Record<string, string>;
+  has_older?: boolean;
+  has_newer?: boolean;
+};
+
+function buildMessagesQuery(opts?: FetchTicketMessagesOpts): string {
+  const p = new URLSearchParams();
+  if (opts?.sinceId && opts.sinceId > 0) {
+    p.set("since_id", String(opts.sinceId));
+  } else {
+    if (opts?.beforeId && opts.beforeId > 0) p.set("before_id", String(opts.beforeId));
+    if (opts?.afterId && opts.afterId > 0) p.set("after_id", String(opts.afterId));
+    if (opts?.aroundId && opts.aroundId > 0) p.set("around_id", String(opts.aroundId));
+    p.set("limit", String(opts?.limit ?? 40));
+  }
+  const qs = p.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export async function fetchTicketMessages(
+  ticketId: number,
+  opts?: FetchTicketMessagesOpts,
+): Promise<TicketMessagesResult> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages${buildMessagesQuery(opts)}`);
+}
+
+export function normalizeReadReceipts(raw?: Record<string, string>): Record<number, string> {
+  if (!raw) return {};
+  const out: Record<number, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const id = Number(k);
+    if (Number.isFinite(id) && id > 0 && v) out[id] = v;
+  }
+  return out;
 }
 
 export async function sendTicketMessage(
   ticketId: number,
   text: string,
   file?: File | null,
+  replyToId?: number | null,
 ): Promise<TicketMessage> {
   const fd = new FormData();
   fd.set("text", text);
   if (file) fd.set("file", file);
+  if (replyToId && replyToId > 0) fd.set("reply_to_id", String(replyToId));
   const data = await apiJson<{ message: TicketMessage }>(`/api/v1/helpdesk/tracker/${ticketId}/messages`, {
     method: "POST",
     body: fd,
   });
   return data.message;
+}
+
+export async function updateTicketMessage(
+  ticketId: number,
+  messageId: number,
+  text: string,
+): Promise<TicketMessage> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages/${messageId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function deleteTicketMessage(ticketId: number, messageId: number): Promise<void> {
+  await apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages/${messageId}`, { method: "DELETE" });
 }
 
 import { formatDateTimeLocal } from "@/utils/dateTime";

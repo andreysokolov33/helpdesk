@@ -16,6 +16,7 @@ from app.api.v1.routers.helpdesk.schemas import (
     TicketCategoryLeaf,
     TicketDetailResponse,
     TicketMarkReadRequest,
+    TicketMessageEditRequest,
     TicketMessageItem,
     TicketMessagesResponse,
     TicketSendMessageResponse,
@@ -339,32 +340,41 @@ async def get_ticket_messages(
     ticket_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
+    limit: int = Query(40, ge=1, le=100, description="Размер порции"),
+    before_id: int | None = Query(None, ge=1, description="Сообщения старее id (скролл вверх)"),
+    after_id: int | None = Query(None, ge=1, description="Сообщения новее id (скролл вниз)"),
+    around_id: int | None = Query(None, ge=1, description="Окно вокруг сообщения (переход по цитате)"),
+    since_id: int = Query(0, ge=0, description="Поллинг: только сообщения с id > since_id"),
 ) -> TicketMessagesResponse:
-    detail = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
-    mode = detail["chat_mode"]
-    viewer_id = int(user["user_id"])
-
-    if mode == "tracker":
-        raw = await ticket_svc.load_tracker_messages(
-            db, ticket_id, viewer_id, str(user.get("role") or "")
+    cursors = sum(1 for x in (before_id, after_id, around_id) if x is not None)
+    if cursors > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Укажите не более одного из before_id, after_id, around_id",
         )
-        unread = [m["id"] for m in raw if m["side"] == "client" and not m.get("has_read") and m["id"] > 0]
-        if unread:
-            await ticket_svc.mark_tracker_messages_read(db, ticket_id, viewer_id, unread)
-    else:
-        raw = await ticket_svc.load_mail_messages(
-            db,
-            ticket_id,
-            detail.get("user_id"),
-            viewer_id,
+    if since_id > 0 and cursors > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="since_id нельзя сочетать с before_id, after_id или around_id",
         )
-        unread = [m["id"] for m in raw if m["side"] == "client" and not m.get("has_read") and m["id"] > 0]
-        if unread:
-            await ticket_svc.mark_mail_messages_read(db, ticket_id, viewer_id, unread)
 
+    raw, mode, receipts, has_older, has_newer = await ticket_svc.list_ticket_messages(
+        db,
+        ticket_id,
+        int(user["user_id"]),
+        str(user.get("role") or ""),
+        limit=limit,
+        before_id=before_id,
+        after_id=after_id,
+        around_id=around_id,
+        since_id=since_id,
+    )
     return TicketMessagesResponse(
         chat_mode=mode,
         messages=[TicketMessageItem(**m) for m in raw],
+        read_receipts=receipts,
+        has_older=has_older,
+        has_newer=has_newer,
     )
 
 
@@ -375,9 +385,45 @@ async def mark_ticket_messages_read(
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> dict[str, str]:
-    await ticket_svc.mark_mail_messages_read(
-        db, ticket_id, int(user["user_id"]), payload.message_ids
+    detail = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
+    if detail["chat_mode"] == "tracker":
+        await ticket_svc.mark_tracker_messages_read(
+            db, ticket_id, int(user["user_id"]), payload.message_ids
+        )
+    else:
+        await ticket_svc.mark_mail_messages_read(
+            db, ticket_id, int(user["user_id"]), payload.message_ids
+        )
+    return {"status": "ok"}
+
+
+@router.patch("/{ticket_id}/messages/{message_id}", response_model=TicketMessageItem)
+async def edit_ticket_message(
+    ticket_id: int,
+    message_id: int,
+    payload: TicketMessageEditRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketMessageItem:
+    raw = await ticket_svc.edit_ticket_message(
+        db,
+        ticket_id,
+        message_id,
+        int(user["user_id"]),
+        str(user.get("role") or ""),
+        payload.text,
     )
+    return TicketMessageItem(**raw)
+
+
+@router.delete("/{ticket_id}/messages/{message_id}")
+async def delete_ticket_message(
+    ticket_id: int,
+    message_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> dict[str, str]:
+    await ticket_svc.delete_ticket_message(db, ticket_id, message_id, int(user["user_id"]))
     return {"status": "ok"}
 
 
@@ -389,15 +435,23 @@ async def send_ticket_message(
     user: dict[str, Any] = Depends(require_tracker_user),
     text: str = Form(""),
     file: UploadFile | None = File(None),
+    reply_to_id: int | None = Form(None),
 ) -> TicketSendMessageResponse:
     detail = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
     operator_id = int(user["user_id"])
     client_ip = request.client.host if request.client else "127.0.0.1"
 
     operator_role = str(user.get("role") or "")
+    reply_id = int(reply_to_id) if reply_to_id and reply_to_id > 0 else None
+
     if detail["chat_mode"] == "tracker":
         raw = await ticket_svc.send_tracker_reply(
-            db, ticket_id, operator_id, text, operator_role=operator_role
+            db,
+            ticket_id,
+            operator_id,
+            text,
+            operator_role=operator_role,
+            reply_to_id=reply_id,
         )
     else:
         if not detail.get("user_id"):
@@ -414,6 +468,7 @@ async def send_ticket_message(
             client_ip=client_ip,
             file=file,
             operator_role=operator_role,
+            reply_to_id=reply_id,
         )
 
     return TicketSendMessageResponse(message=TicketMessageItem(**raw))

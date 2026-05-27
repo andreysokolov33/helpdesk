@@ -365,8 +365,81 @@
   padding: 5px 11px;
 }
 
+#tp-ticket .tk-chat-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 #tp-ticket .tk-chat-scroll {
   background: var(--bg);
+  flex: 1;
+  min-height: 0;
+}
+
+#tp-ticket .tk-chat-load-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--i3);
+  padding: 8px 12px;
+}
+
+#tp-ticket .tk-chat-load-hint--bottom {
+  padding-top: 4px;
+}
+
+#tp-ticket .tk-scroll-down {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--lm);
+  background: var(--p);
+  color: var(--ink);
+  box-shadow: var(--sh, 0 4px 16px rgba(0, 0, 0, 0.12));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#tp-ticket .tk-scroll-down:hover {
+  background: var(--bg, #f4f6f9);
+}
+
+#tp-ticket .tk-scroll-down__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #3d8fd4;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+#tp-ticket .msg.tk-msg--highlight .bbl {
+  animation: tk-msg-flash 2s ease;
+}
+
+@keyframes tk-msg-flash {
+  0%,
+  15% {
+    box-shadow: 0 0 0 2px rgba(61, 143, 212, 0.55);
+  }
+  100% {
+    box-shadow: none;
+  }
 }
 
 #tp-ticket .tk-chat-feed {
@@ -493,8 +566,95 @@
   border: 1px solid #dde2e8;
 }
 
+/* Входящие: абонент / КЦ (support) / инженер / партнёр */
+[data-theme="light"] #tp-ticket .tk-bbl--client {
+  background: #fff;
+  border-color: #e2e6ec;
+  color: var(--ink);
+}
+
+[data-theme="dark"] #tp-ticket .tk-bbl--client {
+  background: var(--p);
+  border-color: var(--lm);
+}
+
+[data-theme="light"] #tp-ticket .tk-bbl--support {
+  background: #e8f1ff;
+  border-color: #c5daf5;
+  color: #1450a0;
+}
+
+[data-theme="dark"] #tp-ticket .tk-bbl--support {
+  background: rgba(80, 160, 255, 0.14);
+  border-color: rgba(120, 190, 255, 0.28);
+  color: #9fd0ff;
+}
+
+[data-theme="light"] #tp-ticket .tk-bbl--engineer {
+  background: #e8f5ee;
+  border-color: #bfe3cf;
+  color: #0d6b3d;
+}
+
+[data-theme="dark"] #tp-ticket .tk-bbl--engineer {
+  background: rgba(63, 190, 114, 0.14);
+  border-color: rgba(63, 190, 114, 0.28);
+  color: #7ee0a4;
+}
+
+[data-theme="light"] #tp-ticket .tk-bbl--partner {
+  background: #f0e8ff;
+  border-color: #dcd0f5;
+  color: #5b3d9e;
+}
+
+[data-theme="dark"] #tp-ticket .tk-bbl--partner {
+  background: rgba(180, 140, 255, 0.12);
+  border-color: rgba(180, 140, 255, 0.28);
+  color: #c9b4ff;
+}
+
+[data-theme="light"] #tp-ticket .tk-mav--support {
+  background: #3d5f8a;
+  color: #fff;
+  border: none;
+}
+
+[data-theme="light"] #tp-ticket .tk-mav--engineer {
+  background: #1b7a48;
+  color: #fff;
+  border: none;
+}
+
+[data-theme="light"] #tp-ticket .tk-mav--partner {
+  background: #6b4fa8;
+  color: #fff;
+  border: none;
+}
+
+[data-theme="dark"] #tp-ticket .tk-mav--support {
+  background: #4a7399;
+  color: #eef3f8;
+}
+
+[data-theme="dark"] #tp-ticket .tk-mav--engineer {
+  background: #2d6b47;
+  color: #dcefe4;
+}
+
+[data-theme="dark"] #tp-ticket .tk-mav--partner {
+  background: #5a4588;
+  color: #ece4ff;
+}
+
 #tp-ticket .tk-msg-label {
   color: var(--i3);
+}
+
+#tp-ticket .tk-bbl--support .tk-msg-label,
+#tp-ticket .tk-bbl--engineer .tk-msg-label,
+#tp-ticket .tk-bbl--partner .tk-msg-label {
+  font-weight: 700;
 }
 
 #tp-ticket .bbl.ag .tk-msg-label {
@@ -641,6 +801,9 @@
 #tp-ticket .tk-chat-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 #tp-ticket .tk-panel-toggle.on {
@@ -697,6 +860,191 @@
 
 #tp-ticket .msg.bot .mtm {
   text-align: left;
+}
+
+#tp-ticket .mtm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+#tp-ticket .msg.me .mtm {
+  justify-content: flex-end;
+}
+
+#tp-ticket .tk-delivery {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  color: var(--i3);
+  cursor: default;
+  user-select: none;
+}
+
+#tp-ticket .tk-delivery--read {
+  color: #3d8fd4;
+}
+
+[data-theme="dark"] #tp-ticket .tk-delivery--read {
+  color: #6eb5ff;
+}
+
+#tp-ticket .tk-delivery__tick {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.2em;
+}
+
+#tp-ticket .tk-delivery__tick--second {
+  margin-left: -0.35em;
+}
+
+#tp-ticket .tk-msg-edited {
+  opacity: 0.75;
+  font-style: italic;
+}
+
+#tp-ticket .tk-reply-quote {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 6px 8px 6px 10px;
+  border: none;
+  border-left: 3px solid var(--ac, #3d8fd4);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  text-align: left;
+  cursor: pointer;
+}
+
+[data-theme="dark"] #tp-ticket .tk-reply-quote {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#tp-ticket .tk-reply-quote__author {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ac, #3d8fd4);
+  margin-bottom: 2px;
+}
+
+#tp-ticket .tk-reply-quote__text {
+  display: block;
+  font-size: 11px;
+  color: var(--i2);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tp-ticket .tk-reply-quote--deleted {
+  cursor: default;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--i3);
+  border-left-color: var(--i3);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+#tp-ticket .tk-msg-menu {
+  position: fixed;
+  z-index: 600;
+  min-width: 148px;
+  padding: 4px 0;
+  border-radius: 8px;
+  background: var(--p);
+  border: 1px solid var(--lm);
+  box-shadow: var(--shl, 0 8px 24px rgba(0, 0, 0, 0.18));
+}
+
+#tp-ticket .tk-msg-menu__item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+#tp-ticket .tk-msg-menu__item:hover {
+  background: var(--bg, rgba(0, 0, 0, 0.04));
+}
+
+#tp-ticket .tk-msg-menu__item--danger {
+  color: #c0392b;
+}
+
+#tp-ticket .tk-composer-mode {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px 32px 8px 10px;
+  border-radius: 8px;
+  background: var(--bg, #f4f6f9);
+  border: 1px solid var(--lm);
+}
+
+#tp-ticket .tk-composer-mode--edit {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#tp-ticket .tk-composer-mode__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--i2);
+}
+
+#tp-ticket .tk-composer-mode__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--i3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#tp-ticket .tk-composer-mode__close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+
+#tp-ticket .tk-composer__attach--disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.tk-del-modal {
+  width: 400px;
+}
+
+.tk-del-modal__ico {
+  background: #fdecea;
+  color: #c0392b;
+}
+
+.tk-del-modal__confirm {
+  background: #c0392b;
+  border-color: #c0392b;
+}
+
+.tk-del-modal__confirm:hover {
+  filter: brightness(1.05);
 }
 
 #tp-ticket .tk-chat-feed .msg .mc2 {

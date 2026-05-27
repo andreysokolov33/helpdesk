@@ -719,6 +719,7 @@ class UserMail(Base):
     user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     user_chat: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     ticket_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(True), nullable=True)
     # Relationships
     ticket_associations: Mapped[list['TrackerTicketMailLinks']] = relationship(
         'TrackerTicketMailLinks',
