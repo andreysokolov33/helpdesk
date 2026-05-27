@@ -15,17 +15,22 @@ export function formatTicketUpdatedLocal(iso: string | null | undefined): string
   return s.replace(",", "").replace(/\s+/g, " ").trim();
 }
 
-/** Длительность с момента создания: «N дн. HH:MM» или «HH:MM», если меньше суток. */
+/** Длительность с момента создания: «N мес. D дн HH:MM», пропуская пустые части. */
 export function formatWorkDurationSince(iso: string, nowMs: number = Date.now()): string {
   const start = new Date(iso).getTime();
   if (Number.isNaN(start)) return "—";
   const totalMin = Math.max(0, Math.floor((nowMs - start) / 60_000));
-  const days = Math.floor(totalMin / (24 * 60));
+  const daysTotal = Math.floor(totalMin / (24 * 60));
   const rem = totalMin % (24 * 60);
   const h = Math.floor(rem / 60);
   const m = rem % 60;
   const hh = String(h).padStart(2, "0");
   const mm = String(m).padStart(2, "0");
-  if (days >= 1) return `${days} дн. ${hh}:${mm}`;
-  return `${hh}:${mm}`;
+  const months = Math.floor(daysTotal / 30);
+  const days = daysTotal % 30;
+  const parts: string[] = [];
+  if (months > 0) parts.push(`${months} мес.`);
+  if (days > 0) parts.push(`${days} дн`);
+  parts.push(`${hh}:${mm}`);
+  return parts.join(" ");
 }

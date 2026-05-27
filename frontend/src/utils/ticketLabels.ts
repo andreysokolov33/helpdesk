@@ -30,3 +30,44 @@ export function supportLineLabel(line: number, label?: string | null): string {
   if (line === 3) return "Партнёр";
   return String(line);
 }
+
+/** Карточка тикета: 1 → КС, иначе → Инженеры. */
+export function ticketSupportLineShortLabel(line: number): string {
+  return line === 1 ? "КС" : "Инженеры";
+}
+
+export function ticketSupportLineBadgeClass(line: number): "1" | "2" {
+  return line === 1 ? "1" : "2";
+}
+
+const PRIORITY_BADGE_KEYS = ["low", "middle", "high", "critical"] as const;
+export type PriorityBadgeKey = (typeof PRIORITY_BADGE_KEYS)[number];
+
+export function priorityBadgeClass(priority: string | null | undefined): PriorityBadgeKey {
+  const p = (priority || "middle").toLowerCase();
+  if ((PRIORITY_BADGE_KEYS as readonly string[]).includes(p)) {
+    return p as PriorityBadgeKey;
+  }
+  return "middle";
+}
+
+const SOURCE_BADGE_KEYS = [
+  "lk",
+  "call_center",
+  "abs",
+  "partner",
+  "tech",
+  "ks",
+  "chat",
+  "technician",
+  "internal",
+] as const;
+export type SourceBadgeKey = (typeof SOURCE_BADGE_KEYS)[number] | "other";
+
+export function sourceBadgeClass(source: string | null | undefined): SourceBadgeKey {
+  const s = (source || "call_center").toLowerCase();
+  if ((SOURCE_BADGE_KEYS as readonly string[]).includes(s)) {
+    return s as SourceBadgeKey;
+  }
+  return "other";
+}

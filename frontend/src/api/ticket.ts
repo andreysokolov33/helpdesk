@@ -9,7 +9,7 @@ export type TicketAttachment = {
 
 export type TicketMessage = {
   id: number;
-  side: "client" | "agent" | "partner" | string;
+  side: "client" | "agent" | "partner" | "bot" | string;
   text: string;
   created_at_iso?: string | null;
   has_read: boolean;
@@ -33,10 +33,13 @@ export type TicketDetail = {
   source: string;
   source_label: string;
   category_label?: string | null;
+  category_id?: number | null;
+  category_parent_id?: number | null;
   user_id?: number | null;
   caller_name?: string | null;
   subscriber_name?: string | null;
   subscriber_login?: string | null;
+  subscriber_online?: boolean;
   subscriber_is_juridical: number;
   subscriber_profile_user_id?: number | null;
   assignee_name?: string | null;

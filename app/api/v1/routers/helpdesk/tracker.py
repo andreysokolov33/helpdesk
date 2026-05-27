@@ -11,6 +11,9 @@ from app.api.v1.routers.helpdesk.deps import require_tracker_user
 from app.api.v1.routers.helpdesk.schemas import (
     RegisterCallRequest,
     RegisterCallResponse,
+    TicketCategoriesResponse,
+    TicketCategoryGroup,
+    TicketCategoryLeaf,
     TicketDetailResponse,
     TicketMarkReadRequest,
     TicketMessageItem,
@@ -20,7 +23,12 @@ from app.api.v1.routers.helpdesk.schemas import (
     TrackerTicketListResponse,
 )
 from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
-from app.constants import PRIORITY_DICT, SOURCE_DISPLAY, STATUS_DISPLAY
+from app.constants import (
+    COMMUNICATION_STATE_LABELS,
+    PRIORITY_DICT,
+    SOURCE_DISPLAY,
+    STATUS_DISPLAY,
+)
 from app.database import get_db
 from app.models.users import TrackerTicketLineHistory, TrackerTickets
 
@@ -145,6 +153,10 @@ async def list_tracker_tickets(
         assignee_name = m.get("assignee_name")
         assignee_role = m.get("assignee_role")
         has_unread = bool(m.get("calc_has_unread"))
+        comm_state = m.get("communication_state")
+        comm_label = (
+            COMMUNICATION_STATE_LABELS.get(comm_state) if comm_state else None
+        )
 
         assigned_id = int(m["assigned_to"]) if m.get("assigned_to") is not None else None
         assignee_is_viewer = bool(assigned_id is not None and assigned_id == viewer_skystream_id)
@@ -192,6 +204,8 @@ async def list_tracker_tickets(
                 assignee_role=assignee_role,
                 assignee_is_viewer=assignee_is_viewer,
                 has_unread=has_unread,
+                communication_state=comm_state,
+                communication_label=comm_label,
                 date_of_create=m["date_of_create"],
                 updated_at=m.get("updated_at"),
             )
@@ -285,6 +299,29 @@ async def register_call(
     await db.commit()
 
     return RegisterCallResponse(id=int(ticket.id))
+
+
+@router.get("/categories", response_model=TicketCategoriesResponse)
+async def list_ticket_categories(
+    db: AsyncSession = Depends(get_db),
+    _user: dict[str, Any] = Depends(require_tracker_user),
+    source: Optional[str] = Query(
+        None,
+        description="Источник тикета (lk, call_center, partner, …) — для выбора справочника",
+    ),
+) -> TicketCategoriesResponse:
+    catalog = ticket_svc.catalog_source_for_ticket(source)
+    raw = await ticket_svc.load_ticket_categories(db, catalog_source=catalog)
+    items = [
+        TicketCategoryGroup(
+            id=g["id"],
+            name=g["name"],
+            slug=g["slug"],
+            children=[TicketCategoryLeaf(**c) for c in g.get("children", [])],
+        )
+        for g in raw
+    ]
+    return TicketCategoriesResponse(catalog_source=catalog, items=items)
 
 
 @router.get("/{ticket_id}", response_model=TicketDetailResponse)

@@ -21,6 +21,17 @@ function stoppedAtLabel(stoppedAt: string, steps: FastCheckStep[]): string {
 type Props = {
   userId: number;
   onDisconnect?: () => void;
+  /** split — как в профиле; stacked — шаги сверху, решение снизу (тикет). */
+  layout?: "split" | "stacked";
+  /** Скрыть intro и кнопку запуска (запуск снаружи). */
+  hideIdleUI?: boolean;
+  /** Кэш результата при повторном открытии панели. */
+  initialData?: FastCheckResponse | null;
+  onResult?: (data: FastCheckResponse) => void;
+  /** Запустить проверку при монтировании, если нет initialData. */
+  autoRun?: boolean;
+  repeatLabel?: string;
+  onPhaseChange?: (phase: "idle" | "loading" | "reveal" | "done") => void;
 };
 
 function StatusIcon({ status }: { status: FastCheckStep["status"] | "pending" | "running" }) {
@@ -66,13 +77,51 @@ function ManagersBlock({ contacts }: { contacts: ManagerContact[] }) {
   );
 }
 
-export default function FastCheckPanel({ userId, onDisconnect }: Props) {
+function applyResultState(
+  res: FastCheckResponse,
+  setters: {
+    setData: (d: FastCheckResponse) => void;
+    setSelectedIdx: (i: number) => void;
+    setVisibleCount: (n: number) => void;
+    setPhase: (p: "idle" | "loading" | "reveal" | "done") => void;
+  },
+  phase: "reveal" | "done",
+) {
+  setters.setData(res);
+  const failIdx = res.steps.findIndex((s) => s.status === "fail" || s.status === "warn");
+  setters.setSelectedIdx(failIdx >= 0 ? failIdx : Math.max(0, res.steps.length - 1));
+  if (phase === "done") {
+    setters.setVisibleCount(res.steps.length);
+  }
+  setters.setPhase(phase);
+}
+
+export default function FastCheckPanel({
+  userId,
+  onDisconnect,
+  layout = "split",
+  hideIdleUI = false,
+  initialData = null,
+  onResult,
+  autoRun = false,
+  repeatLabel = "Повторить проверку",
+  onPhaseChange,
+}: Props) {
   const [phase, setPhase] = useState<"idle" | "loading" | "reveal" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<FastCheckResponse | null>(null);
   const [visibleCount, setVisibleCount] = useState(0);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const revealRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoRunDoneRef = useRef(false);
+
+  const setPhaseTracked = useCallback(
+    (p: "idle" | "loading" | "reveal" | "done") => {
+      setPhase(p);
+      onPhaseChange?.(p);
+    },
+    [onPhaseChange],
+  );
 
   const clearReveal = useCallback(() => {
     if (revealRef.current) {
@@ -83,6 +132,41 @@ export default function FastCheckPanel({ userId, onDisconnect }: Props) {
 
   useEffect(() => () => clearReveal(), [clearReveal]);
 
+  const runCheck = useCallback(async () => {
+    setError(null);
+    setData(null);
+    setVisibleCount(0);
+    clearReveal();
+    setPhaseTracked("loading");
+    try {
+      const res = await postFastCheck(userId);
+      onResult?.(res);
+      applyResultState(
+        res,
+        { setData, setSelectedIdx, setVisibleCount, setPhase: setPhaseTracked },
+        "reveal",
+      );
+    } catch (e: unknown) {
+      setPhaseTracked("idle");
+      setError(e instanceof Error ? e.message : "Ошибка проверки");
+    }
+  }, [userId, onResult, clearReveal, setPhaseTracked]);
+
+  useEffect(() => {
+    if (!initialData?.steps.length) return;
+    applyResultState(
+      initialData,
+      { setData, setSelectedIdx, setVisibleCount, setPhase: setPhaseTracked },
+      "done",
+    );
+  }, [initialData, setPhaseTracked]);
+
+  useEffect(() => {
+    if (!autoRun || autoRunDoneRef.current || initialData?.steps.length) return;
+    autoRunDoneRef.current = true;
+    void runCheck();
+  }, [autoRun, initialData, runCheck]);
+
   useEffect(() => {
     if (phase !== "reveal" || !data?.steps.length) return;
     setVisibleCount(1);
@@ -91,14 +175,14 @@ export default function FastCheckPanel({ userId, onDisconnect }: Props) {
       n += 1;
       if (n > data.steps.length) {
         clearReveal();
-        setPhase("done");
+        setPhaseTracked("done");
         setVisibleCount(data.steps.length);
         return;
       }
       setVisibleCount(n);
     }, REVEAL_MS);
     return clearReveal;
-  }, [phase, data, clearReveal]);
+  }, [phase, data, clearReveal, setPhaseTracked]);
 
   const visibleSteps = data?.steps.slice(0, visibleCount) ?? [];
   const activeIdx =
@@ -115,34 +199,18 @@ export default function FastCheckPanel({ userId, onDisconnect }: Props) {
     (activeStep.status === "fail" || activeStep.status === "warn") &&
     activeStep.actions_html;
 
-  async function runCheck() {
-    setError(null);
-    setData(null);
-    setVisibleCount(0);
-    clearReveal();
-    setPhase("loading");
-    try {
-      const res = await postFastCheck(userId);
-      setData(res);
-      const failIdx = res.steps.findIndex((s) => s.status === "fail" || s.status === "warn");
-      setSelectedIdx(failIdx >= 0 ? failIdx : Math.max(0, res.steps.length - 1));
-      setPhase("reveal");
-    } catch (e: unknown) {
-      setPhase("idle");
-      setError(e instanceof Error ? e.message : "Ошибка проверки");
-    }
-  }
-
   const showPanel = phase !== "idle" || data !== null;
 
-  const showIdle = phase === "idle" && !data;
+  const showIdle = phase === "idle" && !data && !hideIdleUI;
+
+  const gridClass = layout === "stacked" ? "up-fc-grid up-fc-grid--stacked" : "up-fc-grid";
 
   return (
     <div className="up-fast-check">
       {showIdle ? <p className="up-fc-intro">{INTRO}</p> : null}
 
       {showIdle ? (
-        <button type="button" className="up-fc-run-btn" onClick={runCheck}>
+        <button type="button" className="up-fc-run-btn" onClick={() => void runCheck()}>
           Проверить абонента
         </button>
       ) : null}
@@ -157,7 +225,7 @@ export default function FastCheckPanel({ userId, onDisconnect }: Props) {
       {error ? <p className="up-muted up-error">{error}</p> : null}
 
       {showPanel && data && phase !== "loading" ? (
-        <div className="up-fc-grid">
+        <div className={gridClass}>
           <div className="up-fc-actions">
             {showActions ? (
               <div
@@ -222,8 +290,8 @@ export default function FastCheckPanel({ userId, onDisconnect }: Props) {
 
       {phase === "done" && data ? (
         <div className="up-fc-done-bar">
-          <button type="button" className="up-btn sec" onClick={runCheck}>
-            Повторить проверку
+          <button type="button" className="up-btn sec" onClick={() => void runCheck()}>
+            {repeatLabel}
           </button>
           {data.stopped_at ? (
             <span className="up-muted">

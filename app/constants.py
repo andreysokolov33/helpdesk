@@ -67,11 +67,22 @@ TRACKER_OPEN_STATUSES = (
     'waiting_client', 'waiting_technician', 'no_technician', 'waiting_parts', 'waiting_logistics',
     'cc_handover', 'waiting_cs',
 )
-# Статусы «ожидание сторонней стороны» — ниже в очереди оператора 1-й линии
-TRACKER_WAITING_OPERATOR_STATUSES = (
-    'waiting_client', 'waiting_technician', 'waiting_parts', 'waiting_logistics',
+# Статусы «ожидание сторонней стороны» (запчасти, партнёр, КС) — ниже в очереди
+TRACKER_OPERATIONAL_WAIT_STATUSES = (
+    'waiting_technician', 'waiting_parts', 'waiting_logistics',
     'waiting_cs', 'deferred',
 )
+# Обратная совместимость (waiting_client — коммуникационный, не операционный)
+TRACKER_WAITING_OPERATOR_STATUSES = TRACKER_OPERATIONAL_WAIT_STATUSES + ('waiting_client',)
+
+# Коммуникационный слой в колонке «Статус» списка /chats (не workflow-status в БД):
+# — waiting_client → awaiting_subscriber («Ждём абонента»), если нет непрочитанного от абонента;
+# — любой другой из TRACKER_OPEN_STATUSES → needs_reply («Нужен ответ»);
+# — TRACKER_CLOSED_STATUSES в открытом списке не показываются (вкладка closed — своя выборка).
+COMMUNICATION_STATE_LABELS = {
+    'needs_reply': 'Нужен ответ',
+    'awaiting_subscriber': 'Ждём абонента',
+}
 # Закрытые / завершённые
 TRACKER_CLOSED_STATUSES = (
     'resolved', 'closed', 'cancelled', 'deferred', 'not_resolved')

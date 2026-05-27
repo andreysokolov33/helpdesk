@@ -32,6 +32,9 @@ class TrackerTicketListItem(BaseModel):
     """True, если тикет назначен на текущего оператора (users.skystream_users.id)."""
     has_unread: bool = False
     """Есть сообщения абонента, которые ещё не прочитал ни один сотрудник."""
+    communication_state: Optional[str] = None
+    """needs_reply | awaiting_subscriber"""
+    communication_label: Optional[str] = None
     date_of_create: datetime
     updated_at: Optional[datetime] = None
 
@@ -129,10 +132,13 @@ class TicketDetailResponse(BaseModel):
     source: str
     source_label: str
     category_label: str | None = None
+    category_id: int | None = None
+    category_parent_id: int | None = None
     user_id: int | None = None
     caller_name: str | None = None
     subscriber_name: str | None = None
     subscriber_login: str | None = None
+    subscriber_online: bool = False
     subscriber_is_juridical: int = 0
     subscriber_profile_user_id: int | None = None
     assignee_name: str | None = None
@@ -158,3 +164,34 @@ class TicketMarkReadRequest(BaseModel):
 
 class TicketSendMessageResponse(BaseModel):
     message: TicketMessageItem
+
+
+class TicketCategoryLeaf(BaseModel):
+    """Подкатегория (parent_id IS NOT NULL)."""
+
+    id: int
+    name: str
+    slug: str
+    theme: str
+    complexity: str
+    priority: str
+    priority_label: str
+    support_line: int
+    sla_minutes: int
+    need_user_selection: bool = False
+    need_station_selection: bool = False
+    object_type: str | None = None
+
+
+class TicketCategoryGroup(BaseModel):
+    """Корневая группа (parent_id IS NULL)."""
+
+    id: int
+    name: str
+    slug: str
+    children: list[TicketCategoryLeaf] = Field(default_factory=list)
+
+
+class TicketCategoriesResponse(BaseModel):
+    catalog_source: str
+    items: list[TicketCategoryGroup]

@@ -19,7 +19,8 @@ from app.constants import (
     TRACKER_CLOSED_STATUSES,
     TRACKER_HELPDESK_LIST_SOURCES,
     TRACKER_OPEN_STATUSES,
-    TRACKER_WAITING_OPERATOR_STATUSES,
+    COMMUNICATION_STATE_LABELS,
+    TRACKER_OPERATIONAL_WAIT_STATUSES,
 )
 from app.models.users import TrackerTickets
 from app.models.users import (
@@ -157,7 +158,7 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
     """Список /chats: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
     statuses = TRACKER_CLOSED_STATUSES if closed else TRACKER_OPEN_STATUSES
     status_in = _enum_status_sql(statuses)
-    waiting_in = _enum_status_sql(TRACKER_WAITING_OPERATOR_STATUSES)
+    operational_in = _enum_status_sql(TRACKER_OPERATIONAL_WAIT_STATUSES)
     sources_in = ", ".join(f"'{s}'" for s in TRACKER_HELPDESK_LIST_SOURCES)
     mail_client = _mail_client_filter("um")
     staff = _STAFF_READ_IN_SQL
@@ -226,6 +227,21 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
             (COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL)
                 OR (COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL)
                 AS calc_has_unread,
+            (
+                NOT (
+                    (COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL)
+                    OR (COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL)
+                )
+                AND tt.status = 'waiting_client'::users.tracker_status
+            ) AS calc_awaiting_subscriber,
+            CASE
+                WHEN (
+                    (COALESCE(tt.source, 'call_center') = 'abs' AND tu.ticket_id IS NOT NULL)
+                    OR (COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL)
+                ) THEN 'needs_reply'
+                WHEN tt.status = 'waiting_client'::users.tracker_status THEN 'awaiting_subscriber'
+                ELSE 'needs_reply'
+            END AS communication_state,
             CASE
                 WHEN COALESCE(tt.source, 'call_center') <> 'abs' AND mu.ticket_id IS NOT NULL
                     THEN mu.oldest_unread_at
@@ -253,6 +269,8 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
         q.date_of_create,
         q.updated_at,
         q.calc_has_unread,
+        q.calc_awaiting_subscriber,
+        q.communication_state,
         u.login AS subscriber_login,
         u.is_juridical AS sub_is_juridical,
         ud.surname AS ud_surname,
@@ -278,18 +296,27 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
     LEFT JOIN users.skystream_users assignee ON q.assigned_to = assignee.id
     ORDER BY
         CASE WHEN q.support_line = 1 THEN 0 ELSE 1 END,
+        CASE WHEN q.calc_has_unread THEN 0 ELSE 1 END,
         CASE
             WHEN q.assigned_to = :viewer_id THEN 0
             WHEN q.assigned_to IS NULL THEN 1
             ELSE 2
         END,
-        CASE WHEN q.calc_has_unread THEN 0 ELSE 1 END,
         CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
         CASE q.priority::text
             WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'middle' THEN 2 WHEN 'low' THEN 3 ELSE 4
         END,
-        CASE WHEN q.status IN ({waiting_in}) THEN 1 ELSE 0 END,
-        q.waiting_since ASC NULLS LAST,
+        CASE
+            WHEN q.calc_awaiting_subscriber THEN 1
+            WHEN q.status IN ({operational_in}) THEN 2
+            ELSE 0
+        END,
+        CASE
+            WHEN q.calc_has_unread THEN EXTRACT(EPOCH FROM q.waiting_since)
+            WHEN q.calc_awaiting_subscriber
+                THEN -EXTRACT(EPOCH FROM COALESCE(q.updated_at, q.date_of_create))
+            ELSE EXTRACT(EPOCH FROM q.waiting_since)
+        END,
         q.id ASC
     LIMIT :per_page OFFSET :offset
     """
@@ -357,7 +384,7 @@ def ticket_list_order_by(viewer_id: int) -> tuple:
             (cast(TrackerTickets.priority, String) == "low", 3),
             else_=4,
         ),
-        case((TrackerTickets.status.in_(TRACKER_WAITING_OPERATOR_STATUSES), 1), else_=0),
+        case((TrackerTickets.status.in_(TRACKER_OPERATIONAL_WAIT_STATUSES), 1), else_=0),
         literal_column(waiting, type_=DateTime(timezone=True)).asc().nulls_last(),
         TrackerTickets.id.asc(),
     )
@@ -418,6 +445,94 @@ def _media_url(file_path: str | None) -> str | None:
     return f"/media/{p.lstrip('/')}"
 
 
+def catalog_source_for_ticket(ticket_source: str | None) -> str:
+    """Источник строк в ticket_categories (как в legacy helpdesk)."""
+    s = (ticket_source or "call_center").strip()
+    if s in ("partner", "tech"):
+        return "partner"
+    if s == "call_center":
+        return "lk"
+    return s
+
+
+async def load_ticket_categories(
+    db: AsyncSession,
+    *,
+    catalog_source: str,
+) -> list[dict[str, Any]]:
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT id, parent_id, name, slug, theme::text AS theme,
+                    complexity, priority::text AS priority, support_line,
+                    sla_minutes, sort_order,
+                    COALESCE(need_user_selection, false) AS need_user_selection,
+                    COALESCE(need_station_selection, false) AS need_station_selection,
+                    object_type
+                FROM users.ticket_categories
+                WHERE is_active = true AND source = :src
+                ORDER BY sort_order ASC, name ASC, id ASC
+                """
+            ),
+            {"src": catalog_source},
+        )
+    ).mappings().all()
+
+    if not rows:
+        return []
+
+    nodes: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        rid = int(r["id"])
+        pid = int(r["parent_id"]) if r.get("parent_id") is not None else None
+        pr = r.get("priority") or "middle"
+        sort_order = int(r.get("sort_order") or 0)
+        base = {
+            "id": rid,
+            "name": r["name"],
+            "slug": r["slug"],
+            "sort_order": sort_order,
+            "parent_id": pid,
+        }
+        if pid is None:
+            nodes[rid] = {**base, "children": []}
+        else:
+            nodes[rid] = {
+                **base,
+                "theme": r["theme"],
+                "complexity": r["complexity"],
+                "priority": pr,
+                "priority_label": PRIORITY_DICT.get(pr, pr),
+                "support_line": int(r["support_line"]),
+                "sla_minutes": int(r["sla_minutes"]),
+                "need_user_selection": bool(r.get("need_user_selection")),
+                "need_station_selection": bool(r.get("need_station_selection")),
+                "object_type": r.get("object_type"),
+            }
+
+    roots: list[dict[str, Any]] = []
+    for r in rows:
+        rid = int(r["id"])
+        pid = int(r["parent_id"]) if r.get("parent_id") is not None else None
+        node = nodes[rid]
+        if pid is None:
+            roots.append(node)
+        elif pid in nodes and "children" in nodes[pid]:
+            nodes[pid]["children"].append(node)
+
+    for root in roots:
+        root["children"].sort(key=lambda c: (c["sort_order"], c["name"]))
+        for child in root["children"]:
+            child.pop("sort_order", None)
+            child.pop("parent_id", None)
+    roots.sort(key=lambda g: (g["sort_order"], g["name"]))
+    for root in roots:
+        root.pop("sort_order", None)
+        root.pop("parent_id", None)
+    return roots
+
+
 async def load_ticket_detail(
     db: AsyncSession,
     ticket_id: int,
@@ -436,9 +551,20 @@ async def load_ticket_detail(
                     tt.category_id, tt.assigned_to, tt.author,
                     COALESCE(tt.priority::text, tc.priority::text) AS priority,
                     tc.name AS category_name,
+                    tc.parent_id AS category_parent_id,
                     tcp.name AS category_parent_name,
                     u.login AS subscriber_login,
                     u.is_juridical,
+                    COALESCE(
+                        EXISTS (
+                            SELECT 1
+                            FROM radius.radacct r
+                            WHERE lower(r.username) = lower(u.login)
+                              AND r.acctstoptime IS NULL
+                            LIMIT 1
+                        ),
+                        false
+                    ) AS subscriber_online,
                     CASE
                         WHEN tt.person_type = 'cs' AND NULLIF(TRIM(tt.caller_name), '') IS NOT NULL
                             THEN TRIM(tt.caller_name)
@@ -524,10 +650,15 @@ async def load_ticket_detail(
         "source": source,
         "source_label": SOURCE_DISPLAY.get(source, source),
         "category_label": category_label,
+        "category_id": int(d["category_id"]) if d.get("category_id") is not None else None,
+        "category_parent_id": int(d["category_parent_id"])
+        if d.get("category_parent_id") is not None
+        else None,
         "user_id": int(d["user_id"]) if d.get("user_id") is not None else None,
         "caller_name": d.get("caller_name"),
         "subscriber_name": sub_name or None,
         "subscriber_login": sub_login or None,
+        "subscriber_online": bool(d.get("subscriber_online")),
         "subscriber_is_juridical": int(d.get("is_juridical") or 0),
         "subscriber_profile_user_id": int(d["user_id"]) if d.get("user_id") is not None else None,
         "assignee_name": d.get("assignee_name"),
@@ -606,7 +737,7 @@ async def load_mail_messages(
         await db.execute(
             text(
                 f"""
-                SELECT um.id AS msg_id, um.date_tz, ({answer_expr}) AS answer,
+                SELECT um.id AS msg_id, um.id_user_from, um.date_tz, ({answer_expr}) AS answer,
                     um.text AS text_raw,
                     CASE WHEN um.file_new IS NULL OR um.file_new IN ('0', '') THEN NULL
                          ELSE um.file_new END AS legacy_file,
@@ -627,7 +758,7 @@ async def load_mail_messages(
                 await db.execute(
                     text(
                         f"""
-                        SELECT um.id AS msg_id, um.date_tz, ({answer_expr}) AS answer,
+                        SELECT um.id AS msg_id, um.id_user_from, um.date_tz, ({answer_expr}) AS answer,
                             um.text AS text_raw,
                             CASE WHEN um.file_new IS NULL OR um.file_new IN ('0', '') THEN NULL
                                  ELSE um.file_new END AS legacy_file,
@@ -667,16 +798,23 @@ async def load_mail_messages(
     messages: list[dict[str, Any]] = []
     for r in rows:
         mid = int(r["msg_id"])
+        is_bot = int(r.get("id_user_from") or 0) == 0
         is_out = int(r["answer"] or 0) == 1
         dt = r.get("date_tz")
         legacy = r.get("legacy_file")
+        if is_bot:
+            side = "bot"
+        elif is_out:
+            side = "agent"
+        else:
+            side = "client"
         messages.append(
             {
                 "id": mid,
-                "side": "agent" if is_out else "client",
+                "side": side,
                 "text": (r.get("text_raw") or "").strip(),
                 "created_at_iso": _iso(dt) if isinstance(dt, datetime) else None,
-                "has_read": mid in read_ids or is_out,
+                "has_read": True if is_bot else mid in read_ids or is_out,
                 "legacy_file_url": _media_url(legacy) if legacy else None,
                 "attachments": att_map.get(mid, []),
             }
