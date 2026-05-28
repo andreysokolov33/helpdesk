@@ -1,5 +1,56 @@
 @import "./helpdesk-prototype.css";
 
+/* ── Theme-aware rich-text color variables ── */
+:root {
+  --tc-red:     #dc2626;
+  --tc-orange:  #ea580c;
+  --tc-yellow:  #b45309;
+  --tc-green:   #16a34a;
+  --tc-blue:    #2563eb;
+  --tc-purple:  #7c3aed;
+  --tc-pink:    #db2777;
+
+  --bg-yellow:   #fde68a;
+  --bg-green:    #bbf7d0;
+  --bg-blue:     #bfdbfe;
+  --bg-pink:     #fce7f3;
+  --bg-lavender: #ede9fe;
+  --bg-orange:   #fed7aa;
+}
+
+[data-theme="dark"] {
+  --tc-red:     #f87171;
+  --tc-orange:  #fb923c;
+  --tc-yellow:  #fbbf24;
+  --tc-green:   #4ade80;
+  --tc-blue:    #60a5fa;
+  --tc-purple:  #c084fc;
+  --tc-pink:    #f472b6;
+
+  --bg-yellow:   rgba(251, 191, 36, 0.28);
+  --bg-green:    rgba(74, 222, 128, 0.22);
+  --bg-blue:     rgba(96, 165, 250, 0.22);
+  --bg-pink:     rgba(244, 114, 182, 0.22);
+  --bg-lavender: rgba(167, 139, 250, 0.22);
+  --bg-orange:   rgba(251, 146, 60, 0.28);
+}
+
+/* Color marks applied via data attributes (theme-aware) */
+[data-tc="red"]     { color: var(--tc-red); }
+[data-tc="orange"]  { color: var(--tc-orange); }
+[data-tc="yellow"]  { color: var(--tc-yellow); }
+[data-tc="green"]   { color: var(--tc-green); }
+[data-tc="blue"]    { color: var(--tc-blue); }
+[data-tc="purple"]  { color: var(--tc-purple); }
+[data-tc="pink"]    { color: var(--tc-pink); }
+
+[data-bg="yellow"]   { background: var(--bg-yellow);   border-radius: 3px; padding: 0 1px; }
+[data-bg="green"]    { background: var(--bg-green);    border-radius: 3px; padding: 0 1px; }
+[data-bg="blue"]     { background: var(--bg-blue);     border-radius: 3px; padding: 0 1px; }
+[data-bg="pink"]     { background: var(--bg-pink);     border-radius: 3px; padding: 0 1px; }
+[data-bg="lavender"] { background: var(--bg-lavender); border-radius: 3px; padding: 0 1px; }
+[data-bg="orange"]   { background: var(--bg-orange);   border-radius: 3px; padding: 0 1px; }
+
 #root {
   min-height: 100%;
   height: 100%;
@@ -678,14 +729,6 @@
   background: #5d8ab3;
 }
 
-#tp-ticket .tk-att-file {
-  color: #3d5f8a;
-}
-
-[data-theme="dark"] #tp-ticket .tk-att-file {
-  color: #8eb8e8;
-}
-
 /* Лейаут: чат + панель справа */
 #tp-ticket .tk-sidebar {
   position: relative;
@@ -1118,6 +1161,128 @@
   text-align: left;
 }
 
+/* Быстрые ответы (макросы) */
+#tp-ticket .tk-macros {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--ln);
+  min-width: 0;
+}
+
+#tp-ticket .tk-macros__label {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--i3);
+  white-space: nowrap;
+}
+
+#tp-ticket .tk-macros__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+#tp-ticket .tk-macros__chip {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  border: 1px solid var(--ln);
+  background: var(--p);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--i2);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+#tp-ticket .tk-macros__chip:hover:not(:disabled) {
+  border-color: var(--red);
+  color: var(--red);
+  background: var(--rbg);
+}
+
+#tp-ticket .tk-macros__chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#tp-ticket .tk-macros__chip--more {
+  min-width: 52px;
+}
+
+#tp-ticket .tk-macros__chip--open {
+  border-color: var(--red);
+  color: var(--red);
+  background: var(--rbg);
+}
+
+#tp-ticket .tk-macros__more-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+#tp-ticket .tk-macros__menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  min-width: 160px;
+  max-width: min(280px, 90vw);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--ln);
+  background: var(--p);
+  box-shadow: var(--shl);
+}
+
+#tp-ticket .tk-macros__menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tp-ticket .tk-macros__menu-item:hover {
+  background: var(--rbg);
+  color: var(--red);
+}
+
+#tp-ticket .tk-macros__measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
 /* Composer — современный чат */
 #tp-ticket .tk-composer {
   flex-shrink: 0;
@@ -1131,7 +1296,7 @@
   border-radius: 16px;
   border: 1px solid var(--ln);
   background: var(--bg);
-  overflow: hidden;
+  overflow: visible;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
@@ -1218,6 +1383,8 @@
   gap: 2px;
   padding: 4px 8px 6px;
   border-top: 1px solid var(--ln);
+  overflow: visible;
+  position: relative;
 }
 
 #tp-ticket .tk-rte__spacer {
@@ -1285,7 +1452,7 @@
   border: 1px solid var(--ln);
   border-radius: 14px;
   padding: 10px 12px 12px;
-  z-index: 30;
+  z-index: 200;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
   min-width: 220px;
 }
@@ -1615,6 +1782,9 @@
 
 #tp-ticket .tk-upq__thumb--file {
   cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #tp-ticket .tk-upq__thumb img {
@@ -1808,7 +1978,9 @@
 #tp-ticket .tk-edatt__thumb--file {
   cursor: pointer;
   text-decoration: none;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #tp-ticket .tk-edatt__name {
@@ -1916,20 +2088,58 @@
 
 .tk-att-files {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 5px;
   margin-top: 8px;
 }
 
 .tk-att-file {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--red);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px 5px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--ln);
+  background: var(--nbg);
   text-decoration: none;
+  color: var(--tx);
+  max-width: 260px;
+  min-width: 100px;
+  transition: background 0.15s;
 }
 
 .tk-att-file:hover {
-  text-decoration: underline;
+  background: var(--hbg, rgba(0,0,0,0.06));
+}
+
+[data-theme="dark"] .tk-att-file:hover {
+  background: rgba(255,255,255,0.07);
+}
+
+.tk-att-file__name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tk-file-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #fff;
+  padding: 0 4px;
+  flex-shrink: 0;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .tk-no-reply {

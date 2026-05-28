@@ -1002,6 +1002,29 @@ async def load_ticket_categories(
     return roots
 
 
+async def load_helpdesk_macros(db: AsyncSession) -> list[dict[str, Any]]:
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT id, name, message_text, sort_order
+                FROM users.helpdesk_macros
+                ORDER BY sort_order ASC, id ASC
+                """
+            )
+        )
+    ).mappings().all()
+    return [
+        {
+            "id": int(r["id"]),
+            "name": str(r["name"]),
+            "message_text": str(r["message_text"] or ""),
+            "sort_order": int(r["sort_order"] or 0),
+        }
+        for r in rows
+    ]
+
+
 async def load_ticket_detail(
     db: AsyncSession,
     ticket_id: int,

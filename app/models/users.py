@@ -1522,3 +1522,20 @@ class PasswordResetCode(Base):
     deactivation_reason: Mapped[Optional[str]] = mapped_column(String(32))
     deactivated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     failed_attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+
+
+class HelpdeskMacros(Base):
+    """Горячие ответы оператора (users.helpdesk_macros)."""
+    __tablename__ = "helpdesk_macros"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="helpdesk_macros_pkey"),
+        Index("idx_helpdesk_macros_sort", "sort_order"),
+        {"schema": "users"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''::text"))
+    status_to_set: Mapped[Optional[str]] = mapped_column(String(50))
+    priority_to_set: Mapped[Optional[str]] = mapped_column(String(20))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))

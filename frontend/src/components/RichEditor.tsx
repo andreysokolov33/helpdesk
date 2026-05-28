@@ -7,32 +7,109 @@ import {
   useState,
 } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
+import { Mark, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
-import { TextStyle, Color, BackgroundColor } from "@tiptap/extension-text-style";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 
-// ── Palettes ──────────────────────────────────────────────────────────────────
+// ── Custom mark extensions ─────────────────────────────────────────────────────
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    textColor: {
+      setTextColor(color: string): ReturnType;
+      unsetTextColor(): ReturnType;
+    };
+    bgColor: {
+      setBgColor(color: string): ReturnType;
+      unsetBgColor(): ReturnType;
+    };
+  }
+}
+
+const TextColorMark = Mark.create({
+  name: "textColor",
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-tc"),
+        renderHTML: (attrs) => (attrs.color ? { "data-tc": attrs.color } : {}),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "span[data-tc]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["span", mergeAttributes(HTMLAttributes), 0];
+  },
+  addCommands() {
+    return {
+      setTextColor:
+        (color: string) =>
+        ({ commands }) =>
+          commands.setMark(this.name, { color }),
+      unsetTextColor:
+        () =>
+        ({ commands }) =>
+          commands.unsetMark(this.name),
+    };
+  },
+});
+
+const BgColorMark = Mark.create({
+  name: "bgColor",
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-bg"),
+        renderHTML: (attrs) => (attrs.color ? { "data-bg": attrs.color } : {}),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "span[data-bg]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["span", mergeAttributes(HTMLAttributes), 0];
+  },
+  addCommands() {
+    return {
+      setBgColor:
+        (color: string) =>
+        ({ commands }) =>
+          commands.setMark(this.name, { color }),
+      unsetBgColor:
+        () =>
+        ({ commands }) =>
+          commands.unsetMark(this.name),
+    };
+  },
+});
+
+// ── Palettes (keys → CSS variables) ──────────────────────────────────────────
 
 const TEXT_COLORS = [
-  { value: "", label: "Обычный цвет" },
-  { value: "#ef4444", label: "Красный" },
-  { value: "#f97316", label: "Оранжевый" },
-  { value: "#eab308", label: "Жёлтый" },
-  { value: "#16a34a", label: "Зелёный" },
-  { value: "#2563eb", label: "Синий" },
-  { value: "#9333ea", label: "Фиолетовый" },
-  { value: "#ec4899", label: "Розовый" },
+  { key: "",         label: "Обычный" },
+  { key: "red",      label: "Красный" },
+  { key: "orange",   label: "Оранжевый" },
+  { key: "yellow",   label: "Жёлтый" },
+  { key: "green",    label: "Зелёный" },
+  { key: "blue",     label: "Синий" },
+  { key: "purple",   label: "Фиолетовый" },
+  { key: "pink",     label: "Розовый" },
 ];
 
 const BG_COLORS = [
-  { value: "", label: "Без выделения" },
-  { value: "#fef08a", label: "Жёлтое" },
-  { value: "#bbf7d0", label: "Зелёное" },
-  { value: "#bfdbfe", label: "Синее" },
-  { value: "#fce7f3", label: "Розовое" },
-  { value: "#ede9fe", label: "Лавандовое" },
-  { value: "#fed7aa", label: "Оранжевое" },
+  { key: "",         label: "Без фона" },
+  { key: "yellow",   label: "Жёлтый" },
+  { key: "green",    label: "Зелёный" },
+  { key: "blue",     label: "Синий" },
+  { key: "pink",     label: "Розовый" },
+  { key: "lavender", label: "Лавандовый" },
+  { key: "orange",   label: "Оранжевый" },
 ];
 
 const HEADING_LEVELS = [1, 2, 3] as const;
@@ -53,17 +130,20 @@ type Props = {
   onSubmit?(): void;
   onEscape?(): void;
   onChange?(isEmpty: boolean): void;
+  onPasteFiles?(files: File[]): void;
   rightActions?: React.ReactNode;
 };
 
-type ToolPanel = "color" | "heading" | null;
+type ToolPanel = "color" | null;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
-  { placeholder = "", disabled = false, onSubmit, onEscape, onChange, rightActions },
+  { placeholder = "", disabled = false, onSubmit, onEscape, onChange, onPasteFiles, rightActions },
   ref,
 ) {
+  const onPasteFilesRef = useRef(onPasteFiles);
+  useEffect(() => { onPasteFilesRef.current = onPasteFiles; }, [onPasteFiles]);
   const [panel, setPanel] = useState<ToolPanel>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -75,9 +155,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   const editor = useEditor({
     extensions: [
       StarterKit,
-      TextStyle,
-      Color,
-      BackgroundColor,
+      TextColorMark,
+      BgColorMark,
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
@@ -98,6 +177,25 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
           return true;
         }
         return false;
+      },
+      handlePaste(_, event) {
+        const cb = onPasteFilesRef.current;
+        if (!cb) return false;
+        const items = Array.from(event.clipboardData?.items ?? []);
+        const files = items
+          .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+          .map((it) => {
+            const f = it.getAsFile();
+            if (!f) return null;
+            const ext = f.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+            const rand = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+            return new File([f], `${rand}.${ext}`, { type: f.type });
+          })
+          .filter((f): f is File => f !== null);
+        if (!files.length) return false;
+        event.preventDefault();
+        cb(files);
+        return true;
       },
     },
     onUpdate({ editor: e }) {
@@ -187,8 +285,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   const isBullet = editor.isActive("bulletList");
   const isOrdered = editor.isActive("orderedList");
   const isLink = editor.isActive("link");
-  const activeColor = (editor.getAttributes("textStyle").color as string | undefined) ?? "";
-  const activeBg = (editor.getAttributes("textStyle").backgroundColor as string | undefined) ?? "";
+  const activeColor = (editor.getAttributes("textColor").color as string | undefined) ?? "";
+  const activeBg = (editor.getAttributes("bgColor").color as string | undefined) ?? "";
   const activeHeading = HEADING_LEVELS.find((l) => editor.isActive("heading", { level: l }));
 
   return (
@@ -244,7 +342,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <div className="tk-rte__popover-wrap">
           <button
             type="button"
-            className={`tk-rte__btn${(activeColor || activeBg) ? " tk-rte__btn--on" : ""}${panel === "color" ? " tk-rte__btn--on" : ""}`}
+            className={`tk-rte__btn${(activeColor || activeBg || panel === "color") ? " tk-rte__btn--on" : ""}`}
             title="Цвет текста и выделение"
             onMouseDown={(e) => {
               e.preventDefault();
@@ -255,8 +353,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
             <span
               className="tk-rte__color-a"
               style={{
-                borderBottomColor: activeColor || "currentColor",
-                background: activeBg || "transparent",
+                borderBottomColor: activeColor ? `var(--tc-${activeColor})` : "currentColor",
+                background: activeBg ? `var(--bg-${activeBg})` : "transparent",
               }}
             >
               A
@@ -270,17 +368,17 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
               <div className="tk-rte__palette">
                 {TEXT_COLORS.map((c) => (
                   <button
-                    key={c.value || "_t0"}
+                    key={c.key || "_t0"}
                     type="button"
-                    className={`tk-rte__swatch${c.value === activeColor ? " tk-rte__swatch--on" : ""}`}
+                    className={`tk-rte__swatch${c.key === activeColor ? " tk-rte__swatch--on" : ""}`}
                     title={c.label}
-                    style={c.value ? { background: c.value } : undefined}
-                    data-reset={!c.value ? "1" : undefined}
+                    style={c.key ? { background: `var(--tc-${c.key})` } : undefined}
+                    data-reset={!c.key ? "1" : undefined}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      c.value
-                        ? editor.chain().focus().setColor(c.value).run()
-                        : editor.chain().focus().unsetColor().run();
+                      c.key
+                        ? editor.chain().focus().setTextColor(c.key).run()
+                        : editor.chain().focus().unsetTextColor().run();
                       setPanel(null);
                     }}
                   />
@@ -292,17 +390,17 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
               <div className="tk-rte__palette">
                 {BG_COLORS.map((c) => (
                   <button
-                    key={c.value || "_b0"}
+                    key={c.key || "_b0"}
                     type="button"
-                    className={`tk-rte__swatch tk-rte__swatch--bg${c.value === activeBg ? " tk-rte__swatch--on" : ""}`}
+                    className={`tk-rte__swatch tk-rte__swatch--bg${c.key === activeBg ? " tk-rte__swatch--on" : ""}`}
                     title={c.label}
-                    style={c.value ? { background: c.value } : undefined}
-                    data-reset={!c.value ? "1" : undefined}
+                    style={c.key ? { background: `var(--bg-${c.key})` } : undefined}
+                    data-reset={!c.key ? "1" : undefined}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      c.value
-                        ? editor.chain().focus().setBackgroundColor(c.value).run()
-                        : editor.chain().focus().unsetBackgroundColor().run();
+                      c.key
+                        ? editor.chain().focus().setBgColor(c.key).run()
+                        : editor.chain().focus().unsetBgColor().run();
                       setPanel(null);
                     }}
                   />

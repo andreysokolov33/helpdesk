@@ -222,3 +222,14 @@ class TicketCategoryGroup(BaseModel):
 class TicketCategoriesResponse(BaseModel):
     catalog_source: str
     items: list[TicketCategoryGroup]
+
+
+class HelpdeskMacroItem(BaseModel):
+    id: int
+    name: str
+    message_text: str
+    sort_order: int = 0
+
+
+class HelpdeskMacrosResponse(BaseModel):
+    items: list[HelpdeskMacroItem] = Field(default_factory=list)

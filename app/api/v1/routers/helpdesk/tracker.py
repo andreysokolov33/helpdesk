@@ -22,10 +22,13 @@ from app.api.v1.routers.helpdesk.schemas import (
     TicketMessageItem,
     TicketMessagesResponse,
     TicketSendMessageResponse,
+    HelpdeskMacroItem,
+    HelpdeskMacrosResponse,
     TrackerTicketListItem,
     TrackerTicketListResponse,
 )
 from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
+from app.core.ticket_message_validation import html_to_plain_text, validate_ticket_message_text
 from app.constants import (
     COMMUNICATION_STATE_LABELS,
     PRIORITY_DICT,
@@ -343,6 +346,15 @@ async def list_ticket_categories(
     return TicketCategoriesResponse(catalog_source=catalog, items=items)
 
 
+@router.get("/macros", response_model=HelpdeskMacrosResponse)
+async def list_helpdesk_macros(
+    db: AsyncSession = Depends(get_db),
+    _user: dict[str, Any] = Depends(require_tracker_user),
+) -> HelpdeskMacrosResponse:
+    raw = await ticket_svc.load_helpdesk_macros(db)
+    return HelpdeskMacrosResponse(items=[HelpdeskMacroItem(**m) for m in raw])
+
+
 @router.get("/{ticket_id}", response_model=TicketDetailResponse)
 async def get_ticket(
     ticket_id: int,
@@ -423,6 +435,10 @@ async def edit_ticket_message(
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> TicketMessageItem:
+    if html_to_plain_text(payload.text):
+        validation_err = validate_ticket_message_text(payload.text, has_attachments=False)
+        if validation_err:
+            raise HTTPException(status_code=400, detail=validation_err)
     raw = await ticket_svc.edit_ticket_message(
         db,
         ticket_id,
@@ -498,8 +514,9 @@ async def send_ticket_message(
         )
         attachments += ticket_svc.finalize_upload_tokens([tmp["token"]], ticket_id=ticket_id)
 
-    if not (text or "").strip() and not attachments:
-        raise HTTPException(status_code=400, detail="Нельзя отправить пустое сообщение")
+    validation_err = validate_ticket_message_text(text, has_attachments=bool(attachments))
+    if validation_err:
+        raise HTTPException(status_code=400, detail=validation_err)
 
     batches: list[list[dict[str, Any]]] = []
     for i in range(0, len(attachments), 10):

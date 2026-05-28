@@ -55,6 +55,11 @@ import {
 } from "@/utils/ticketChatScroll";
 import { compressImageToWebp } from "@/utils/imageCompress";
 import { formatBytes } from "@/utils/formatBytes";
+import FileBadge, { resolveFileExt, truncateFilename } from "@/components/FileBadge";
+import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
+import TicketMacroBar from "@/components/TicketMacroBar";
+import { macroTextToEditorHtml, type HelpdeskMacro } from "@/api/macros";
+import { validateTicketMessage } from "@/utils/ticketMessageValidation";
 
 const MSG_POLL_MS = 5000;
 
@@ -104,7 +109,10 @@ function AttachmentsBlock({
         <div className="tk-att-files">
           {files.map((a) => (
             <a key={a.id} href={a.file_path} target="_blank" rel="noreferrer" className="tk-att-file">
-              {a.original_filename || "Скачать файл"}
+              <FileBadge filename={a.original_filename} ext={resolveFileExt(a.original_filename)} />
+              <span className="tk-att-file__name" title={a.original_filename || undefined}>
+                {truncateFilename(a.original_filename || "Файл")}
+              </span>
             </a>
           ))}
         </div>
@@ -175,6 +183,7 @@ export default function TicketPage() {
   const [imgViewerOpen, setImgViewerOpen] = useState(false);
   const [imgViewerIndex, setImgViewerIndex] = useState(0);
   const imgViewerUrlRef = useRef<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant: ToastVariant } | null>(null);
 
   const uploadSummary = useMemo(() => {
     const total = uploads.reduce((s, u) => s + (u.total || 0), 0);
@@ -569,6 +578,13 @@ export default function TicketPage() {
     editorRef.current?.focus();
   }
 
+  function applyMacro(macro: HelpdeskMacro) {
+    const html = macroTextToEditorHtml(macro.message_text);
+    editorRef.current?.setContent(html);
+    setEditorEmpty(!html);
+    focusComposer();
+  }
+
   function handleEditorEscape() {
     if (editingId) {
       cancelEdit();
@@ -636,13 +652,24 @@ export default function TicketPage() {
   async function submit() {
     const isEmpty = editorRef.current?.isEmpty ?? true;
     const html = isEmpty ? "" : (editorRef.current?.getHTML() ?? "");
-    if (isEmpty && !uploadSummary.hasReady && !editingId) return;
+    const hasAttachments = editingId ? editingAttachments.length > 0 : uploadSummary.hasReady;
+    if (isEmpty && !hasAttachments && !editingId) return;
     if (!detail?.can_reply && detail?.chat_mode === "mail") return;
     if (editingId && isEmpty && editingAttachments.length === 0) return;
     if (uploadSummary.pending > 0) {
       autoSendRef.current = true;
       return;
     }
+
+    const skipTextValidation = editingId && isEmpty && editingAttachments.length > 0;
+    if (!skipTextValidation) {
+      const validation = validateTicketMessage(html, hasAttachments);
+      if (!validation.ok) {
+        setToast({ message: validation.message, variant: "error" });
+        return;
+      }
+    }
+
     setSending(true);
     try {
       if (editingId) {
@@ -1016,6 +1043,9 @@ export default function TicketPage() {
                 </div>
               ) : (
                 <>
+                  {!editingId ? (
+                    <TicketMacroBar disabled={sending} onPick={applyMacro} />
+                  ) : null}
                   {replyTo ? (
                     <div className="tk-composer-mode">
                       <div className="tk-composer-mode__label">Ответ на сообщение</div>
@@ -1047,6 +1077,7 @@ export default function TicketPage() {
                       onSubmit={submit}
                       onEscape={handleEditorEscape}
                       onChange={setEditorEmpty}
+                      onPasteFiles={editingId ? undefined : enqueueFiles}
                       rightActions={
                         <>
                           {editingId ? (
@@ -1072,7 +1103,7 @@ export default function TicketPage() {
                                 type="file"
                                 hidden
                                 multiple
-                                accept="image/*,.pdf,.xls,.xlsx,.csv"
+                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
                                 onChange={(e) => {
                                   void enqueueFiles(e.target.files || []);
                                   e.currentTarget.value = "";
@@ -1142,9 +1173,11 @@ export default function TicketPage() {
                                 <img src={u.previewUrl} alt={u.file.name} />
                               </button>
                             ) : (
-                              <div className="tk-upq__thumb tk-upq__thumb--file" aria-hidden />
+                              <div className="tk-upq__thumb tk-upq__thumb--file" aria-hidden>
+                                <FileBadge filename={u.file.name} />
+                              </div>
                             )}
-                            <span className="tk-upq__name">{u.file.name}</span>
+                            <span className="tk-upq__name" title={u.file.name}>{truncateFilename(u.file.name)}</span>
                             <span className="tk-upq__meta">
                               {formatBytes(u.total)}{u.status === "uploading" ? ` · ${Math.round((u.uploaded / Math.max(1, u.total)) * 100)}%` : ""}
                               {u.status === "error" && u.err ? ` · ${u.err}` : ""}
@@ -1201,9 +1234,13 @@ export default function TicketPage() {
                                 rel="noreferrer"
                                 title={a.original_filename || "Открыть файл"}
                                 aria-label={a.original_filename || "Открыть файл"}
-                              />
+                              >
+                                <FileBadge filename={a.original_filename} />
+                              </a>
                             )}
-                            <span className="tk-edatt__name">{a.original_filename || "Файл"}</span>
+                            <span className="tk-edatt__name" title={a.original_filename || undefined}>
+                              {truncateFilename(a.original_filename || "Файл")}
+                            </span>
                             <span className="tk-edatt__meta">
                               {a.file_size_bytes ? formatBytes(a.file_size_bytes) : ""}
                             </span>
@@ -1449,6 +1486,15 @@ export default function TicketPage() {
         onClose={() => setClassifyOpen(false)}
         onConfirm={() => setClassifyOpen(false)}
       />
+
+      {toast ? (
+        <ToastNotice
+          message={toast.message}
+          variant={toast.variant}
+          durationMs={3000}
+          onClose={() => setToast(null)}
+        />
+      ) : null}
     </div>
   );
 }
