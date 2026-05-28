@@ -97,6 +97,14 @@ export type TicketMessagesResult = {
   has_newer?: boolean;
 };
 
+export type UploadTicketAttachmentResult = {
+  token: string;
+  original_filename: string;
+  file_ext: string;
+  file_size_bytes: number;
+  is_image: boolean;
+};
+
 function buildMessagesQuery(opts?: FetchTicketMessagesOpts): string {
   const p = new URLSearchParams();
   if (opts?.sinceId && opts.sinceId > 0) {
@@ -118,6 +126,22 @@ export async function fetchTicketMessages(
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages${buildMessagesQuery(opts)}`);
 }
 
+export async function uploadTicketAttachment(ticketId: number, file: File): Promise<UploadTicketAttachmentResult> {
+  const fd = new FormData();
+  fd.set("file", file);
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/attachments/upload`, { method: "POST", body: fd });
+}
+
+export async function detachTicketAttachment(
+  ticketId: number,
+  messageId: number,
+  attachmentId: number,
+): Promise<void> {
+  await apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages/${messageId}/attachments/${attachmentId}`, {
+    method: "DELETE",
+  });
+}
+
 export function normalizeReadReceipts(raw?: Record<string, string>): Record<number, string> {
   if (!raw) return {};
   const out: Record<number, string> = {};
@@ -131,18 +155,23 @@ export function normalizeReadReceipts(raw?: Record<string, string>): Record<numb
 export async function sendTicketMessage(
   ticketId: number,
   text: string,
+  uploadTokens?: string[],
   file?: File | null,
   replyToId?: number | null,
-): Promise<TicketMessage> {
+): Promise<TicketMessage[]> {
   const fd = new FormData();
   fd.set("text", text);
+  if (uploadTokens?.length) fd.set("upload_tokens", JSON.stringify(uploadTokens));
   if (file) fd.set("file", file);
   if (replyToId && replyToId > 0) fd.set("reply_to_id", String(replyToId));
-  const data = await apiJson<{ message: TicketMessage }>(`/api/v1/helpdesk/tracker/${ticketId}/messages`, {
+  const data = await apiJson<{ message?: TicketMessage; messages?: TicketMessage[] }>(
+    `/api/v1/helpdesk/tracker/${ticketId}/messages`,
+    {
     method: "POST",
     body: fd,
-  });
-  return data.message;
+    },
+  );
+  return data.messages?.length ? data.messages : data.message ? [data.message] : [];
 }
 
 export async function updateTicketMessage(

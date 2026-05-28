@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
 import TicketDeleteMessageModal from "@/components/TicketDeleteMessageModal";
@@ -25,6 +25,8 @@ import {
   normalizeReadReceipts,
   sendTicketMessage,
   updateTicketMessage,
+  uploadTicketAttachment,
+  detachTicketAttachment,
   type TicketDetail,
   type TicketMessage,
 } from "@/api/ticket";
@@ -50,12 +52,19 @@ import {
   preserveScrollOnPrepend,
   scrollChatToBottom,
 } from "@/utils/ticketChatScroll";
+import { compressImageToWebp } from "@/utils/imageCompress";
+import { formatBytes } from "@/utils/formatBytes";
 
 const MSG_POLL_MS = 5000;
 
 type AttachBlockProps = { msg: TicketMessage };
 
-function AttachmentsBlock({ msg }: AttachBlockProps) {
+function AttachmentsBlock({
+  msg,
+  onOpenImage,
+}: AttachBlockProps & {
+  onOpenImage: (url: string) => void;
+}) {
   const items = [
     ...(msg.legacy_file_url
       ? [
@@ -70,19 +79,35 @@ function AttachmentsBlock({ msg }: AttachBlockProps) {
     ...msg.attachments,
   ];
   if (!items.length) return null;
+  const images = items.filter((a) => Boolean(a.is_image));
+  const files = items.filter((a) => !a.is_image);
+  const n = images.length;
   return (
     <div className="tk-att">
-      {items.map((a) =>
-        a.is_image ? (
-          <a key={a.id} href={a.file_path} target="_blank" rel="noreferrer" className="tk-att-img">
-            <img src={a.file_path} alt={a.original_filename || "Вложение"} loading="lazy" />
-          </a>
-        ) : (
-          <a key={a.id} href={a.file_path} target="_blank" rel="noreferrer" className="tk-att-file">
-            {a.original_filename || "Скачать файл"}
-          </a>
-        ),
-      )}
+      {images.length ? (
+        <div className={`tk-att-grid tk-att-grid--n${Math.min(5, n)}`}>
+          {images.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className="tk-att-img"
+              onClick={() => onOpenImage(a.file_path)}
+              title={a.original_filename || "Открыть изображение"}
+            >
+              <img src={a.file_path} alt={a.original_filename || "Вложение"} loading="lazy" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {files.length ? (
+        <div className="tk-att-files">
+          {files.map((a) => (
+            <a key={a.id} href={a.file_path} target="_blank" rel="noreferrer" className="tk-att-file">
+              {a.original_filename || "Скачать файл"}
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -113,7 +138,6 @@ export default function TicketPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [file, setFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   const [sideOpen, setSideOpen] = useState(true);
   const [classifyOpen, setClassifyOpen] = useState(false);
@@ -125,13 +149,89 @@ export default function TicketPage() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; msg: TicketMessage } | null>(null);
   const [replyTo, setReplyTo] = useState<TicketMessage | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingAttachments, setEditingAttachments] = useState<TicketMessage["attachments"]>([]);
   const [deleteTarget, setDeleteTarget] = useState<TicketMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [uploads, setUploads] = useState<
+    {
+      id: string;
+      file: File;
+      previewUrl?: string;
+      status: "pending" | "uploading" | "done" | "error";
+      uploaded: number;
+      total: number;
+      token?: string;
+      err?: string;
+      isImage?: boolean;
+    }[]
+  >([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const uploadingXhrRef = useRef<XMLHttpRequest | null>(null);
+  const uploadingIdRef = useRef<string | null>(null);
+  const autoSendRef = useRef(false);
+  const [imgViewerOpen, setImgViewerOpen] = useState(false);
+  const [imgViewerIndex, setImgViewerIndex] = useState(0);
+
+  const uploadSummary = useMemo(() => {
+    const total = uploads.reduce((s, u) => s + (u.total || 0), 0);
+    const uploaded = uploads.reduce((s, u) => s + (u.uploaded || 0), 0);
+    const pending = uploads.filter((u) => u.status === "pending" || u.status === "uploading").length;
+    const doneTokens = uploads.filter((u) => u.status === "done" && u.token).map((u) => u.token!) as string[];
+    const hasReady = uploads.some((u) => u.status === "done" && Boolean(u.token));
+    return { total, uploaded, pending, doneTokens, hasReady };
+  }, [uploads]);
+
+  const allImageUrls = useMemo(() => {
+    const out: string[] = [];
+    for (const m of messages) {
+      if (m.legacy_file_url && /\.(jpe?g|png|gif|webp|bmp)$/i.test(m.legacy_file_url)) {
+        out.push(m.legacy_file_url);
+      }
+      for (const a of m.attachments || []) {
+        if (a?.is_image && a.file_path) out.push(a.file_path);
+      }
+    }
+    // uniq keep order
+    return out.filter((u, i) => out.indexOf(u) === i);
+  }, [messages]);
+
+  const openImageViewer = useCallback(
+    (url: string) => {
+      const idx = Math.max(0, allImageUrls.indexOf(url));
+      setImgViewerIndex(idx >= 0 ? idx : 0);
+      setImgViewerOpen(true);
+    },
+    [allImageUrls],
+  );
+
+  useEffect(() => {
+    if (!imgViewerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setImgViewerOpen(false);
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setImgViewerIndex((i) => (allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0));
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setImgViewerIndex((i) => (allImageUrls.length ? (i + 1) % allImageUrls.length : 0));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [imgViewerOpen, allImageUrls.length]);
 
   useEffect(() => {
     setContextMenu(null);
     setReplyTo(null);
     setEditingId(null);
+    setEditingAttachments([]);
     setDeleteTarget(null);
     setHasOlder(false);
     setHasNewer(false);
@@ -458,16 +558,18 @@ export default function TicketPage() {
     }
     if (action === "reply") {
       setEditingId(null);
+      setEditingAttachments([]);
       setReplyTo(msg);
-      setFile(null);
+      setUploads([]);
       focusComposer();
       return;
     }
     if (action === "edit") {
       setReplyTo(null);
       setEditingId(msg.id);
+      setEditingAttachments(msg.attachments || []);
       setInput(msg.text || "");
-      setFile(null);
+      setUploads([]);
       focusComposer();
       return;
     }
@@ -497,9 +599,14 @@ export default function TicketPage() {
 
   async function submit() {
     const t = input.trim();
-    if (!t && !file && !editingId) return;
+    if (!t && !uploadSummary.hasReady && !editingId) return;
     if (!detail?.can_reply && detail?.chat_mode === "mail") return;
     if (editingId && !t) return;
+    if (uploadSummary.pending > 0) {
+      // пользователь нажал "Отправить", ждём окончания загрузок и отправляем автоматически
+      autoSendRef.current = true;
+      return;
+    }
     setSending(true);
     try {
       if (editingId) {
@@ -508,19 +615,22 @@ export default function TicketPage() {
           prev.map((m) => (m.id === editingId ? { ...m, ...updated } : m)),
         );
         setEditingId(null);
+        setEditingAttachments([]);
         setInput("");
-        setFile(null);
+        setUploads([]);
       } else {
-        const msg = await sendTicketMessage(ticketId, t, file, replyTo?.id ?? null);
-        setMessages((prev) =>
-          applyReadReceiptsToMessages(mergeTicketMessages(prev, [msg]), readReceiptsRef.current),
-        );
+        const created = await sendTicketMessage(ticketId, t, uploadSummary.doneTokens, null, replyTo?.id ?? null);
+        if (created.length) {
+          setMessages((prev) =>
+            applyReadReceiptsToMessages(mergeTicketMessages(prev, created), readReceiptsRef.current),
+          );
+        }
         atBottomRef.current = true;
         setAtBottom(true);
         setPendingNewCount(0);
         setHasNewer(false);
         setInput("");
-        setFile(null);
+        setUploads([]);
         setReplyTo(null);
         requestAnimationFrame(() => {
           const el = scrollRef.current;
@@ -533,6 +643,125 @@ export default function TicketPage() {
       setSending(false);
     }
   }
+
+  useEffect(() => {
+    if (!autoSendRef.current) return;
+    if (uploadSummary.pending > 0) return;
+    autoSendRef.current = false;
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    submit();
+  }, [uploadSummary.pending]); // submit зависит от большого набора state; триггерим только по смене pending
+
+  async function enqueueFiles(list: FileList | File[]) {
+    const arr = Array.from(list || []);
+    if (!arr.length) return;
+    const normalized: File[] = [];
+    for (const f of arr) {
+      if (f.type.startsWith("image/")) {
+        normalized.push(await compressImageToWebp(f));
+      } else {
+        normalized.push(f);
+      }
+    }
+    setUploads((prev) => [
+      ...prev,
+      ...normalized.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+        status: "pending" as const,
+        uploaded: 0,
+        total: file.size,
+        isImage: file.type.startsWith("image/"),
+      })),
+    ]);
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const u of uploads) {
+        if (u.previewUrl) URL.revokeObjectURL(u.previewUrl);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // один активный XHR, не abort на каждом ре-рендере
+    if (uploadingIdRef.current) return;
+    const next = uploads.find((u) => u.status === "pending");
+    if (!next) return;
+
+    setUploads((prev) => prev.map((u) => (u.id === next.id ? { ...u, status: "uploading" } : u)));
+    const xhr = new XMLHttpRequest();
+    uploadingXhrRef.current = xhr;
+    uploadingIdRef.current = next.id;
+    xhr.open("POST", `/api/v1/helpdesk/tracker/${ticketId}/attachments/upload`);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      setUploads((prev) =>
+        prev.map((u) => (u.id === next.id ? { ...u, uploaded: e.loaded, total: e.total } : u)),
+      );
+    };
+    xhr.onerror = () => {
+      setUploads((prev) =>
+        prev.map((u) => (u.id === next.id ? { ...u, status: "error", err: "Ошибка загрузки" } : u)),
+      );
+      if (uploadingXhrRef.current === xhr) uploadingXhrRef.current = null;
+      if (uploadingIdRef.current === next.id) uploadingIdRef.current = null;
+    };
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        setUploads((prev) =>
+          prev.map((u) =>
+            u.id === next.id ? { ...u, status: "error", err: `HTTP ${xhr.status}` } : u,
+          ),
+        );
+      } else {
+        try {
+          const data = JSON.parse(xhr.responseText) as { token: string; is_image: boolean };
+          if (!data?.token) throw new Error("no token");
+          setUploads((prev) =>
+            prev.map((u) =>
+              u.id === next.id
+                ? {
+                    ...u,
+                    status: "done",
+                    token: data.token,
+                    isImage: Boolean(data.is_image),
+                    uploaded: u.total,
+                    total: u.total,
+                  }
+                : u,
+            ),
+          );
+        } catch {
+          setUploads((prev) =>
+            prev.map((u) => (u.id === next.id ? { ...u, status: "error", err: "Некорректный ответ" } : u)),
+          );
+        }
+      }
+      if (uploadingXhrRef.current === xhr) uploadingXhrRef.current = null;
+      if (uploadingIdRef.current === next.id) uploadingIdRef.current = null;
+    };
+    const fd = new FormData();
+    fd.set("file", next.file);
+    xhr.send(fd);
+  }, [uploads, ticketId]);
+
+  useEffect(() => {
+    // abort только при смене тикета/размонтаже
+    return () => {
+      try {
+        uploadingXhrRef.current?.abort();
+      } catch {
+        /* ignore */
+      }
+      uploadingXhrRef.current = null;
+      uploadingIdRef.current = null;
+    };
+  }, [ticketId]);
 
   if (loading) {
     return (
@@ -663,7 +892,7 @@ export default function TicketPage() {
                           <div className="bbl bot">
                             <div className="tk-msg-label">{ticketAuthorLabel(m, subName)}</div>
                             <MessageBody text={m.text} />
-                            <AttachmentsBlock msg={m} />
+                            <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
                           </div>
                           <div className="mtm">{formatMsgTime(m.created_at_iso) || "—"}</div>
                         </div>
@@ -687,7 +916,7 @@ export default function TicketPage() {
                               <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
                             ) : null}
                             <MessageBody text={m.text} />
-                            <AttachmentsBlock msg={m} />
+                            <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
                           </div>
                           <div className="mtm">
                             <span>
@@ -764,6 +993,7 @@ export default function TicketPage() {
                         className="tk-composer-mode__close"
                         onClick={() => {
                           setEditingId(null);
+                          setEditingAttachments([]);
                           setInput("");
                         }}
                         aria-label="Отменить редактирование"
@@ -815,14 +1045,18 @@ export default function TicketPage() {
                           type="file"
                           hidden
                           disabled={Boolean(editingId)}
-                          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
-                          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                          multiple
+                          accept="image/*,.pdf,.xls,.xlsx,.csv"
+                          onChange={(e) => {
+                            void enqueueFiles(e.target.files || []);
+                            e.currentTarget.value = "";
+                          }}
                         />
                       </label>
                       <button
                         type="button"
                         className="tk-composer__send"
-                        disabled={sending || (!input.trim() && !file && !editingId)}
+                        disabled={sending || (!input.trim() && !uploadSummary.hasReady && !editingId)}
                         onClick={submit}
                         title={editingId ? "Сохранить" : "Отправить"}
                       >
@@ -838,12 +1072,132 @@ export default function TicketPage() {
                       </button>
                     </div>
                   </div>
-                  {file ? (
-                    <div className="tk-composer__file">
-                      <span className="tk-composer__file-name">{file.name}</span>
-                      <button type="button" className="tk-file-clear" onClick={() => setFile(null)}>
-                        Убрать
-                      </button>
+                  {uploads.length ? (
+                    <div className="tk-upq" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
+                      e.preventDefault();
+                      if (editingId) return;
+                      void enqueueFiles(e.dataTransfer.files);
+                    }}>
+                      <div className="tk-upq__top">
+                        <span>
+                          Загружено: {formatBytes(uploadSummary.uploaded)} / {formatBytes(uploadSummary.total)}
+                        </span>
+                        <button
+                          type="button"
+                          className="tk-upq__clear"
+                          disabled={sending}
+                          onClick={() => {
+                            setUploads((prev) => {
+                              for (const u of prev) if (u.previewUrl) URL.revokeObjectURL(u.previewUrl);
+                              return [];
+                            });
+                          }}
+                        >
+                          Очистить
+                        </button>
+                      </div>
+                      <div className="tk-upq__items">
+                        {uploads.map((u) => (
+                          <div key={u.id} className={`tk-upq__item tk-upq__item--${u.status}`}>
+                            {u.previewUrl ? (
+                              <button
+                                type="button"
+                                className="tk-upq__thumb"
+                                onClick={() => {
+                                  setPreviewUrl(u.previewUrl || null);
+                                  setPreviewOpen(Boolean(u.previewUrl));
+                                }}
+                                aria-label="Открыть изображение"
+                                title="Открыть изображение"
+                              >
+                                <img src={u.previewUrl} alt={u.file.name} />
+                              </button>
+                            ) : (
+                              <div className="tk-upq__thumb tk-upq__thumb--file" aria-hidden />
+                            )}
+                            <span className="tk-upq__name">{u.file.name}</span>
+                            <span className="tk-upq__meta">
+                              {formatBytes(u.total)}{u.status === "uploading" ? ` · ${Math.round((u.uploaded / Math.max(1, u.total)) * 100)}%` : ""}
+                              {u.status === "error" && u.err ? ` · ${u.err}` : ""}
+                            </span>
+                            <button
+                              type="button"
+                              className="tk-upq__rm"
+                              disabled={sending}
+                              onClick={() =>
+                                setUploads((prev) => {
+                                  const cur = prev.find((x) => x.id === u.id);
+                                  if (cur?.status === "uploading" && uploadingIdRef.current === u.id) {
+                                    try {
+                                      uploadingXhrRef.current?.abort();
+                                    } catch {
+                                      /* ignore */
+                                    }
+                                  }
+                                  if (cur?.previewUrl) URL.revokeObjectURL(cur.previewUrl);
+                                  return prev.filter((x) => x.id !== u.id);
+                                })
+                              }
+                              aria-label="Убрать файл"
+                              title="Убрать файл"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {editingId && editingAttachments.length ? (
+                    <div className="tk-edatt">
+                      <div className="tk-edatt__head">Вложения сообщения</div>
+                      <div className="tk-edatt__items">
+                        {editingAttachments.map((a) => (
+                          <div key={a.id} className="tk-edatt__item">
+                            {a.is_image ? (
+                              <button
+                                type="button"
+                                className="tk-edatt__thumb"
+                                onClick={() => openImageViewer(a.file_path)}
+                                title={a.original_filename || "Открыть"}
+                              >
+                                <img src={a.file_path} alt={a.original_filename || "Вложение"} loading="lazy" />
+                              </button>
+                            ) : (
+                              <a className="tk-edatt__file" href={a.file_path} target="_blank" rel="noreferrer">
+                                {a.original_filename || "Файл"}
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              className="tk-edatt__rm"
+                              disabled={sending}
+                              onClick={async () => {
+                                try {
+                                  if (a.id > 0) {
+                                    await detachTicketAttachment(ticketId, editingId, a.id);
+                                  }
+                                  setEditingAttachments((prev) => prev.filter((x) => x.id !== a.id));
+                                  setMessages((prev) =>
+                                    prev.map((m) =>
+                                      m.id === editingId
+                                        ? { ...m, attachments: (m.attachments || []).filter((x) => x.id !== a.id) }
+                                        : m,
+                                    ),
+                                  );
+                                } catch (e: unknown) {
+                                  window.alert(e instanceof Error ? e.message : "Не удалось открепить вложение");
+                                }
+                              }}
+                              aria-label="Удалить вложение"
+                              title="Удалить вложение"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                   <div className="tk-composer__hint">
@@ -853,6 +1207,76 @@ export default function TicketPage() {
               )}
             </div>
           </div>
+
+          {previewOpen && previewUrl ? (
+            <div
+              className="tk-imgv"
+              role="dialog"
+              aria-modal="true"
+              onClick={() => {
+                setPreviewOpen(false);
+                setPreviewUrl(null);
+              }}
+            >
+              <div
+                className="tk-imgv__box"
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                <button
+                  type="button"
+                  className="tk-imgv__close"
+                  aria-label="Закрыть"
+                  onClick={() => {
+                    setPreviewOpen(false);
+                    setPreviewUrl(null);
+                  }}
+                >
+                  ×
+                </button>
+                <img className="tk-imgv__img" src={previewUrl} alt="Просмотр" />
+              </div>
+            </div>
+          ) : null}
+
+          {imgViewerOpen && allImageUrls.length ? (
+            <div
+              className="tk-imgv"
+              role="dialog"
+              aria-modal="true"
+              onClick={() => setImgViewerOpen(false)}
+            >
+              <div className="tk-imgv__box" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="tk-imgv__close" aria-label="Закрыть" onClick={() => setImgViewerOpen(false)}>
+                  ×
+                </button>
+                <button
+                  type="button"
+                  className="tk-imgv__nav tk-imgv__nav--prev"
+                  aria-label="Предыдущее"
+                  onClick={() =>
+                    setImgViewerIndex((i) =>
+                      allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0,
+                    )
+                  }
+                >
+                  ‹
+                </button>
+                <img className="tk-imgv__img" src={allImageUrls[Math.min(imgViewerIndex, allImageUrls.length - 1)]} alt="Просмотр" />
+                <button
+                  type="button"
+                  className="tk-imgv__nav tk-imgv__nav--next"
+                  aria-label="Следующее"
+                  onClick={() =>
+                    setImgViewerIndex((i) => (allImageUrls.length ? (i + 1) % allImageUrls.length : 0))
+                  }
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {contextMenu ? (
             <TicketMessageContextMenu

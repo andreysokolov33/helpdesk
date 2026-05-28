@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
+import jwt
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import Boolean, DateTime, String, case, cast, literal_column, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -506,7 +507,9 @@ def ticket_list_order_by(viewer_id: int) -> tuple:
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _MEDIA_ROOT = os.path.abspath(settings.MEDIA_DIR)
 _IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-_ALLOWED_EXT = _IMAGE_EXT | {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
+_ALLOWED_EXT = _IMAGE_EXT | {".pdf", ".xls", ".xlsx", ".csv"}
+_UPLOAD_TOKEN_TTL_SEC = 15 * 60
+_MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 
 
 def chat_mode_for_source(source: str | None) -> str:
@@ -1742,9 +1745,10 @@ async def send_mail_reply(
     file: UploadFile | None = None,
     operator_role: str | None = None,
     reply_to_id: int | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     text_body = text_body.strip()
-    if not text_body and (not file or not file.filename):
+    if not text_body and (not file or not file.filename) and not (attachments or []):
         raise HTTPException(status_code=400, detail="Введите текст сообщения")
 
     ticket = (
@@ -1760,11 +1764,12 @@ async def send_mail_reply(
 
     await _assert_reply_target(db, ticket_id, reply_to_id, chat_mode="mail")
 
-    file_path = ""
-    real_file = None
     moscow_ts = _moscow_ts()
+    # legacy: single file in message; store as attachment row (file_new not used)
+    extra_attachments: list[dict[str, Any]] = []
     if file and file.filename:
-        file_path, real_file = await _save_upload(file, chat_id)
+        up = await save_attachment_temp(file, ticket_id=ticket_id, user_id=chat_id)
+        extra_attachments = finalize_upload_tokens([up["token"]], ticket_id=ticket_id)
 
     ins = (
         await db.execute(
@@ -1789,7 +1794,7 @@ async def send_mail_reply(
                 "from_id": operator_id,
                 "to_id": chat_id,
                 "ts": moscow_ts,
-                "file_new": file_path or "",
+                "file_new": "",
                 "op_id": operator_id,
                 "chat_id": chat_id,
                 "ticket_id": ticket_id,
@@ -1815,6 +1820,55 @@ async def send_mail_reply(
     await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()
 
+    all_att = list(attachments or []) + list(extra_attachments or [])
+    if all_att:
+        for a in all_att:
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO users.user_mail_attachments (msg_id, file_path, original_filename, file_ext, file_size_bytes)
+                    VALUES (:msg_id, :file_path, :original_filename, :file_ext, :file_size_bytes)
+                    """
+                ),
+                {
+                    "msg_id": msg_id,
+                    "file_path": a["file_path"],
+                    "original_filename": a.get("original_filename") or "",
+                    "file_ext": a.get("file_ext"),
+                    "file_size_bytes": a.get("file_size_bytes"),
+                },
+            )
+        await db.commit()
+
+    att_items: list[dict[str, Any]] = []
+    if all_att:
+        rows = (
+            await db.execute(
+                text(
+                    """
+                    SELECT id, file_path, original_filename, file_ext, file_size_bytes
+                    FROM users.user_mail_attachments
+                    WHERE msg_id = :mid
+                    ORDER BY id ASC
+                    """
+                ),
+                {"mid": msg_id},
+            )
+        ).mappings().all()
+        for r in rows:
+            fp = str(r.get("file_path") or "")
+            ext = (r.get("file_ext") or "").lower()
+            att_items.append(
+                {
+                    "id": int(r["id"]),
+                    "file_path": fp,
+                    "original_filename": r.get("original_filename") or "",
+                    "file_ext": ext or None,
+                    "file_size_bytes": int(r["file_size_bytes"]) if r.get("file_size_bytes") is not None else None,
+                    "is_image": fp.lower().endswith(tuple(_IMAGE_EXT)) or ext.lstrip(".") in {e.lstrip(".") for e in _IMAGE_EXT},
+                }
+            )
+
     out: dict[str, Any] = {
         "id": msg_id,
         "side": "me",
@@ -1825,8 +1879,8 @@ async def send_mail_reply(
         "recipient_read_at_iso": None,
         "reply_to_id": reply_to_id,
         "is_edited": False,
-        "legacy_file_url": _media_url(file_path) if file_path else None,
-        "attachments": [],
+        "legacy_file_url": None,
+        "attachments": att_items,
     }
     if reply_to_id:
         enrich_reply_previews([out])
@@ -1851,9 +1905,10 @@ async def send_tracker_reply(
     *,
     operator_role: str | None = None,
     reply_to_id: int | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     text_body = text_body.strip()
-    if not text_body:
+    if not text_body and not (attachments or []):
         raise HTTPException(status_code=400, detail="Введите текст сообщения")
 
     await _assert_reply_target(db, ticket_id, reply_to_id, chat_mode="tracker")
@@ -1876,6 +1931,49 @@ async def send_tracker_reply(
     await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()
 
+    if attachments:
+        objs = [
+            TrackerMessageAttachment(
+                msg_id=int(msg.id),
+                file_path=a["file_path"],
+                original_filename=a.get("original_filename") or "",
+                file_ext=a.get("file_ext"),
+                file_size_bytes=a.get("file_size_bytes"),
+            )
+            for a in attachments
+        ]
+        db.add_all(objs)
+        await db.commit()
+
+    att_items: list[dict[str, Any]] = []
+    if attachments:
+        rows = (
+            await db.execute(
+                text(
+                    """
+                    SELECT id, file_path, original_filename, file_ext, file_size_bytes
+                    FROM users.tracker_message_attachments
+                    WHERE msg_id = :mid
+                    ORDER BY id ASC
+                    """
+                ),
+                {"mid": int(msg.id)},
+            )
+        ).mappings().all()
+        for r in rows:
+            fp = str(r.get("file_path") or "")
+            ext = (r.get("file_ext") or "").lower()
+            att_items.append(
+                {
+                    "id": int(r["id"]),
+                    "file_path": fp,
+                    "original_filename": r.get("original_filename") or "",
+                    "file_ext": ext or None,
+                    "file_size_bytes": int(r["file_size_bytes"]) if r.get("file_size_bytes") is not None else None,
+                    "is_image": fp.lower().endswith(tuple(_IMAGE_EXT)) or ext.lstrip(".") in {e.lstrip(".") for e in _IMAGE_EXT},
+                }
+            )
+
     out: dict[str, Any] = {
         "id": int(msg.id),
         "side": "me",
@@ -1886,7 +1984,7 @@ async def send_tracker_reply(
         "recipient_read_at_iso": None,
         "reply_to_id": reply_to_id,
         "is_edited": False,
-        "attachments": [],
+        "attachments": att_items,
     }
     if reply_to_id:
         enrich_reply_previews([out])
@@ -1924,3 +2022,246 @@ async def _save_upload(file: UploadFile, chat_id: int) -> tuple[str, str | None]
         f.write(contents)
     url = f"/media/{subdir}/{stored}"
     return url, full_path
+
+
+def _safe_name(name: str) -> str:
+    raw = (name or "").strip().replace("\\", "/")
+    base = raw.split("/")[-1] if raw else "file"
+    keep = []
+    for ch in base:
+        if ch.isalnum() or ch in ("-", "_", ".", " "):
+            keep.append(ch)
+        else:
+            keep.append("_")
+    out = "".join(keep).strip(" .")
+    return out or "file"
+
+
+def _ext_from_name(filename: str) -> str:
+    return os.path.splitext((filename or "").strip())[1].lower()
+
+
+def _looks_like_allowed(content: bytes, ext: str) -> bool:
+    if ext in (".jpg", ".jpeg"):
+        return content.startswith(b"\xFF\xD8\xFF")
+    if ext == ".png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if ext == ".gif":
+        return content.startswith(b"GIF87a") or content.startswith(b"GIF89a")
+    if ext == ".webp":
+        return len(content) > 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    if ext == ".bmp":
+        return content.startswith(b"BM")
+    if ext == ".pdf":
+        return content.startswith(b"%PDF-")
+    if ext == ".xlsx":
+        return content.startswith(b"PK\x03\x04") or content.startswith(b"PK\x05\x06") or content.startswith(b"PK\x07\x08")
+    if ext == ".xls":
+        return content.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1")
+    if ext == ".csv":
+        if b"\x00" in content:
+            return False
+        return True
+    return False
+
+
+def _media_abs(rel_path: str) -> str:
+    p = os.path.abspath(os.path.join(_MEDIA_ROOT, rel_path.lstrip("/")))
+    root = os.path.abspath(_MEDIA_ROOT)
+    if not (p == root or p.startswith(root + os.sep)):
+        raise HTTPException(status_code=400, detail="Некорректный путь файла")
+    return p
+
+
+def _rel_from_media_url(url: str) -> str | None:
+    if not url:
+        return None
+    u = url.strip()
+    if u.startswith("/media/"):
+        return u[len("/media/") :]
+    if u.startswith("media/"):
+        return u[len("media/") :]
+    return None
+
+
+def _make_chat_folder(user_id: int | None) -> str:
+    return str(int(user_id)) if user_id and int(user_id) > 0 else "no_user"
+
+
+async def save_attachment_temp(
+    file: UploadFile,
+    *,
+    ticket_id: int,
+    user_id: int | None,
+) -> dict[str, Any]:
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="Файл не передан")
+    ext = _ext_from_name(file.filename)
+    if ext not in _ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail="Разрешены изображения, PDF, Excel, CSV")
+    contents = await file.read()
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Файл больше 15 МБ")
+    if not _looks_like_allowed(contents, ext):
+        raise HTTPException(status_code=400, detail="Файл не похож на заявленный формат")
+
+    folder = _make_chat_folder(user_id)
+    tmp_name = f"{uuid.uuid4().hex}{ext}"
+    rel_dir = os.path.join("chat", folder, str(int(ticket_id)), "tmp")
+    os.makedirs(_media_abs(rel_dir), exist_ok=True)
+    rel_path = os.path.join(rel_dir, tmp_name)
+    abs_path = _media_abs(rel_path)
+    with open(abs_path, "wb") as f:
+        f.write(contents)
+
+    now = int(datetime.now(timezone.utc).timestamp())
+    payload = {
+        "typ": "ticket_upload",
+        "ticket_id": int(ticket_id),
+        "tmp_rel": rel_path.replace("\\", "/"),
+        "orig": _safe_name(file.filename),
+        "ext": ext,
+        "size": int(len(contents)),
+        "folder": folder,
+        "iat": now,
+        "exp": now + _UPLOAD_TOKEN_TTL_SEC,
+    }
+    token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return {
+        "token": token,
+        "original_filename": payload["orig"],
+        "file_ext": ext,
+        "file_size_bytes": payload["size"],
+        "is_image": ext in _IMAGE_EXT,
+    }
+
+
+def _decode_upload_token(token: str, *, ticket_id: int) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Некорректный токен загрузки")
+    if payload.get("typ") != "ticket_upload":
+        raise HTTPException(status_code=400, detail="Некорректный токен загрузки")
+    if int(payload.get("ticket_id") or 0) != int(ticket_id):
+        raise HTTPException(status_code=400, detail="Токен не для этого тикета")
+    return payload
+
+
+def _final_rel_path(*, folder: str, ticket_id: int, original_filename: str, ext: str) -> str:
+    base = os.path.splitext(_safe_name(original_filename))[0]
+    stamp = int(datetime.now(_MOSCOW).timestamp())
+    uniq = uuid.uuid4().hex[:10]
+    fname = f"{base}_{stamp}_{uniq}{ext}"
+    rel_dir = os.path.join("chat", folder, str(int(ticket_id)))
+    return os.path.join(rel_dir, fname).replace("\\", "/")
+
+
+def finalize_upload_tokens(
+    tokens: list[str],
+    *,
+    ticket_id: int,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for t in tokens:
+        payload = _decode_upload_token(t, ticket_id=ticket_id)
+        tmp_rel = str(payload["tmp_rel"])
+        abs_tmp = _media_abs(tmp_rel)
+        if not os.path.exists(abs_tmp):
+            raise HTTPException(status_code=400, detail="Загруженный файл не найден")
+        folder = str(payload.get("folder") or "no_user")
+        ext = str(payload.get("ext") or "")
+        orig = str(payload.get("orig") or "file")
+        size = int(payload.get("size") or 0)
+        rel_final = _final_rel_path(folder=folder, ticket_id=ticket_id, original_filename=orig, ext=ext)
+        abs_final = _media_abs(rel_final)
+        os.makedirs(os.path.dirname(abs_final), exist_ok=True)
+        os.replace(abs_tmp, abs_final)
+        url = _media_url(rel_final)
+        if not url:
+            raise HTTPException(status_code=500, detail="Ошибка сохранения файла")
+        out.append(
+            {
+                "file_path": url,
+                "original_filename": orig,
+                "file_ext": ext.lstrip(".") if ext else None,
+                "file_size_bytes": size or None,
+                "is_image": ext in _IMAGE_EXT,
+            }
+        )
+    return out
+
+
+async def detach_ticket_attachment(
+    db: AsyncSession,
+    *,
+    ticket_id: int,
+    message_id: int,
+    attachment_id: int,
+    operator_id: int,
+) -> None:
+    detail = await load_ticket_detail(db, ticket_id, operator_id)
+    mode = detail["chat_mode"]
+    if mode == "mail":
+        await _assert_own_mail_message(db, ticket_id, message_id, operator_id)
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT file_path FROM users.user_mail_attachments
+                    WHERE id = :aid AND msg_id = :mid
+                    LIMIT 1
+                    """
+                ),
+                {"aid": attachment_id, "mid": message_id},
+            )
+        ).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Вложение не найдено")
+        await db.execute(
+            text(
+                "DELETE FROM users.user_mail_attachments WHERE id = :aid AND msg_id = :mid"
+            ),
+            {"aid": attachment_id, "mid": message_id},
+        )
+        await db.commit()
+        rel = _rel_from_media_url(str(row.get("file_path") or ""))
+        if rel:
+            abs_path = _media_abs(rel)
+            try:
+                if os.path.exists(abs_path):
+                    os.remove(abs_path)
+            except OSError:
+                pass
+        return
+
+    await _assert_own_tracker_message(db, ticket_id, message_id, operator_id)
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT file_path FROM users.tracker_message_attachments
+                WHERE id = :aid AND msg_id = :mid
+                LIMIT 1
+                """
+            ),
+            {"aid": attachment_id, "mid": message_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Вложение не найдено")
+    await db.execute(
+        text(
+            "DELETE FROM users.tracker_message_attachments WHERE id = :aid AND msg_id = :mid"
+        ),
+        {"aid": attachment_id, "mid": message_id},
+    )
+    await db.commit()
+    rel = _rel_from_media_url(str(row.get("file_path") or ""))
+    if rel:
+        abs_path = _media_abs(rel)
+        try:
+            if os.path.exists(abs_path):
+                os.remove(abs_path)
+        except OSError:
+            pass

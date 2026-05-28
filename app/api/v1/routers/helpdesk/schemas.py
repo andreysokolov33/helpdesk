@@ -183,7 +183,14 @@ class TicketMarkReadRequest(BaseModel):
 
 
 class TicketSendMessageResponse(BaseModel):
-    message: TicketMessageItem
+    message: TicketMessageItem | None = None
+    messages: list[TicketMessageItem] | None = None
+
+    @model_validator(mode="after")
+    def require_any(self) -> "TicketSendMessageResponse":
+        if self.message is None and not self.messages:
+            raise ValueError("message or messages is required")
+        return self
 
 
 class TicketCategoryLeaf(BaseModel):

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import json
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.exc import NotSupportedError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +36,22 @@ from app.database import get_db
 from app.models.users import TrackerTicketLineHistory, TrackerTickets
 
 router = APIRouter(prefix="/v1/helpdesk/tracker", tags=["Helpdesk — трекер"])
+
+
+@router.post("/{ticket_id}/attachments/upload")
+async def upload_ticket_attachment(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    detail = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
+    token = await ticket_svc.save_attachment_temp(
+        file,
+        ticket_id=ticket_id,
+        user_id=int(detail["user_id"]) if detail.get("user_id") is not None else None,
+    )
+    return token
 
 
 def _support_line_label(line: int) -> str:
@@ -427,6 +445,24 @@ async def delete_ticket_message(
     return {"status": "ok"}
 
 
+@router.delete("/{ticket_id}/messages/{message_id}/attachments/{attachment_id}")
+async def detach_message_attachment(
+    ticket_id: int,
+    message_id: int,
+    attachment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> dict[str, str]:
+    await ticket_svc.detach_ticket_attachment(
+        db,
+        ticket_id=ticket_id,
+        message_id=message_id,
+        attachment_id=attachment_id,
+        operator_id=int(user["user_id"]),
+    )
+    return {"status": "ok"}
+
+
 @router.post("/{ticket_id}/messages", response_model=TicketSendMessageResponse)
 async def send_ticket_message(
     ticket_id: int,
@@ -435,6 +471,7 @@ async def send_ticket_message(
     user: dict[str, Any] = Depends(require_tracker_user),
     text: str = Form(""),
     file: UploadFile | None = File(None),
+    upload_tokens: str = Form("[]"),
     reply_to_id: int | None = Form(None),
 ) -> TicketSendMessageResponse:
     detail = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
@@ -443,32 +480,62 @@ async def send_ticket_message(
 
     operator_role = str(user.get("role") or "")
     reply_id = int(reply_to_id) if reply_to_id and reply_to_id > 0 else None
+    try:
+        tokens_list = json.loads(upload_tokens or "[]")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Некорректный upload_tokens")
+    if not isinstance(tokens_list, list) or not all(isinstance(x, str) for x in tokens_list):
+        raise HTTPException(status_code=400, detail="Некорректный upload_tokens")
 
-    if detail["chat_mode"] == "tracker":
-        raw = await ticket_svc.send_tracker_reply(
-            db,
-            ticket_id,
-            operator_id,
-            text,
-            operator_role=operator_role,
-            reply_to_id=reply_id,
+    attachments = ticket_svc.finalize_upload_tokens(tokens_list, ticket_id=ticket_id) if tokens_list else []
+
+    # legacy single-file path: still supported, but will be stored as attachment too
+    if file and file.filename:
+        tmp = await ticket_svc.save_attachment_temp(
+            file,
+            ticket_id=ticket_id,
+            user_id=int(detail["user_id"]) if detail.get("user_id") is not None else None,
         )
-    else:
-        if not detail.get("user_id"):
-            raise HTTPException(
-                status_code=400,
-                detail="Нельзя ответить: абонент не определён",
+        attachments += ticket_svc.finalize_upload_tokens([tmp["token"]], ticket_id=ticket_id)
+
+    if not (text or "").strip() and not attachments:
+        raise HTTPException(status_code=400, detail="Нельзя отправить пустое сообщение")
+
+    batches: list[list[dict[str, Any]]] = []
+    for i in range(0, len(attachments), 10):
+        batches.append(attachments[i : i + 10])
+    if not batches:
+        batches = [[]]
+
+    created: list[dict[str, Any]] = []
+    for idx, att in enumerate(batches):
+        body = text if idx == 0 else ""
+        if detail["chat_mode"] == "tracker":
+            raw = await ticket_svc.send_tracker_reply(
+                db,
+                ticket_id,
+                operator_id,
+                body,
+                operator_role=operator_role,
+                reply_to_id=reply_id if idx == 0 else None,
+                attachments=att,
             )
-        raw = await ticket_svc.send_mail_reply(
-            db,
-            ticket_id,
-            int(detail["user_id"]),
-            operator_id,
-            text,
-            client_ip=client_ip,
-            file=file,
-            operator_role=operator_role,
-            reply_to_id=reply_id,
-        )
+        else:
+            if not detail.get("user_id"):
+                raise HTTPException(status_code=400, detail="Нельзя ответить: абонент не определён")
+            raw = await ticket_svc.send_mail_reply(
+                db,
+                ticket_id,
+                int(detail["user_id"]),
+                operator_id,
+                body,
+                client_ip=client_ip,
+                file=None,
+                operator_role=operator_role,
+                reply_to_id=reply_id if idx == 0 else None,
+                attachments=att,
+            )
+        created.append(raw)
 
-    return TicketSendMessageResponse(message=TicketMessageItem(**raw))
+    items = [TicketMessageItem(**m) for m in created]
+    return TicketSendMessageResponse(message=items[0], messages=items)
