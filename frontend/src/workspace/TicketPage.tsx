@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
 import TicketDeleteMessageModal from "@/components/TicketDeleteMessageModal";
@@ -92,12 +92,14 @@ export default function TicketPage() {
   const ticketId = Number(ticketIdParam);
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<TicketMessage[]>([]);
   const readReceiptsRef = useRef<Record<number, string>>({});
   const atBottomRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const loadingNewerRef = useRef(false);
+  const didInitialAutoscrollRef = useRef(false);
 
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
@@ -136,6 +138,7 @@ export default function TicketPage() {
     setPendingNewCount(0);
     setAtBottom(true);
     atBottomRef.current = true;
+    didInitialAutoscrollRef.current = false;
   }, [ticketId]);
 
   const load = useCallback(async () => {
@@ -179,6 +182,18 @@ export default function TicketPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useLayoutEffect(() => {
+    if (didInitialAutoscrollRef.current) return;
+    if (loading || error || !detail) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    scrollChatToBottom(el);
+    didInitialAutoscrollRef.current = true;
+    atBottomRef.current = true;
+    setAtBottom(true);
+    setPendingNewCount(0);
+  }, [loading, error, detail, messages.length]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -249,6 +264,28 @@ export default function TicketPage() {
       setLoadingOlder(false);
     }
   }, [ticketId, hasOlder]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    const target = topSentinelRef.current;
+    if (!root || !target) return;
+    if (loading || error || !detail) return;
+    if (!didInitialAutoscrollRef.current) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        void loadOlderMessages();
+      },
+      {
+        root,
+        rootMargin: `${CHAT_SCROLL_EDGE_PX}px 0px 0px 0px`,
+        threshold: 0,
+      },
+    );
+    obs.observe(target);
+    return () => obs.disconnect();
+  }, [loading, error, detail, loadOlderMessages]);
 
   const loadNewerMessages = useCallback(async () => {
     if (!hasNewer || loadingNewerRef.current) return;
@@ -368,7 +405,6 @@ export default function TicketPage() {
       atBottomRef.current = bottom;
       setAtBottom(bottom);
       if (bottom) setPendingNewCount(0);
-      if (isChatNearTop(el, CHAT_SCROLL_EDGE_PX)) void loadOlderMessages();
       if (!bottom && isChatNearBottom(el, CHAT_SCROLL_EDGE_PX) && hasNewer) void loadNewerMessages();
     };
     onScroll();
@@ -595,6 +631,7 @@ export default function TicketPage() {
             <div className="tk-chat-viewport">
               <div className="cscrl tk-chat-scroll" ref={scrollRef}>
                 <div className="tk-chat-feed">
+                <div ref={topSentinelRef} style={{ height: 1 }} aria-hidden />
                 {loadingOlder ? (
                   <div className="tk-chat-load-hint" aria-live="polite">
                     Загрузка предыдущих сообщений…

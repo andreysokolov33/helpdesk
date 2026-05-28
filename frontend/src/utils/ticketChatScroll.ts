@@ -1,4 +1,4 @@
-export const CHAT_PAGE_SIZE = 40;
+export const CHAT_PAGE_SIZE = 20;
 export const CHAT_SCROLL_EDGE_PX = 100;
 
 export function isChatAtBottom(el: HTMLElement, threshold = CHAT_SCROLL_EDGE_PX): boolean {

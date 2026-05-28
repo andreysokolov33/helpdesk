@@ -7,8 +7,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-CHAT_PAGE_SIZE = 40
-CHAT_AROUND_HALF = 20
+CHAT_PAGE_SIZE = 20
+CHAT_AROUND_HALF = 10
 
 _MAIL_ANSWER_EXPR = """
     CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL

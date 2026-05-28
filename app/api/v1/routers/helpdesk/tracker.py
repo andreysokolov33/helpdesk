@@ -340,7 +340,7 @@ async def get_ticket_messages(
     ticket_id: int,
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
-    limit: int = Query(40, ge=1, le=100, description="Размер порции"),
+    limit: int = Query(20, ge=1, le=100, description="Размер порции"),
     before_id: int | None = Query(None, ge=1, description="Сообщения старее id (скролл вверх)"),
     after_id: int | None = Query(None, ge=1, description="Сообщения новее id (скролл вниз)"),
     around_id: int | None = Query(None, ge=1, description="Окно вокруг сообщения (переход по цитате)"),
