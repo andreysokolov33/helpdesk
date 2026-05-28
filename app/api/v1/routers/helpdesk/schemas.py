@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.api.v1.routers.helpdesk.user_profile_schemas import TicketSubscriberAccountSummary
+
 
 class TrackerTicketListItem(BaseModel):
     id: int
@@ -168,6 +170,7 @@ class TicketDetailResponse(BaseModel):
     assigned_at_iso: str | None = None
     chat_mode: str
     can_reply: bool = True
+    subscriber_account: TicketSubscriberAccountSummary | None = None
 
 
 class TicketMessagesResponse(BaseModel):

@@ -23,6 +23,8 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
     ProfileTicket,
     ProfileTicketListResponse,
     TariffBlockResponse,
+    TicketSubscriberAccountSummary,
+    TicketSubscriberTariffSummary,
     UserProfileResponse,
 )
 from app.api.v1.routers.helpdesk.user_profile_utils import (
@@ -188,7 +190,13 @@ async def _load_tariff_row(session: AsyncSession, user_id: int, login: str) -> O
                      ELSE ru.full_packet END AS full_packet,
                 CASE WHEN s.real_type = 'unlim_fap' OR u.is_juridical = 0 THEN NULL
                      ELSE sj.normal_traffic END AS jur_normal_traffic,
-                CASE WHEN r.groupname = 'disabled' THEN 0 ELSE 1 END AS is_active,
+                CASE
+                    WHEN r.groupname IS NULL THEN 0
+                    WHEN r.groupname = 'disabled' THEN 0
+                    ELSE 1
+                END AS is_active,
+                r.groupname AS rad_groupname,
+                r.sname AS rad_sname,
                 usd.traffic_renew_count,
                 usd.valid_date,
                 u.traffic_update_hour AS msk_hour,
@@ -267,6 +275,11 @@ async def _load_netflow(session: AsyncSession, user_id: int) -> tuple[Optional[s
     return "Работа через индивидуальную станцию (Netflow).", str(sname)
 
 
+def _has_radusergroup(trow: Optional[dict[str, Any]]) -> bool:
+    """Есть запись в radius.radusergroup (как в fast_check_service._is_tariff_connected)."""
+    return bool(((trow or {}).get("rad_groupname") or "").strip())
+
+
 def _build_tariff(
     trow: Optional[dict[str, Any]],
     freeze: Optional[dict[str, Any]],
@@ -308,7 +321,7 @@ def _build_tariff(
             can_disconnect_sessions=False,
         )
 
-    if not trow and not freeze:
+    if not _has_radusergroup(trow):
         return None
 
     planned = bool(freeze and not freeze.get("is_frozen"))
@@ -668,6 +681,52 @@ async def _load_tariff_bundle(
         jur_normal=jur_normal,
     )
     return tariff, netflow_note, netflow_tariff
+
+
+def _profile_tariff_to_ticket_summary(
+    tariff: Optional[ProfileTariffActive],
+) -> TicketSubscriberTariffSummary:
+    if not tariff:
+        return TicketSubscriberTariffSummary(connected=False, status_label="Не подключен")
+
+    if tariff.state == "frozen":
+        status_label = "Заморожен"
+    elif tariff.state == "planned_freeze":
+        status_label = "Запланирована заморозка"
+    elif tariff.is_active:
+        status_label = "Активен"
+    else:
+        status_label = "Неактивен"
+
+    type_label = "Безлимитный" if tariff.speed_unlimited else "Лимитный"
+    rate_up = tariff.rate_up if tariff.rate_up and tariff.rate_up != "—" else None
+    rate_down = tariff.rate_down if tariff.rate_down and tariff.rate_down != "—" else None
+
+    return TicketSubscriberTariffSummary(
+        connected=True,
+        tariff_name=tariff.tariff_name,
+        status_label=status_label,
+        type_label=type_label,
+        remain_traffic_mb=tariff.remain_traffic_mb,
+        full_packet_mb=tariff.full_packet_mb,
+        rate_up=rate_up,
+        rate_down=rate_down,
+        msk_reset=tariff.msk_reset,
+        local_reset=tariff.local_reset,
+    )
+
+
+async def load_subscriber_account_summary(
+    session: AsyncSession,
+    user_id: int,
+) -> TicketSubscriberAccountSummary:
+    """Баланс и краткая информация о тарифе для сайдбара тикета."""
+    personal, balance = await _load_personal_with_balance(session, user_id)
+    tariff, _, _ = await _load_tariff_bundle(session, user_id, personal)
+    return TicketSubscriberAccountSummary(
+        balance=float(balance),
+        tariff=_profile_tariff_to_ticket_summary(tariff),
+    )
 
 
 async def _assemble_tariff_block(

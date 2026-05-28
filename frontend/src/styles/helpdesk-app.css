@@ -767,6 +767,51 @@
   padding-left: 3px;
 }
 
+#tp-ticket .tk-side-account {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+#tp-ticket .tk-side-balance {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--ok);
+  letter-spacing: -0.02em;
+}
+
+#tp-ticket .tk-side-balance--neg {
+  color: var(--red);
+}
+
+#tp-ticket .tk-side-tariff-empty {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--i3);
+  line-height: 1.45;
+  padding: 2px 0 4px;
+}
+
+#tp-ticket .tk-side-account .kv {
+  margin-bottom: 5px;
+}
+
+#tp-ticket .tk-side-account .kv:last-child {
+  margin-bottom: 0;
+}
+
+#tp-ticket .tk-side-account .kvv.ok {
+  color: var(--ok);
+}
+
+#tp-ticket .tk-side-account .kvv.red {
+  color: var(--red);
+}
+
+#tp-ticket .tk-side-account .kvv.wn {
+  color: var(--wn);
+}
+
 #tp-ticket .tk-ticket-body {
   position: relative;
 }

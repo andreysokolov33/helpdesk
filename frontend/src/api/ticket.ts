@@ -31,6 +31,24 @@ export type TicketMessage = {
   is_initial?: boolean;
 };
 
+export type TicketSubscriberTariffSummary = {
+  connected: boolean;
+  tariff_name?: string | null;
+  status_label: string;
+  type_label?: string | null;
+  remain_traffic_mb?: number | null;
+  full_packet_mb?: number | null;
+  rate_up?: string | null;
+  rate_down?: string | null;
+  msk_reset?: string | null;
+  local_reset?: string | null;
+};
+
+export type TicketSubscriberAccountSummary = {
+  balance: number;
+  tariff: TicketSubscriberTariffSummary;
+};
+
 export type TicketDetail = {
   id: number;
   title: string;
@@ -65,6 +83,7 @@ export type TicketDetail = {
   assigned_at_iso?: string | null;
   chat_mode: "mail" | "tracker" | string;
   can_reply: boolean;
+  subscriber_account?: TicketSubscriberAccountSummary | null;
 };
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {

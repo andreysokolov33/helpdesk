@@ -74,6 +74,26 @@ class ProfileHealthCheck(BaseModel):
     items: list[str] = Field(default_factory=list)
 
 
+class TicketSubscriberTariffSummary(BaseModel):
+    """Краткая информация о тарифе для сайдбара тикета."""
+
+    connected: bool = False
+    tariff_name: Optional[str] = None
+    status_label: str = "Не подключен"
+    type_label: Optional[str] = None
+    remain_traffic_mb: Optional[float] = None
+    full_packet_mb: Optional[float] = None
+    rate_up: Optional[str] = None
+    rate_down: Optional[str] = None
+    msk_reset: Optional[str] = None
+    local_reset: Optional[str] = None
+
+
+class TicketSubscriberAccountSummary(BaseModel):
+    balance: float = 0
+    tariff: TicketSubscriberTariffSummary = Field(default_factory=TicketSubscriberTariffSummary)
+
+
 class ProfileTicketListResponse(BaseModel):
     total: int = 0
     page: int = Field(default=1, ge=1)

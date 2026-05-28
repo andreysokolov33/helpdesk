@@ -29,6 +29,7 @@ from app.models.users import (
     TrackerMessages,
     UserMailAttachment,
 )
+from app.api.v1.routers.helpdesk import user_profile_service as profile_svc
 
 STAFF_READ_PERSON_TYPES = ("skystream", "call_centre")
 STAFF_OUTBOUND_SIDES = frozenset({"me", "support", "engineer"})
@@ -49,28 +50,144 @@ def _format_subscriber_name(name: str | None) -> str:
     return raw.capitalize() if len(raw) > 1 else raw.upper()
 
 
+def _pick_richer_name(*candidates: str | None) -> str:
+    """Выбирает наиболее полное непустое имя."""
+    best = ""
+    best_words = 0
+    for raw in candidates:
+        name = (raw or "").strip()
+        if not name:
+            continue
+        words = len(name.split())
+        if words > best_words or (words == best_words and len(name) > len(best)):
+            best = name
+            best_words = words
+    return best
+
+
+def _build_subscriber_full_name(
+    *,
+    person_type: str | None,
+    caller_name: str | None,
+    is_juridical: int | None,
+    surname: str | None,
+    name: str | None,
+    patronymic: str | None,
+    org_short: str | None,
+    org_full: str | None,
+    user_full_name: str | None,
+) -> str:
+    """Полное ФИО или название организации (как на карточке абонента)."""
+    pt = (person_type or "").strip().lower()
+    caller = (caller_name or "").strip()
+    if pt == "cs" and caller:
+        return caller
+    if int(is_juridical or 0) == 2:
+        return _pick_richer_name(org_short, org_full, user_full_name)
+    fio = " ".join(
+        p.strip()
+        for p in (surname, name, patronymic)
+        if p and str(p).strip()
+    ).strip()
+    return _pick_richer_name(fio, user_full_name)
+
+
+_SUBSCRIBER_IDENTITY_SQL = """
+    SELECT
+        u.is_juridical,
+        u.full_name AS user_full_name,
+        jcl.short_name_organization AS org_short_name,
+        jcl.name_organization AS org_full_name,
+        sn.surname AS ud_surname,
+        fn.name AS ud_name,
+        pn.patronymic AS ud_patronymic
+    FROM users."user" u
+    LEFT JOIN oss.jur_client_list jcl ON jcl.id = u.juridical_id
+    LEFT JOIN LATERAL (
+        SELECT NULLIF(TRIM(ud.surname), '') AS surname
+        FROM users.user_details ud
+        WHERE ud.user_id = u.id
+          AND NULLIF(TRIM(ud.surname), '') IS NOT NULL
+        ORDER BY ud.is_actual DESC NULLS LAST, ud.id DESC
+        LIMIT 1
+    ) sn ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT NULLIF(TRIM(ud.name), '') AS name
+        FROM users.user_details ud
+        WHERE ud.user_id = u.id
+          AND NULLIF(TRIM(ud.name), '') IS NOT NULL
+        ORDER BY ud.is_actual DESC NULLS LAST, ud.id DESC
+        LIMIT 1
+    ) fn ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT NULLIF(TRIM(ud.patronymic), '') AS patronymic
+        FROM users.user_details ud
+        WHERE ud.user_id = u.id
+          AND NULLIF(TRIM(ud.patronymic), '') IS NOT NULL
+        ORDER BY ud.is_actual DESC NULLS LAST, ud.id DESC
+        LIMIT 1
+    ) pn ON TRUE
+    WHERE u.id = :uid
+"""
+
+
+async def fetch_subscriber_identity(
+    db: AsyncSession,
+    user_id: int | None,
+    *,
+    person_type: str | None = None,
+    caller_name: str | None = None,
+) -> dict[str, Any]:
+    """Полное имя для сайдбара и короткое (имя) для сообщений."""
+    if not user_id:
+        caller = (caller_name or "").strip()
+        if (person_type or "").strip().lower() == "cs" and caller:
+            return {
+                "full_name": caller,
+                "chat_name": caller,
+                "is_juridical": 0,
+            }
+        return {"full_name": "", "chat_name": "Абонент", "is_juridical": 0}
+
+    row = (
+        await db.execute(text(_SUBSCRIBER_IDENTITY_SQL), {"uid": int(user_id)})
+    ).mappings().first()
+    if not row:
+        return {"full_name": "", "chat_name": "Абонент", "is_juridical": 0}
+
+    is_jur = int(row["is_juridical"] or 0)
+    full_name = _build_subscriber_full_name(
+        person_type=person_type,
+        caller_name=caller_name,
+        is_juridical=is_jur,
+        surname=row.get("ud_surname"),
+        name=row.get("ud_name"),
+        patronymic=row.get("ud_patronymic"),
+        org_short=row.get("org_short_name"),
+        org_full=row.get("org_full_name"),
+        user_full_name=row.get("user_full_name"),
+    )
+    chat_name = _format_subscriber_name(row.get("ud_name"))
+    if chat_name == "Абонент" and full_name:
+        if is_jur == 2:
+            chat_name = full_name
+        else:
+            parts = full_name.split()
+            chat_name = _format_subscriber_name(parts[1] if len(parts) >= 2 else parts[0])
+
+    return {
+        "full_name": full_name,
+        "chat_name": chat_name,
+        "is_juridical": is_jur,
+    }
+
+
 async def fetch_subscriber_display_name(
     db: AsyncSession,
     user_id: int | None,
 ) -> str:
-    if not user_id:
-        return "Абонент"
-    row = (
-        await db.execute(
-            text(
-                """
-                SELECT ud.name
-                FROM users.user_details ud
-                WHERE ud.user_id = :uid
-                  AND NULLIF(TRIM(ud.name), '') IS NOT NULL
-                ORDER BY CASE WHEN ud.is_actual IS TRUE THEN 0 ELSE 1 END, ud.id DESC
-                LIMIT 1
-                """
-            ),
-            {"uid": user_id},
-        )
-    ).scalar()
-    return _format_subscriber_name(str(row) if row is not None else None)
+    identity = await fetch_subscriber_identity(db, user_id)
+    return str(identity.get("chat_name") or "Абонент")
 
 
 def _staff_side_and_name(
@@ -1057,14 +1174,6 @@ async def load_ticket_detail(
                         ),
                         false
                     ) AS subscriber_online,
-                    CASE
-                        WHEN tt.person_type = 'cs' AND NULLIF(TRIM(tt.caller_name), '') IS NOT NULL
-                            THEN TRIM(tt.caller_name)
-                        WHEN u.is_juridical = 2 THEN jcl.short_name_organization
-                        WHEN u.is_juridical = 0 THEN NULLIF(TRIM(
-                            CONCAT_WS(' ', ud.surname, ud.name, ud.patronymic)), '')
-                        ELSE u.full_name
-                    END AS subscriber_name,
                     su.full_name AS assignee_name,
                     su.role AS assignee_role,
                     sf.station_name,
@@ -1074,14 +1183,6 @@ async def load_ticket_detail(
                 LEFT JOIN users.ticket_categories tcp ON tcp.id = tc.parent_id
                 LEFT JOIN users."user" u ON u.id = tt.user_id
                     AND COALESCE(tt.object_type, 'user') = 'user'
-                LEFT JOIN oss.jur_client_list jcl ON jcl.id = u.juridical_id
-                LEFT JOIN LATERAL (
-                    SELECT ud.surname, ud.name, ud.patronymic
-                    FROM users.user_details ud
-                    WHERE ud.user_id = u.id AND ud.is_actual IS TRUE
-                    ORDER BY ud.id DESC
-                    LIMIT 1
-                ) ud ON TRUE
                 LEFT JOIN users.skystream_users su ON su.id = tt.assigned_to
                 LEFT JOIN wifitochka.ip_group ig ON ig.id = COALESCE(tt.station_id, u.id_grp)
                 LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
@@ -1121,15 +1222,28 @@ async def load_ticket_detail(
     ).mappings().first()
 
     station = (d.get("station_name") or d.get("station_fallback_name") or "").strip() or None
-    sub_name = (d.get("subscriber_name") or "").strip()
     sub_login = (d.get("subscriber_login") or "").strip()
-    if not sub_name and d.get("user_id"):
-        sub_name = sub_login or f"Абонент #{d['user_id']}"
+    uid = int(d["user_id"]) if d.get("user_id") is not None else None
+    identity = await fetch_subscriber_identity(
+        db,
+        uid,
+        person_type=d.get("person_type"),
+        caller_name=d.get("caller_name"),
+    )
+    sub_name = (identity.get("full_name") or "").strip()
+    subscriber_display_name = str(identity.get("chat_name") or "Абонент")
+    sub_is_juridical = int(identity.get("is_juridical") or d.get("is_juridical") or 0)
+    if not sub_name and uid:
+        sub_name = sub_login or f"Абонент #{uid}"
     if not sub_name and d.get("caller_name"):
         sub_name = str(d["caller_name"]).strip()
 
-    uid = int(d["user_id"]) if d.get("user_id") is not None else None
-    subscriber_display_name = await fetch_subscriber_display_name(db, uid)
+    subscriber_account = None
+    if uid:
+        try:
+            subscriber_account = await profile_svc.load_subscriber_account_summary(db, uid)
+        except HTTPException:
+            subscriber_account = None
 
     return {
         "id": int(d["id"]),
@@ -1155,7 +1269,7 @@ async def load_ticket_detail(
         "subscriber_display_name": subscriber_display_name,
         "subscriber_login": sub_login or None,
         "subscriber_online": bool(d.get("subscriber_online")),
-        "subscriber_is_juridical": int(d.get("is_juridical") or 0),
+        "subscriber_is_juridical": sub_is_juridical,
         "subscriber_profile_user_id": int(d["user_id"]) if d.get("user_id") is not None else None,
         "assignee_name": d.get("assignee_name"),
         "assignee_role": d.get("assignee_role"),
@@ -1169,6 +1283,7 @@ async def load_ticket_detail(
         "assigned_at_iso": _iso(assigned_at_row["start_time"]) if assigned_at_row else None,
         "chat_mode": chat_mode_for_source(source),
         "can_reply": d.get("user_id") is not None,
+        "subscriber_account": subscriber_account,
     }
 
 

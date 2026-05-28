@@ -58,6 +58,7 @@ import { formatBytes } from "@/utils/formatBytes";
 import FileBadge, { resolveFileExt, truncateFilename } from "@/components/FileBadge";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 import TicketMacroBar from "@/components/TicketMacroBar";
+import TicketSubscriberAccountSidebar from "@/components/TicketSubscriberAccountSidebar";
 import { macroTextToEditorHtml, type HelpdeskMacro } from "@/api/macros";
 import { validateTicketMessage } from "@/utils/ticketMessageValidation";
 
@@ -867,8 +868,15 @@ export default function TicketPage() {
     );
   }
 
-  const subName =
-    detail.subscriber_display_name || detail.subscriber_name || detail.caller_name || "Абонент";
+  const subscriberSidebarName =
+    detail.subscriber_name?.trim() || detail.caller_name?.trim() || "Абонент";
+  const subscriberChatName = (() => {
+    const short = detail.subscriber_display_name?.trim();
+    if (short && short !== "Абонент") return short;
+    if (detail.subscriber_is_juridical === 2) return subscriberSidebarName;
+    const parts = subscriberSidebarName.split(/\s+/);
+    return parts.length >= 2 ? parts[1] : subscriberSidebarName;
+  })();
   const introBody = detail.body?.trim() || "";
   const chatMessages = messages.filter((m) => !m.is_initial);
   const hasIntro = introBody.length > 0;
@@ -971,7 +979,7 @@ export default function TicketPage() {
                       <div key={m.id} className="msg bot">
                         <div className="mc2">
                           <div className="bbl bot">
-                            <div className="tk-msg-label">{ticketAuthorLabel(m, subName)}</div>
+                            <div className="tk-msg-label">{ticketAuthorLabel(m, subscriberChatName)}</div>
                             <MessageBody text={m.text} />
                             <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
                           </div>
@@ -989,10 +997,10 @@ export default function TicketPage() {
                           setContextMenu({ x: e.clientX, y: e.clientY, msg: m });
                         }}
                       >
-                        <div className={ticketMavClass(m.side)}>{ticketAvatarLetter(m, subName)}</div>
+                        <div className={ticketMavClass(m.side)}>{ticketAvatarLetter(m, subscriberChatName)}</div>
                         <div className="mc2">
                           <div className={ticketBblClass(m.side)}>
-                            <div className="tk-msg-label">{ticketAuthorLabel(m, subName)}</div>
+                            <div className="tk-msg-label">{ticketAuthorLabel(m, subscriberChatName)}</div>
                             {m.reply_preview ? (
                               <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
                             ) : null}
@@ -1053,7 +1061,7 @@ export default function TicketPage() {
                         preview={
                           replyTo.reply_preview ?? {
                             id: replyTo.id,
-                            author_name: ticketAuthorLabel(replyTo, subName),
+                            author_name: ticketAuthorLabel(replyTo, subscriberChatName),
                             text: replyTo.text.slice(0, 100),
                           }
                         }
@@ -1395,7 +1403,7 @@ export default function TicketPage() {
                       boxShadow: online ? "0 0 0 2px rgba(27,122,72,.14)" : "none",
                     }}
                   />
-                  {subName}
+                  {subscriberSidebarName}
                 </div>
                 {detail.caller_name && detail.user_id == null ? (
                   <div className="tk-side-meta">Как представился: {detail.caller_name}</div>
@@ -1410,6 +1418,10 @@ export default function TicketPage() {
                   </Link>
                 ) : null}
               </div>
+
+              {detail.subscriber_account && detail.user_id != null ? (
+                <TicketSubscriberAccountSidebar account={detail.subscriber_account} />
+              ) : null}
 
               <div className="ipb">
                 <div className="ipl">Тикет</div>
