@@ -1603,8 +1603,6 @@ async def edit_ticket_message(
     mode = detail["chat_mode"]
     sub_display = detail.get("subscriber_display_name") or "Абонент"
     text_body = text_body.strip()
-    if not text_body:
-        raise HTTPException(status_code=400, detail="Введите текст сообщения")
 
     if mode == "mail":
         await _assert_own_mail_message(db, ticket_id, message_id, operator_id)

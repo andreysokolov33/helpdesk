@@ -131,7 +131,7 @@ class TicketMessageItem(BaseModel):
 
 
 class TicketMessageEditRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=20000)
+    text: str = Field(..., min_length=0, max_length=20000)
 
 
 class TicketDetailResponse(BaseModel):

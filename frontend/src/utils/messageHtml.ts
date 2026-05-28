@@ -79,7 +79,7 @@ export function sanitizeMessageHtml(html: string): string {
       "th",
       "td",
     ],
-    ALLOWED_ATTR: ["href", "target", "rel", "class", "src", "alt", "title", "colspan", "rowspan"],
+    ALLOWED_ATTR: ["href", "target", "rel", "class", "style", "src", "alt", "title", "colspan", "rowspan"],
     ALLOW_DATA_ATTR: false,
   });
 }

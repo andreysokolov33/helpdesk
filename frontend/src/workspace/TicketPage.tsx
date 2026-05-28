@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import RichEditor, { type RichEditorHandle } from "@/components/RichEditor";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
 import TicketDeleteMessageModal from "@/components/TicketDeleteMessageModal";
@@ -118,7 +119,7 @@ export default function TicketPage() {
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<RichEditorHandle>(null);
   const messagesRef = useRef<TicketMessage[]>([]);
   const readReceiptsRef = useRef<Record<number, string>>({});
   const atBottomRef = useRef(true);
@@ -137,7 +138,7 @@ export default function TicketPage() {
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [input, setInput] = useState("");
+  const [editorEmpty, setEditorEmpty] = useState(true);
   const [sending, setSending] = useState(false);
   const [sideOpen, setSideOpen] = useState(true);
   const [classifyOpen, setClassifyOpen] = useState(false);
@@ -150,6 +151,7 @@ export default function TicketPage() {
   const [replyTo, setReplyTo] = useState<TicketMessage | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingAttachments, setEditingAttachments] = useState<TicketMessage["attachments"]>([]);
+  const [detachPendingIds, setDetachPendingIds] = useState<Set<number>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<TicketMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [uploads, setUploads] = useState<
@@ -172,6 +174,7 @@ export default function TicketPage() {
   const autoSendRef = useRef(false);
   const [imgViewerOpen, setImgViewerOpen] = useState(false);
   const [imgViewerIndex, setImgViewerIndex] = useState(0);
+  const imgViewerUrlRef = useRef<string | null>(null);
 
   const uploadSummary = useMemo(() => {
     const total = uploads.reduce((s, u) => s + (u.total || 0), 0);
@@ -198,8 +201,10 @@ export default function TicketPage() {
 
   const openImageViewer = useCallback(
     (url: string) => {
-      const idx = Math.max(0, allImageUrls.indexOf(url));
-      setImgViewerIndex(idx >= 0 ? idx : 0);
+      const idx = allImageUrls.indexOf(url);
+      const safeIdx = idx >= 0 ? idx : 0;
+      imgViewerUrlRef.current = url;
+      setImgViewerIndex(safeIdx);
       setImgViewerOpen(true);
     },
     [allImageUrls],
@@ -215,17 +220,32 @@ export default function TicketPage() {
       }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        setImgViewerIndex((i) => (allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0));
+        setImgViewerIndex((i) => {
+          const newIdx = allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0;
+          imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+          return newIdx;
+        });
         return;
       }
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        setImgViewerIndex((i) => (allImageUrls.length ? (i + 1) % allImageUrls.length : 0));
+        setImgViewerIndex((i) => {
+          const newIdx = allImageUrls.length ? (i + 1) % allImageUrls.length : 0;
+          imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+          return newIdx;
+        });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [imgViewerOpen, allImageUrls.length]);
+  }, [imgViewerOpen, allImageUrls]);
+
+  // Keep viewer index stable when allImageUrls changes (e.g. older messages prepended)
+  useEffect(() => {
+    if (!imgViewerOpen || !imgViewerUrlRef.current) return;
+    const newIdx = allImageUrls.indexOf(imgViewerUrlRef.current);
+    if (newIdx >= 0) setImgViewerIndex(newIdx);
+  }, [allImageUrls, imgViewerOpen]);
 
   useEffect(() => {
     setContextMenu(null);
@@ -517,13 +537,6 @@ export default function TicketPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    const ta = inputRef.current;
-    if (!ta) return;
-    ta.style.height = "0px";
-    ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
-  }, [input]);
-
   function openClassify(action: ClassifyAction) {
     setClassifyAction(action);
     setClassifyOpen(true);
@@ -542,8 +555,26 @@ export default function TicketPage() {
     setEditingId(null);
   }
 
+  function cancelEdit() {
+    if (editingId) {
+      const orig = messages.find((m) => m.id === editingId);
+      editorRef.current?.setContent(orig?.text || "");
+      setEditingAttachments(orig?.attachments || []);
+    }
+    setDetachPendingIds(new Set());
+    setEditingId(null);
+  }
+
   function focusComposer() {
-    requestAnimationFrame(() => inputRef.current?.focus());
+    editorRef.current?.focus();
+  }
+
+  function handleEditorEscape() {
+    if (editingId) {
+      cancelEdit();
+    } else if (replyTo) {
+      clearComposerMode();
+    }
   }
 
   function handleMessageMenuAction(action: MessageMenuAction, msg: TicketMessage) {
@@ -568,9 +599,12 @@ export default function TicketPage() {
       setReplyTo(null);
       setEditingId(msg.id);
       setEditingAttachments(msg.attachments || []);
-      setInput(msg.text || "");
+      setDetachPendingIds(new Set());
       setUploads([]);
-      focusComposer();
+      requestAnimationFrame(() => {
+        editorRef.current?.setContent(msg.text || "");
+        editorRef.current?.focus();
+      });
       return;
     }
     if (action === "delete") {
@@ -587,7 +621,9 @@ export default function TicketPage() {
       if (replyTo?.id === deleteTarget.id) setReplyTo(null);
       if (editingId === deleteTarget.id) {
         setEditingId(null);
-        setInput("");
+        setEditingAttachments([]);
+        setDetachPendingIds(new Set());
+        editorRef.current?.clear();
       }
       setDeleteTarget(null);
     } catch (e: unknown) {
@@ -598,28 +634,46 @@ export default function TicketPage() {
   }
 
   async function submit() {
-    const t = input.trim();
-    if (!t && !uploadSummary.hasReady && !editingId) return;
+    const isEmpty = editorRef.current?.isEmpty ?? true;
+    const html = isEmpty ? "" : (editorRef.current?.getHTML() ?? "");
+    if (isEmpty && !uploadSummary.hasReady && !editingId) return;
     if (!detail?.can_reply && detail?.chat_mode === "mail") return;
-    if (editingId && !t) return;
+    if (editingId && isEmpty && editingAttachments.length === 0) return;
     if (uploadSummary.pending > 0) {
-      // пользователь нажал "Отправить", ждём окончания загрузок и отправляем автоматически
       autoSendRef.current = true;
       return;
     }
     setSending(true);
     try {
       if (editingId) {
-        const updated = await updateTicketMessage(ticketId, editingId, t);
+        for (const id of detachPendingIds) {
+          if (id > 0) await detachTicketAttachment(ticketId, editingId, id);
+        }
+        if (isEmpty && editingAttachments.length === 0) {
+          await deleteTicketMessage(ticketId, editingId);
+          setMessages((prev) => prev.filter((m) => m.id !== editingId));
+          setEditingId(null);
+          setEditingAttachments([]);
+          setDetachPendingIds(new Set());
+          editorRef.current?.clear();
+          setUploads([]);
+          return;
+        }
+        const updated = await updateTicketMessage(ticketId, editingId, html);
         setMessages((prev) =>
-          prev.map((m) => (m.id === editingId ? { ...m, ...updated } : m)),
+          prev.map((m) =>
+            m.id === editingId
+              ? { ...m, ...updated, attachments: editingAttachments }
+              : m,
+          ),
         );
         setEditingId(null);
         setEditingAttachments([]);
-        setInput("");
+        setDetachPendingIds(new Set());
+        editorRef.current?.clear();
         setUploads([]);
       } else {
-        const created = await sendTicketMessage(ticketId, t, uploadSummary.doneTokens, null, replyTo?.id ?? null);
+        const created = await sendTicketMessage(ticketId, html, uploadSummary.doneTokens, null, replyTo?.id ?? null);
         if (created.length) {
           setMessages((prev) =>
             applyReadReceiptsToMessages(mergeTicketMessages(prev, created), readReceiptsRef.current),
@@ -629,7 +683,7 @@ export default function TicketPage() {
         setAtBottom(true);
         setPendingNewCount(0);
         setHasNewer(false);
-        setInput("");
+        editorRef.current?.clear();
         setUploads([]);
         setReplyTo(null);
         requestAnimationFrame(() => {
@@ -985,92 +1039,67 @@ export default function TicketPage() {
                       </button>
                     </div>
                   ) : null}
-                  {editingId ? (
-                    <div className="tk-composer-mode tk-composer-mode--edit">
-                      <span className="tk-composer-mode__label">Редактирование сообщения</span>
-                      <button
-                        type="button"
-                        className="tk-composer-mode__close"
-                        onClick={() => {
-                          setEditingId(null);
-                          setEditingAttachments([]);
-                          setInput("");
-                        }}
-                        aria-label="Отменить редактирование"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : null}
                   <div className="tk-composer__box">
-                    <textarea
-                      ref={inputRef}
-                      className="tk-composer__input"
-                      rows={1}
-                      placeholder={
-                        editingId ? "Измените текст сообщения…" : replyTo ? "Ваш ответ…" : "Ответ клиенту…"
-                      }
-                      value={input}
+                    <RichEditor
+                      ref={editorRef}
+                      placeholder={editingId ? "Измените текст сообщения…" : replyTo ? "Ваш ответ…" : "Ответ клиенту…"}
                       disabled={sending}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          if (editingId || replyTo) {
-                            e.preventDefault();
-                            clearComposerMode();
-                            setInput("");
-                          }
-                          return;
-                        }
-                        if (e.ctrlKey && e.key === "Enter") {
-                          e.preventDefault();
-                          submit();
-                        }
-                      }}
+                      onSubmit={submit}
+                      onEscape={handleEditorEscape}
+                      onChange={setEditorEmpty}
+                      rightActions={
+                        <>
+                          {editingId ? (
+                            <button
+                              type="button"
+                              className="tk-composer__cancel-edit"
+                              disabled={sending}
+                              onClick={cancelEdit}
+                            >
+                              Отмена
+                            </button>
+                          ) : (
+                            <label className="tk-composer__attach" title="Прикрепить файл">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                <path
+                                  d="M14 8l-4.2 4.2a3 3 0 104.2 4.2l5-5a4 4 0 00-5.7-5.7l-5.8 5.8"
+                                  stroke="currentColor"
+                                  strokeWidth="1.7"
+                                  strokeLinecap="round"
+                                />
+                              </svg>
+                              <input
+                                type="file"
+                                hidden
+                                multiple
+                                accept="image/*,.pdf,.xls,.xlsx,.csv"
+                                onChange={(e) => {
+                                  void enqueueFiles(e.target.files || []);
+                                  e.currentTarget.value = "";
+                                }}
+                              />
+                            </label>
+                          )}
+                          <button
+                            type="button"
+                            className="tk-composer__send"
+                            disabled={sending || (editingId ? (editorEmpty && editingAttachments.length === 0) : (editorEmpty && !uploadSummary.hasReady))}
+                            onClick={submit}
+                            title={editingId ? "Сохранить" : "Отправить"}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                              <path
+                                d="M12 19V6M12 6l-5 5M12 6l5 5"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                        </>
+                      }
                     />
-                    <div className="tk-composer__actions">
-                      <label
-                        className={`tk-composer__attach${editingId ? " tk-composer__attach--disabled" : ""}`}
-                        title={editingId ? "При редактировании вложения недоступны" : "Прикрепить файл"}
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-                          <path
-                            d="M14 8l-4.2 4.2a3 3 0 104.2 4.2l5-5a4 4 0 00-5.7-5.7l-5.8 5.8"
-                            stroke="currentColor"
-                            strokeWidth="1.7"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        <input
-                          type="file"
-                          hidden
-                          disabled={Boolean(editingId)}
-                          multiple
-                          accept="image/*,.pdf,.xls,.xlsx,.csv"
-                          onChange={(e) => {
-                            void enqueueFiles(e.target.files || []);
-                            e.currentTarget.value = "";
-                          }}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="tk-composer__send"
-                        disabled={sending || (!input.trim() && !uploadSummary.hasReady && !editingId)}
-                        onClick={submit}
-                        title={editingId ? "Сохранить" : "Отправить"}
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                          <path
-                            d="M12 19V6M12 6l-5 5M12 6l5 5"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                    </div>
                   </div>
                   {uploads.length ? (
                     <div className="tk-upq" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
@@ -1165,30 +1194,32 @@ export default function TicketPage() {
                                 <img src={a.file_path} alt={a.original_filename || "Вложение"} loading="lazy" />
                               </button>
                             ) : (
-                              <a className="tk-edatt__file" href={a.file_path} target="_blank" rel="noreferrer">
-                                {a.original_filename || "Файл"}
-                              </a>
+                              <a
+                                className="tk-edatt__thumb tk-edatt__thumb--file"
+                                href={a.file_path}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={a.original_filename || "Открыть файл"}
+                                aria-label={a.original_filename || "Открыть файл"}
+                              />
                             )}
+                            <span className="tk-edatt__name">{a.original_filename || "Файл"}</span>
+                            <span className="tk-edatt__meta">
+                              {a.file_size_bytes ? formatBytes(a.file_size_bytes) : ""}
+                            </span>
                             <button
                               type="button"
                               className="tk-edatt__rm"
                               disabled={sending}
-                              onClick={async () => {
-                                try {
-                                  if (a.id > 0) {
-                                    await detachTicketAttachment(ticketId, editingId, a.id);
-                                  }
-                                  setEditingAttachments((prev) => prev.filter((x) => x.id !== a.id));
-                                  setMessages((prev) =>
-                                    prev.map((m) =>
-                                      m.id === editingId
-                                        ? { ...m, attachments: (m.attachments || []).filter((x) => x.id !== a.id) }
-                                        : m,
-                                    ),
-                                  );
-                                } catch (e: unknown) {
-                                  window.alert(e instanceof Error ? e.message : "Не удалось открепить вложение");
+                              onClick={() => {
+                                if (a.id > 0) {
+                                  setDetachPendingIds((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(a.id);
+                                    return next;
+                                  });
                                 }
+                                setEditingAttachments((prev) => prev.filter((x) => x.id !== a.id));
                               }}
                               aria-label="Удалить вложение"
                               title="Удалить вложение"
@@ -1256,9 +1287,11 @@ export default function TicketPage() {
                   className="tk-imgv__nav tk-imgv__nav--prev"
                   aria-label="Предыдущее"
                   onClick={() =>
-                    setImgViewerIndex((i) =>
-                      allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0,
-                    )
+                    setImgViewerIndex((i) => {
+                      const newIdx = allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0;
+                      imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+                      return newIdx;
+                    })
                   }
                 >
                   ‹
@@ -1269,11 +1302,18 @@ export default function TicketPage() {
                   className="tk-imgv__nav tk-imgv__nav--next"
                   aria-label="Следующее"
                   onClick={() =>
-                    setImgViewerIndex((i) => (allImageUrls.length ? (i + 1) % allImageUrls.length : 0))
+                    setImgViewerIndex((i) => {
+                      const newIdx = allImageUrls.length ? (i + 1) % allImageUrls.length : 0;
+                      imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+                      return newIdx;
+                    })
                   }
                 >
                   ›
                 </button>
+                <div className="tk-imgv__counter" aria-live="polite">
+                  {imgViewerIndex + 1} / {allImageUrls.length}
+                </div>
               </div>
             </div>
           ) : null}
