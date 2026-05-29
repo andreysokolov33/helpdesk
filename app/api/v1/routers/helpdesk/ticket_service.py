@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -1248,6 +1248,8 @@ async def load_ticket_detail(
             subscriber_account = None
 
     chat_mode = chat_mode_for_source(source)
+    date_of_close = d.get("date_of_close")
+    can_reopen = ticket_can_reopen(status_raw, date_of_close)
 
     return {
         "id": int(d["id"]),
@@ -1263,6 +1265,8 @@ async def load_ticket_detail(
         "source": source,
         "source_label": SOURCE_DISPLAY.get(source, source),
         "category_label": category_label,
+        "category_name": cat or None,
+        "category_parent_name": cat_parent or None,
         "category_id": int(d["category_id"]) if d.get("category_id") is not None else None,
         "category_parent_id": int(d["category_parent_id"])
         if d.get("category_parent_id") is not None
@@ -1282,11 +1286,14 @@ async def load_ticket_detail(
         "station_id": int(d["station_id"]) if d.get("station_id") else None,
         "date_of_create": d["date_of_create"],
         "date_of_create_iso": _iso(d.get("date_of_create")),
+        "date_of_close_iso": _iso(date_of_close),
+        "can_reopen": can_reopen,
         "updated_at": d.get("updated_at"),
         "updated_at_iso": _iso(d.get("updated_at")),
         "assigned_at_iso": _iso(assigned_at_row["start_time"]) if assigned_at_row else None,
         "chat_mode": chat_mode,
-        "can_reply": chat_mode == "tracker" or d.get("user_id") is not None,
+        "can_reply": status_raw in TRACKER_OPEN_STATUSES
+        and (chat_mode == "tracker" or d.get("user_id") is not None),
         "subscriber_account": subscriber_account,
     }
 
@@ -1428,6 +1435,81 @@ async def _change_ticket_support_line(
     )
 
 
+async def _record_ticket_closed_history(
+    db: AsyncSession,
+    *,
+    ticket_id: int,
+    changed_by: int,
+    now: datetime,
+    from_status: str,
+    to_status: str = "closed",
+) -> None:
+    """Закрытие: завершить активный сегмент линии + события closed и status_changed."""
+    await _close_active_line_segment(db, ticket_id, now)
+    _add_line_history_event(
+        db,
+        ticket_id=ticket_id,
+        changed_by=changed_by,
+        now=now,
+        event_type="closed",
+        payload={"status": to_status, "from_status": from_status},
+    )
+    _add_line_history_event(
+        db,
+        ticket_id=ticket_id,
+        changed_by=changed_by,
+        now=now,
+        event_type="status_changed",
+        payload={
+            "from_status": from_status,
+            "status": to_status,
+            "trigger": "close",
+        },
+    )
+    await db.flush()
+
+
+async def _record_ticket_reopened_history(
+    db: AsyncSession,
+    *,
+    ticket_id: int,
+    changed_by: int,
+    now: datetime,
+    from_status: str,
+    to_status: str,
+    support_line: int,
+) -> None:
+    """Переоткрытие: новый сегмент линии + события reopened и status_changed."""
+    _open_line_segment(
+        db,
+        ticket_id=ticket_id,
+        support_line=support_line,
+        changed_by=changed_by,
+        now=now,
+    )
+    _add_line_history_event(
+        db,
+        ticket_id=ticket_id,
+        changed_by=changed_by,
+        now=now,
+        event_type="reopened",
+        payload={"from_status": from_status, "status": to_status},
+    )
+    _add_line_history_event(
+        db,
+        ticket_id=ticket_id,
+        changed_by=changed_by,
+        now=now,
+        event_type="status_changed",
+        payload={
+            "from_status": from_status,
+            "status": to_status,
+            "trigger": "reopen",
+        },
+    )
+    await db.flush()
+
+
 async def _validate_leaf_category(
     db: AsyncSession,
     *,
@@ -1473,6 +1555,39 @@ async def _load_ticket_row_for_line_ops(db: AsyncSession, ticket_id: int) -> dic
     if status in TRACKER_CLOSED_STATUSES:
         raise HTTPException(status_code=400, detail="Тикет уже закрыт")
     return dict(row)
+
+
+TICKET_REOPEN_WINDOW = timedelta(hours=24)
+
+
+def _coerce_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def ticket_can_reopen(status: str | None, date_of_close: datetime | None, *, now: datetime | None = None) -> bool:
+    """Переоткрытие доступно в течение 24 ч после date_of_close."""
+    status_raw = (status or "").strip()
+    if status_raw not in TRACKER_CLOSED_STATUSES:
+        return False
+    if not date_of_close:
+        return False
+    ref = now or datetime.now(timezone.utc)
+    return ref - _coerce_utc(date_of_close) <= TICKET_REOPEN_WINDOW
+
+
+async def _assert_ticket_open_for_write(db: AsyncSession, ticket_id: int) -> None:
+    status = (
+        await db.execute(
+            text("SELECT status::text FROM users.tracker_tickets WHERE id = :id"),
+            {"id": ticket_id},
+        )
+    ).scalar()
+    if not status:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    if str(status) in TRACKER_CLOSED_STATUSES:
+        raise HTTPException(status_code=400, detail="Тикет закрыт")
 
 
 async def transfer_ticket_to_engineers(
@@ -1540,6 +1655,144 @@ async def transfer_ticket_to_engineers(
                 body=text_clean,
             )
         )
+
+    await db.commit()
+    return await load_ticket_detail(db, ticket_id, author_id)
+
+
+async def close_ticket(
+    db: AsyncSession,
+    ticket_id: int,
+    category_id: int,
+    comment: str | None,
+    author_id: int,
+) -> dict[str, Any]:
+    """Закрытие тикета с подтверждением категории и опциональным служебным комментарием."""
+    row = await _load_ticket_row_for_line_ops(db, ticket_id)
+    catalog = catalog_source_for_ticket(row.get("source"))
+    await _validate_leaf_category(db, category_id=category_id, catalog_source=catalog)
+
+    now = datetime.now(timezone.utc)
+    old_category_id = row.get("category_id")
+    new_category_id = int(category_id)
+    old_status = str(row.get("status") or "")
+
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET status = 'closed',
+                category_id = :category_id,
+                date_of_close = :now,
+                closed_by = :closed_by,
+                updated_at = :now
+            WHERE id = :ticket_id
+            """
+        ),
+        {
+            "category_id": new_category_id,
+            "now": now,
+            "closed_by": author_id,
+            "ticket_id": ticket_id,
+        },
+    )
+
+    await _record_ticket_closed_history(
+        db,
+        ticket_id=ticket_id,
+        changed_by=author_id,
+        now=now,
+        from_status=old_status,
+    )
+
+    if old_category_id != new_category_id:
+        _add_line_history_event(
+            db,
+            ticket_id=ticket_id,
+            changed_by=author_id,
+            now=now,
+            event_type="category_changed",
+            payload={
+                "from_category_id": int(old_category_id) if old_category_id is not None else None,
+                "to_category_id": new_category_id,
+            },
+        )
+
+    text_clean = (comment or "").strip()
+    if text_clean:
+        db.add(
+            TrackerComments(
+                ticket_id=ticket_id,
+                author_id=author_id,
+                body=text_clean,
+            )
+        )
+
+    await db.commit()
+    return await load_ticket_detail(db, ticket_id, author_id)
+
+
+async def reopen_ticket(db: AsyncSession, ticket_id: int, author_id: int) -> dict[str, Any]:
+    """Переоткрытие закрытого тикета в течение 24 ч после date_of_close."""
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, status::text AS status, date_of_close, support_line
+                FROM users.tracker_tickets
+                WHERE id = :id
+                """
+            ),
+            {"id": ticket_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+
+    old_status = str(row["status"] or "")
+    closed_at = row.get("date_of_close")
+    if not ticket_can_reopen(old_status, closed_at):
+        if old_status not in TRACKER_CLOSED_STATUSES:
+            raise HTTPException(status_code=400, detail="Тикет не закрыт")
+        if not closed_at:
+            raise HTTPException(status_code=400, detail="Переоткрытие недоступно для этого тикета")
+        raise HTTPException(
+            status_code=400,
+            detail="Переоткрытие доступно только в течение 24 часов после закрытия",
+        )
+
+    now = datetime.now(timezone.utc)
+    new_status = "in_progress"
+    support_line = int(row["support_line"] or 1)
+
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET status = :status,
+                date_of_close = NULL,
+                assigned_to = :assigned_to,
+                updated_at = :now
+            WHERE id = :ticket_id
+            """
+        ),
+        {
+            "status": new_status,
+            "assigned_to": author_id,
+            "now": now,
+            "ticket_id": ticket_id,
+        },
+    )
+
+    await _record_ticket_reopened_history(
+        db,
+        ticket_id=ticket_id,
+        changed_by=author_id,
+        now=now,
+        from_status=old_status,
+        to_status=new_status,
+        support_line=support_line,
+    )
 
     await db.commit()
     return await load_ticket_detail(db, ticket_id, author_id)
@@ -2033,6 +2286,7 @@ async def edit_ticket_message(
     viewer_role: str,
     text_body: str,
 ) -> dict[str, Any]:
+    await _assert_ticket_open_for_write(db, ticket_id)
     detail = await load_ticket_detail(db, ticket_id, operator_id)
     mode = detail["chat_mode"]
     sub_display = detail.get("subscriber_display_name") or "Абонент"
@@ -2145,6 +2399,7 @@ async def delete_ticket_message(
     message_id: int,
     operator_id: int,
 ) -> None:
+    await _assert_ticket_open_for_write(db, ticket_id)
     detail = await load_ticket_detail(db, ticket_id, operator_id)
     mode = detail["chat_mode"]
     if mode == "mail":
@@ -2191,6 +2446,7 @@ async def send_mail_reply(
     ).mappings().first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Тикет не найден")
+    await _assert_ticket_open_for_write(db, ticket_id)
     if int(ticket["user_id"] or 0) != chat_id:
         raise HTTPException(status_code=400, detail="Абонент не привязан к тикету")
 
@@ -2343,6 +2599,7 @@ async def send_tracker_reply(
     if not text_body and not (attachments or []):
         raise HTTPException(status_code=400, detail="Введите текст сообщения")
 
+    await _assert_ticket_open_for_write(db, ticket_id)
     await _assert_reply_target(db, ticket_id, reply_to_id, chat_mode="tracker")
 
     now = datetime.now(timezone.utc)
@@ -2731,17 +2988,15 @@ def _comment_row_to_item(row: Any, viewer_id: int) -> dict[str, Any]:
     }
 
 
-async def _assert_lk_ticket_for_comments(db: AsyncSession, ticket_id: int) -> None:
-    row = (
+async def _assert_ticket_exists_for_comments(db: AsyncSession, ticket_id: int) -> None:
+    exists = (
         await db.execute(
-            text("SELECT COALESCE(source, '') AS source FROM users.tracker_tickets WHERE id = :id"),
+            text("SELECT 1 FROM users.tracker_tickets WHERE id = :id"),
             {"id": ticket_id},
         )
-    ).mappings().first()
-    if not row:
+    ).scalar()
+    if not exists:
         raise HTTPException(status_code=404, detail="Тикет не найден")
-    if not is_lk_ticket_source(row.get("source")):
-        raise HTTPException(status_code=400, detail="Комментарии доступны только для тикетов ЛК")
 
 
 def _validate_comment_text(text: str) -> None:
@@ -2771,7 +3026,7 @@ async def list_ticket_comments(
     after_id: int | None = None,
     since_id: int = 0,
 ) -> tuple[list[dict[str, Any]], bool, bool]:
-    await _assert_lk_ticket_for_comments(db, ticket_id)
+    await _assert_ticket_exists_for_comments(db, ticket_id)
     lim = max(1, min(int(limit), 100))
 
     if since_id > 0 and before_id is None and after_id is None:
@@ -2895,7 +3150,8 @@ async def send_ticket_comment(
     author_id: int,
     text_body: str,
 ) -> dict[str, Any]:
-    await _assert_lk_ticket_for_comments(db, ticket_id)
+    await _assert_ticket_open_for_write(db, ticket_id)
+    await _assert_ticket_exists_for_comments(db, ticket_id)
     _validate_comment_text(text_body)
     clean = text_body.strip()
     now = datetime.now(timezone.utc)
@@ -2935,7 +3191,8 @@ async def edit_ticket_comment(
     author_id: int,
     text_body: str,
 ) -> dict[str, Any]:
-    await _assert_lk_ticket_for_comments(db, ticket_id)
+    await _assert_ticket_open_for_write(db, ticket_id)
+    await _assert_ticket_exists_for_comments(db, ticket_id)
     _validate_comment_text(text_body)
     clean = text_body.strip()
     now = datetime.now(timezone.utc)
@@ -2974,7 +3231,8 @@ async def delete_ticket_comment(
     comment_id: int,
     author_id: int,
 ) -> None:
-    await _assert_lk_ticket_for_comments(db, ticket_id)
+    await _assert_ticket_open_for_write(db, ticket_id)
+    await _assert_ticket_exists_for_comments(db, ticket_id)
     res = await db.execute(
         text(
             """

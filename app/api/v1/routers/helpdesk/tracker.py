@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
 from app.api.v1.routers.helpdesk.schemas import (
     LinkTicketSubscriberRequest,
+    CloseTicketRequest,
     TransferTicketToEngineersRequest,
     RegisterCallRequest,
     RegisterCallResponse,
@@ -418,6 +419,35 @@ async def take_ticket_back_to_ks(
         ticket_id,
         int(user["user_id"]),
     )
+    return TicketDetailResponse(**data)
+
+
+@router.post("/{ticket_id}/close", response_model=TicketDetailResponse)
+async def close_ticket(
+    ticket_id: int,
+    payload: CloseTicketRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketDetailResponse:
+    """Закрытие тикета с классификацией и опциональным служебным комментарием."""
+    data = await ticket_svc.close_ticket(
+        db,
+        ticket_id,
+        int(payload.category_id),
+        payload.comment,
+        int(user["user_id"]),
+    )
+    return TicketDetailResponse(**data)
+
+
+@router.post("/{ticket_id}/reopen", response_model=TicketDetailResponse)
+async def reopen_ticket(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketDetailResponse:
+    """Переоткрытие тикета в течение 24 часов после закрытия."""
+    data = await ticket_svc.reopen_ticket(db, ticket_id, int(user["user_id"]))
     return TicketDetailResponse(**data)
 
 

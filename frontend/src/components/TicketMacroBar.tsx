@@ -8,6 +8,8 @@ export type TicketChatPanelMode = "subscriber" | "comments";
 
 type Props = {
   disabled?: boolean;
+  /** Без макросов — только переключатель чат / комментарии (закрытый тикет). */
+  hideMacros?: boolean;
   onPick: (macro: HelpdeskMacro) => void;
   chatPanel?: TicketChatPanelMode;
   onChatPanelChange?: (mode: TicketChatPanelMode) => void;
@@ -16,6 +18,7 @@ type Props = {
 
 export default function TicketMacroBar({
   disabled = false,
+  hideMacros = false,
   onPick,
   chatPanel,
   onChatPanelChange,
@@ -121,6 +124,8 @@ export default function TicketMacroBar({
       </span>
     ) : null;
 
+  const modeSwitchDisabled = hideMacros ? false : disabled;
+
   if (chatPanel === "comments" && onChatPanelChange) {
     return (
       <div className="tk-macros">
@@ -130,11 +135,29 @@ export default function TicketMacroBar({
             <button
               type="button"
               className="tk-macros__chip tk-macros__chip--mode tk-macros__chip--mode-active"
-              disabled={disabled}
+              disabled={modeSwitchDisabled}
               onClick={() => onChatPanelChange("subscriber")}
             >
               Чат абонента
               {unreadBadge}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (hideMacros && onChatPanelChange) {
+    return (
+      <div className="tk-macros">
+        <div className="tk-macros__bar">
+          <div className="tk-macros__mode">
+            <button
+              type="button"
+              className="tk-macros__chip tk-macros__chip--mode"
+              onClick={() => onChatPanelChange("comments")}
+            >
+              Комментарии
             </button>
           </div>
         </div>
@@ -160,7 +183,7 @@ export default function TicketMacroBar({
           <button
             type="button"
             className="tk-macros__chip tk-macros__chip--mode"
-            disabled={disabled}
+            disabled={modeSwitchDisabled}
             onClick={() => onChatPanelChange("comments")}
           >
             Комментарии
@@ -169,7 +192,7 @@ export default function TicketMacroBar({
           <button
             type="button"
             className="tk-macros__chip tk-macros__chip--mode tk-macros__chip--mode-active"
-            disabled={disabled}
+            disabled={modeSwitchDisabled}
             onClick={() => onChatPanelChange("subscriber")}
           >
             Чат абонента

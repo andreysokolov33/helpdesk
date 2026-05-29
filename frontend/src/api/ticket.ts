@@ -72,6 +72,8 @@ export type TicketDetail = {
   source: string;
   source_label: string;
   category_label?: string | null;
+  category_name?: string | null;
+  category_parent_name?: string | null;
   category_id?: number | null;
   category_parent_id?: number | null;
   user_id?: number | null;
@@ -88,6 +90,8 @@ export type TicketDetail = {
   station_name?: string | null;
   station_id?: number | null;
   date_of_create_iso?: string | null;
+  date_of_close_iso?: string | null;
+  can_reopen?: boolean;
   updated_at_iso?: string | null;
   assigned_at_iso?: string | null;
   chat_mode: "mail" | "tracker" | string;
@@ -135,6 +139,24 @@ export async function takeTicketBackToKs(ticketId: number): Promise<TicketDetail
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/take-back-to-ks`, {
     method: "POST",
   });
+}
+
+export async function closeTicket(
+  ticketId: number,
+  payload: { categoryId: number; comment?: string },
+): Promise<TicketDetail> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/close`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      category_id: payload.categoryId,
+      comment: payload.comment?.trim() || null,
+    }),
+  });
+}
+
+export async function reopenTicket(ticketId: number): Promise<TicketDetail> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/reopen`, { method: "POST" });
 }
 
 export type FetchTicketMessagesOpts = {

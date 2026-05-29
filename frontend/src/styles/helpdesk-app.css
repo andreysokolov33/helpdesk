@@ -957,6 +957,27 @@
   border-color: rgba(240, 168, 48, 0.32);
 }
 
+#tp-ticket .tk-category-kv {
+  display: block;
+  margin-bottom: 4px;
+}
+
+#tp-ticket .tk-category-kv__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+}
+
+#tp-ticket .tk-category-kv__child {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  line-height: 1.3;
+}
+
 #tp-ticket .tk-side-account .kv {
   margin-bottom: 5px;
 }

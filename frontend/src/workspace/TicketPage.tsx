@@ -22,6 +22,8 @@ import {
   fetchTicketMessages,
   formatMsgTime,
   formatTicketCreated,
+  closeTicket,
+  reopenTicket,
   deleteTicketMessage,
   normalizeReadReceipts,
   sendTicketMessage,
@@ -170,6 +172,7 @@ export default function TicketPage() {
   const [classifyAction, setClassifyAction] = useState<ClassifyAction>("close");
   const [classifyConfirming, setClassifyConfirming] = useState(false);
   const [takeBackLoading, setTakeBackLoading] = useState(false);
+  const [reopenLoading, setReopenLoading] = useState(false);
   const [chatPanel, setChatPanel] = useState<TicketChatPanelMode>("subscriber");
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [commentsHasOlder, setCommentsHasOlder] = useState(false);
@@ -647,7 +650,7 @@ export default function TicketPage() {
   }, [loading, error, detail, pollMessages]);
 
   useEffect(() => {
-    if (loading || error || !detail || chatPanel !== "comments" || detail.source !== "lk") return;
+    if (loading || error || !detail || chatPanel !== "comments") return;
     const id = window.setInterval(() => void pollComments(), MSG_POLL_MS);
     return () => window.clearInterval(id);
   }, [loading, error, detail, chatPanel, pollComments]);
@@ -682,12 +685,23 @@ export default function TicketPage() {
     leaf: TicketCategoryLeaf;
     comment: string;
   }) {
-    if (!detail || classifyAction !== "esc") {
-      setClassifyOpen(false);
-      return;
-    }
+    if (!detail) return;
     setClassifyConfirming(true);
     try {
+      if (classifyAction === "close") {
+        const next = await closeTicket(detail.id, {
+          categoryId: payload.categoryId,
+          comment: payload.comment || undefined,
+        });
+        setDetail(next);
+        setClassifyOpen(false);
+        setCommentEditingId(null);
+        setCommentDraft("");
+        setReplyTo(null);
+        setEditingId(null);
+        setToast({ message: "Тикет закрыт", variant: "success" });
+        return;
+      }
       const next = await transferTicketToEngineers(detail.id, {
         categoryId: payload.categoryId,
         comment: payload.comment || undefined,
@@ -696,12 +710,36 @@ export default function TicketPage() {
       setClassifyOpen(false);
       setToast({ message: "Тикет передан инженерам", variant: "success" });
     } catch (e: unknown) {
+      const fallback =
+        classifyAction === "close" ? "Не удалось закрыть тикет" : "Не удалось передать тикет";
       setToast({
-        message: e instanceof Error ? e.message : "Не удалось передать тикет",
+        message: e instanceof Error ? e.message : fallback,
         variant: "error",
       });
     } finally {
       setClassifyConfirming(false);
+    }
+  }
+
+  async function handleReopenTicket() {
+    if (!detail || reopenLoading || !detail.can_reopen) return;
+    setReopenLoading(true);
+    try {
+      const next = await reopenTicket(detail.id);
+      setDetail(next);
+      setChatPanel("subscriber");
+      setCommentEditingId(null);
+      setCommentDraft("");
+      setReplyTo(null);
+      setEditingId(null);
+      setToast({ message: "Тикет переоткрыт", variant: "success" });
+    } catch (e: unknown) {
+      setToast({
+        message: e instanceof Error ? e.message : "Не удалось переоткрыть тикет",
+        variant: "error",
+      });
+    } finally {
+      setReopenLoading(false);
     }
   }
 
@@ -794,7 +832,8 @@ export default function TicketPage() {
 
   function handleMessageMenuAction(action: MessageMenuAction, msg: TicketMessage) {
     setContextMenu(null);
-    const isCommentsPanel = detail?.source === "lk" && chatPanel === "comments";
+    const isCommentsPanel = chatPanel === "comments";
+    if (!detail?.is_open && action !== "copy") return;
     if (action === "copy") {
       const text = msg.text?.trim() || "";
       if (!text) return;
@@ -861,6 +900,7 @@ export default function TicketPage() {
   }
 
   async function submitComment() {
+    if (!detail?.is_open) return;
     const text = commentDraft.trim();
     if (!text) return;
     setSending(true);
@@ -916,7 +956,8 @@ export default function TicketPage() {
   }
 
   async function submit() {
-    if (detail?.source === "lk" && chatPanel === "comments") {
+    if (!detail?.is_open) return;
+    if (chatPanel === "comments") {
       await submitComment();
       return;
     }
@@ -1148,14 +1189,21 @@ export default function TicketPage() {
   })();
   const introBody = detail.body?.trim() || "";
   const chatMessages = messages.filter((m) => !m.is_initial);
-  const isLkTicket = detail.source === "lk";
-  const isCommentsPanel = isLkTicket && chatPanel === "comments";
+  const isCommentsPanel = chatPanel === "comments";
   const feedMessages = isCommentsPanel ? comments.map(commentToMessage) : chatMessages;
   const hasIntro = !isCommentsPanel && introBody.length > 0;
   const feedLoadingOlder = isCommentsPanel ? commentsLoadingOlder : loadingOlder;
   const online = Boolean(detail.user_id) ? Boolean(detail.subscriber_online) : false;
 
   function handleFeedContextMenu(e: React.MouseEvent, m: TicketMessage) {
+    if (!detail.is_open) {
+      if (isCommentsPanel) return;
+      if (!m.text?.trim()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, msg: m });
+      return;
+    }
     if (isCommentsPanel) {
       e.preventDefault();
       e.stopPropagation();
@@ -1215,9 +1263,20 @@ export default function TicketPage() {
                 </button>
               )
             ) : null}
-            <button type="button" className="tb3 cls" onClick={() => openClassify("close")}>
-              Завершить
-            </button>
+            {detail.is_open ? (
+              <button type="button" className="tb3 cls" onClick={() => openClassify("close")}>
+                Завершить
+              </button>
+            ) : detail.can_reopen ? (
+              <button
+                type="button"
+                className="tb3"
+                disabled={reopenLoading}
+                onClick={() => void handleReopenTicket()}
+              >
+                {reopenLoading ? "Открываю…" : "Переоткрыть"}
+              </button>
+            ) : null}
             <button
               type="button"
               className={`tb3 tk-panel-toggle${sideOpen ? " on" : ""}`}
@@ -1368,7 +1427,22 @@ export default function TicketPage() {
             </div>
 
             <div className={`tk-composer${isCommentsPanel ? " tk-composer--comments" : ""}`}>
-              {isCommentsPanel ? (
+              {!detail.is_open ? (
+                <>
+                  <TicketMacroBar
+                    hideMacros
+                    onPick={applyMacro}
+                    chatPanel={chatPanel}
+                    onChatPanelChange={setChatPanelMode}
+                    subscriberUnreadCount={subscriberChatUnread}
+                  />
+                  <div className="tk-no-reply">
+                    {isCommentsPanel
+                      ? "Тикет закрыт — служебные комментарии доступны только для просмотра"
+                      : "Тикет закрыт — переписка доступна только для просмотра"}
+                  </div>
+                </>
+              ) : isCommentsPanel ? (
                 <>
                   <TicketMacroBar
                     disabled={sending}
@@ -1441,17 +1515,13 @@ export default function TicketPage() {
               ) : (
                 <>
                   {!editingId ? (
-                    isLkTicket ? (
-                      <TicketMacroBar
-                        disabled={sending}
-                        onPick={applyMacro}
-                        chatPanel={chatPanel}
-                        onChatPanelChange={setChatPanelMode}
-                        subscriberUnreadCount={subscriberChatUnread}
-                      />
-                    ) : (
-                      <TicketMacroBar disabled={sending} onPick={applyMacro} />
-                    )
+                    <TicketMacroBar
+                      disabled={sending}
+                      onPick={applyMacro}
+                      chatPanel={chatPanel}
+                      onChatPanelChange={setChatPanelMode}
+                      subscriberUnreadCount={subscriberChatUnread}
+                    />
                   ) : null}
                   {replyTo ? (
                     <div className="tk-composer-mode">
@@ -1767,8 +1837,9 @@ export default function TicketPage() {
               x={contextMenu.x}
               y={contextMenu.y}
               message={contextMenu.msg}
-              allowReply={!isCommentsPanel}
-              commentMode={isCommentsPanel}
+              allowReply={!isCommentsPanel && detail.is_open}
+              commentMode={isCommentsPanel && detail.is_open}
+              readOnly={!detail.is_open}
               onAction={handleMessageMenuAction}
               onClose={() => setContextMenu(null)}
             />
@@ -1838,7 +1909,7 @@ export default function TicketPage() {
                 )}
               </div>
 
-              {detail.subscriber_account && detail.user_id != null ? (
+              {detail.is_open && detail.subscriber_account && detail.user_id != null ? (
                 <TicketSubscriberAccountSidebar
                   account={detail.subscriber_account}
                   isJuridical={detail.subscriber_is_juridical}
@@ -1865,10 +1936,17 @@ export default function TicketPage() {
                     </span>
                   </span>
                 </div>
-                {detail.category_label ? (
-                  <div className="kv">
-                    <span className="kvk">Категория</span>
-                    <span className="kvv">{detail.category_label}</span>
+                {detail.category_name || detail.category_parent_name ? (
+                  <div className="kv tk-category-kv">
+                    <div className="tk-category-kv__top">
+                      <span className="kvk">Категория</span>
+                      <span className="kvv">
+                        {detail.category_parent_name || detail.category_name}
+                      </span>
+                    </div>
+                    {detail.category_parent_name && detail.category_name ? (
+                      <div className="tk-category-kv__child">{detail.category_name}</div>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="kv">

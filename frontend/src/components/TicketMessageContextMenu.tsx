@@ -13,6 +13,8 @@ type Props = {
   allowReply?: boolean;
   /** Служебные комментарии: только изменить / удалить (своё сообщение). */
   commentMode?: boolean;
+  /** Закрытый тикет: только копирование. */
+  readOnly?: boolean;
 };
 
 export default function TicketMessageContextMenu({
@@ -23,6 +25,7 @@ export default function TicketMessageContextMenu({
   onClose,
   allowReply = true,
   commentMode = false,
+  readOnly = false,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const own = isOwnTicketMessage(message.side);
@@ -58,6 +61,16 @@ export default function TicketMessageContextMenu({
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
   }, [x, y]);
+
+  if (readOnly) {
+    return (
+      <div ref={ref} className="tk-msg-menu" style={{ left: x, top: y }} role="menu">
+        <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("copy", message)}>
+          Копировать
+        </button>
+      </div>
+    );
+  }
 
   if (commentMode) {
     return (

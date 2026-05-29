@@ -99,6 +99,15 @@ class TransferTicketToEngineersRequest(BaseModel):
     )
 
 
+class CloseTicketRequest(BaseModel):
+    category_id: int = Field(..., ge=1, description="ID подкатегории (лист ticket_categories)")
+    comment: str | None = Field(
+        None,
+        max_length=8000,
+        description="Комментарий при закрытии (необязательно)",
+    )
+
+
 class DeskSearchKbHit(BaseModel):
     """Заглушка под будущий поиск по базе знаний."""
 
@@ -163,6 +172,8 @@ class TicketDetailResponse(BaseModel):
     source: str
     source_label: str
     category_label: str | None = None
+    category_name: str | None = None
+    category_parent_name: str | None = None
     category_id: int | None = None
     category_parent_id: int | None = None
     user_id: int | None = None
@@ -179,6 +190,8 @@ class TicketDetailResponse(BaseModel):
     station_name: str | None = None
     station_id: int | None = None
     date_of_create_iso: str | None = None
+    date_of_close_iso: str | None = None
+    can_reopen: bool = False
     updated_at_iso: str | None = None
     assigned_at_iso: str | None = None
     chat_mode: str
