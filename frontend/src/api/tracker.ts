@@ -26,6 +26,14 @@ export type TrackerTicketListItem = {
   communication_label: string | null;
   date_of_create: string;
   updated_at: string | null;
+  date_of_close: string | null;
+  rating: number | null;
+  rating_comment: string | null;
+};
+
+export type TrackerTicketListStats = {
+  avg_rating: number | null;
+  avg_rating_mine: number | null;
 };
 
 export type TrackerTicketListResponse = {
@@ -33,6 +41,7 @@ export type TrackerTicketListResponse = {
   page: number;
   per_page: number;
   items: TrackerTicketListItem[];
+  stats: TrackerTicketListStats | null;
 };
 
 /** Подписи коммуникационного слоя в колонке «Статус» (не workflow-status). */
@@ -94,12 +103,19 @@ export async function fetchOpenTrackerTickets(params: {
   page: number;
   per_page: number;
   closed?: boolean;
+  subscriber_q?: string;
+  date_from?: string;
+  date_to?: string;
 }): Promise<TrackerTicketListResponse> {
   const sp = new URLSearchParams({
     page: String(params.page),
     per_page: String(params.per_page),
   });
   if (params.closed) sp.set("closed", "true");
+  const q = params.subscriber_q?.trim();
+  if (q) sp.set("subscriber_q", q);
+  if (params.date_from) sp.set("date_from", params.date_from);
+  if (params.date_to) sp.set("date_to", params.date_to);
   const res = await fetch(`/api/v1/helpdesk/tracker/list?${sp.toString()}`, {
     method: "GET",
     credentials: "include",

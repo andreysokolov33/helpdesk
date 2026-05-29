@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -381,6 +381,91 @@ def _enum_status_sql(statuses: tuple[str, ...]) -> str:
     return ", ".join(f"'{s}'::users.tracker_status" for s in statuses)
 
 
+def _tracker_list_status_sources_sql(*, closed: bool) -> str:
+    statuses = TRACKER_CLOSED_STATUSES if closed else TRACKER_OPEN_STATUSES
+    status_in = _enum_status_sql(statuses)
+    sources_in = ", ".join(f"'{s}'" for s in TRACKER_HELPDESK_LIST_SOURCES)
+    return f"""
+        tt.status IN ({status_in})
+        AND COALESCE(tt.source, 'call_center') IN ({sources_in})
+    """
+
+
+def _tracker_subscriber_filter_sql(subscriber_q: str | None) -> tuple[str, dict[str, Any]]:
+    q = (subscriber_q or "").strip()
+    if not q:
+        return "", {}
+    pattern = f"%{q}%"
+    params: dict[str, Any] = {"sub_q_pattern": pattern}
+    parts = [
+        """EXISTS (
+            SELECT 1 FROM users."user" su
+            WHERE su.id = tt.user_id AND tt.object_type = 'user'
+            AND (
+                lower(su.login) LIKE lower(:sub_q_pattern)
+                OR cast(su.id as text) LIKE :sub_q_pattern
+                OR EXISTS (
+                    SELECT 1 FROM users.user_details sud
+                    WHERE sud.user_id = su.id AND sud.is_actual IS TRUE
+                    AND lower(trim(concat_ws(' ', sud.surname, sud.name, sud.patronymic)))
+                        LIKE lower(:sub_q_pattern)
+                )
+                OR EXISTS (
+                    SELECT 1 FROM oss.jur_client_list jcl
+                    WHERE jcl.id = su.juridical_id
+                    AND lower(jcl.short_name_organization) LIKE lower(:sub_q_pattern)
+                )
+            )
+        )"""
+    ]
+    if q.isdigit():
+        params["sub_q_id"] = int(q)
+        parts.insert(0, "tt.user_id = :sub_q_id")
+    return f"AND ({' OR '.join(parts)})", params
+
+
+def _tracker_date_filter_sql(
+    *,
+    closed: bool,
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[str, dict[str, Any]]:
+    params: dict[str, Any] = {}
+    col = (
+        "COALESCE(tt.date_of_close, tt.updated_at, tt.date_of_create)"
+        if closed
+        else "tt.date_of_create"
+    )
+    clauses: list[str] = []
+    if date_from is not None:
+        params["list_date_from"] = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+        clauses.append(f"{col} >= :list_date_from")
+    if date_to is not None:
+        end = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc) + timedelta(days=1)
+        params["list_date_to"] = end
+        clauses.append(f"{col} < :list_date_to")
+    if not clauses:
+        return "", {}
+    return f"AND {' AND '.join(clauses)}", params
+
+
+def _tracker_list_filter_sql(
+    *,
+    closed: bool,
+    subscriber_q: str | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> tuple[str, dict[str, Any]]:
+    base = _tracker_list_status_sources_sql(closed=closed)
+    sub_sql, sub_params = _tracker_subscriber_filter_sql(subscriber_q)
+    date_sql, date_params = _tracker_date_filter_sql(
+        closed=closed, date_from=date_from, date_to=date_to
+    )
+    sql = f"{base}\n          {sub_sql}\n          {date_sql}"
+    params = {**sub_params, **date_params}
+    return sql, params
+
+
 def _mail_client_filter(alias: str = "um") -> str:
     return f"""
     CASE WHEN {alias}.user_id IS NOT NULL AND {alias}.person_type IS NOT NULL
@@ -389,21 +474,48 @@ def _mail_client_filter(alias: str = "um") -> str:
     """
 
 
-def _build_tracker_list_page_sql(*, closed: bool) -> str:
+def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
     """Список /chats: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
-    statuses = TRACKER_CLOSED_STATUSES if closed else TRACKER_OPEN_STATUSES
-    status_in = _enum_status_sql(statuses)
     operational_in = _enum_status_sql(TRACKER_OPERATIONAL_WAIT_STATUSES)
-    sources_in = ", ".join(f"'{s}'" for s in TRACKER_HELPDESK_LIST_SOURCES)
     mail_client = _mail_client_filter("um")
     staff = _STAFF_READ_IN_SQL
+
+    closed_order = """
+        COALESCE(q.date_of_close, q.updated_at, q.date_of_create) DESC NULLS LAST,
+        q.id DESC
+    """
+    open_order = f"""
+        CASE WHEN q.support_line = 1 THEN 0 ELSE 1 END,
+        CASE WHEN q.calc_has_unread THEN 0 ELSE 1 END,
+        CASE
+            WHEN q.assigned_to = :viewer_id THEN 0
+            WHEN q.assigned_to IS NULL THEN 1
+            ELSE 2
+        END,
+        CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
+        CASE q.priority::text
+            WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'middle' THEN 2 WHEN 'low' THEN 3 ELSE 4
+        END,
+        CASE
+            WHEN q.calc_awaiting_subscriber THEN 1
+            WHEN q.status IN ({operational_in}) THEN 2
+            ELSE 0
+        END,
+        CASE
+            WHEN q.calc_has_unread THEN EXTRACT(EPOCH FROM q.waiting_since)
+            WHEN q.calc_awaiting_subscriber
+                THEN -EXTRACT(EPOCH FROM COALESCE(q.updated_at, q.date_of_create))
+            ELSE EXTRACT(EPOCH FROM q.waiting_since)
+        END,
+        q.id ASC
+    """
+    order_by = closed_order if closed else open_order
 
     return f"""
     WITH filtered AS (
         SELECT tt.id
         FROM users.tracker_tickets tt
-        WHERE tt.status IN ({status_in})
-          AND COALESCE(tt.source, 'call_center') IN ({sources_in})
+        WHERE {filter_sql}
     ),
     mail_msgs AS (
         SELECT f.id AS ticket_id,
@@ -457,6 +569,7 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
             tt.category_id,
             tt.date_of_create,
             tt.updated_at,
+            tt.date_of_close,
             tt.first_response_at,
             tt.last_client_message_at,
             (COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL)
@@ -503,9 +616,12 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
         q.assigned_to,
         q.date_of_create,
         q.updated_at,
+        q.date_of_close,
         q.calc_has_unread,
         q.calc_awaiting_subscriber,
         q.communication_state,
+        ttr.rating,
+        ttr.comment AS rating_comment,
         u.login AS subscriber_login,
         u.is_juridical AS sub_is_juridical,
         ud.surname AS ud_surname,
@@ -529,30 +645,9 @@ def _build_tracker_list_page_sql(*, closed: bool) -> str:
     LEFT JOIN users.ticket_categories tc ON q.category_id = tc.id
     LEFT JOIN users.ticket_categories tcp ON tc.parent_id = tcp.id
     LEFT JOIN users.skystream_users assignee ON q.assigned_to = assignee.id
+    LEFT JOIN users.tracker_tickets_ratings ttr ON ttr.ticket_id = q.id
     ORDER BY
-        CASE WHEN q.support_line = 1 THEN 0 ELSE 1 END,
-        CASE WHEN q.calc_has_unread THEN 0 ELSE 1 END,
-        CASE
-            WHEN q.assigned_to = :viewer_id THEN 0
-            WHEN q.assigned_to IS NULL THEN 1
-            ELSE 2
-        END,
-        CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
-        CASE q.priority::text
-            WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'middle' THEN 2 WHEN 'low' THEN 3 ELSE 4
-        END,
-        CASE
-            WHEN q.calc_awaiting_subscriber THEN 1
-            WHEN q.status IN ({operational_in}) THEN 2
-            ELSE 0
-        END,
-        CASE
-            WHEN q.calc_has_unread THEN EXTRACT(EPOCH FROM q.waiting_since)
-            WHEN q.calc_awaiting_subscriber
-                THEN -EXTRACT(EPOCH FROM COALESCE(q.updated_at, q.date_of_create))
-            ELSE EXTRACT(EPOCH FROM q.waiting_since)
-        END,
-        q.id ASC
+        {order_by}
     LIMIT :per_page OFFSET :offset
     """
 
@@ -564,10 +659,17 @@ async def fetch_tracker_list_page(
     closed: bool,
     page: int,
     per_page: int,
-) -> tuple[int, list[dict[str, Any]]]:
-    statuses = TRACKER_CLOSED_STATUSES if closed else TRACKER_OPEN_STATUSES
-    status_in = _enum_status_sql(statuses)
-    sources_in = ", ".join(f"'{s}'" for s in TRACKER_HELPDESK_LIST_SOURCES)
+    subscriber_q: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> tuple[int, list[dict[str, Any]], dict[str, float | None]]:
+    filter_sql, filter_params = _tracker_list_filter_sql(
+        closed=closed,
+        subscriber_q=subscriber_q,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    params = {**filter_params, "viewer_id": viewer_id, "per_page": per_page, "offset": (page - 1) * per_page}
 
     count_row = (
         await db.execute(
@@ -575,22 +677,46 @@ async def fetch_tracker_list_page(
                 f"""
                 SELECT COUNT(*) AS total
                 FROM users.tracker_tickets tt
-                WHERE tt.status IN ({status_in})
-                  AND COALESCE(tt.source, 'call_center') IN ({sources_in})
+                WHERE {filter_sql}
                 """
             ),
+            filter_params,
         )
     ).mappings().first()
     total = int(count_row["total"] if count_row else 0)
 
-    page_sql = _build_tracker_list_page_sql(closed=closed)
+    page_sql = _build_tracker_list_page_sql(closed=closed, filter_sql=filter_sql)
     rows = (
         await db.execute(
             text(page_sql),
-            {"viewer_id": viewer_id, "per_page": per_page, "offset": (page - 1) * per_page},
+            params,
         )
     ).mappings().all()
-    return total, [dict(r) for r in rows]
+
+    stats: dict[str, float | None] = {"avg_rating": None, "avg_rating_mine": None}
+    if closed:
+        rating_row = (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT
+                        AVG(ttr.rating)::float AS avg_rating,
+                        AVG(ttr.rating) FILTER (WHERE tt.assigned_to = :viewer_id)::float AS avg_rating_mine
+                    FROM users.tracker_tickets tt
+                    JOIN users.tracker_tickets_ratings ttr ON ttr.ticket_id = tt.id
+                    WHERE {filter_sql}
+                    """
+                ),
+                params,
+            )
+        ).mappings().first()
+        if rating_row:
+            avg = rating_row.get("avg_rating")
+            avg_mine = rating_row.get("avg_rating_mine")
+            stats["avg_rating"] = round(float(avg), 2) if avg is not None else None
+            stats["avg_rating_mine"] = round(float(avg_mine), 2) if avg_mine is not None else None
+
+    return total, [dict(r) for r in rows], stats
 
 
 def ticket_list_order_by(viewer_id: int) -> tuple:

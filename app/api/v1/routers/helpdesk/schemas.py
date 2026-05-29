@@ -39,6 +39,14 @@ class TrackerTicketListItem(BaseModel):
     communication_label: Optional[str] = None
     date_of_create: datetime
     updated_at: Optional[datetime] = None
+    date_of_close: Optional[datetime] = None
+    rating: Optional[int] = None
+    rating_comment: Optional[str] = None
+
+
+class TrackerTicketListStats(BaseModel):
+    avg_rating: Optional[float] = None
+    avg_rating_mine: Optional[float] = None
 
 
 class TrackerTicketListResponse(BaseModel):
@@ -46,6 +54,7 @@ class TrackerTicketListResponse(BaseModel):
     page: int = Field(ge=1)
     per_page: int = Field(ge=1, le=100)
     items: list[TrackerTicketListItem]
+    stats: Optional[TrackerTicketListStats] = None
 
 
 class DeskSearchSubscriberHit(BaseModel):

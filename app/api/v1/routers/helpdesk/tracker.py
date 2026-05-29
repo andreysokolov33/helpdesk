@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 import json
@@ -33,6 +33,7 @@ from app.api.v1.routers.helpdesk.schemas import (
     HelpdeskMacrosResponse,
     TrackerTicketListItem,
     TrackerTicketListResponse,
+    TrackerTicketListStats,
 )
 from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
 from app.core.ticket_message_validation import html_to_plain_text, validate_ticket_message_text
@@ -137,6 +138,18 @@ async def list_tracker_tickets(
         False,
         description="True — только закрытые/терминальные статусы; False — открытые (TRACKER_OPEN_STATUSES)",
     ),
+    subscriber_q: Optional[str] = Query(
+        None,
+        description="Поиск по абоненту: ФИО, id, логин",
+    ),
+    date_from: Optional[date] = Query(
+        None,
+        description="Дата с (открытие для открытых, закрытие для закрытых)",
+    ),
+    date_to: Optional[date] = Query(
+        None,
+        description="Дата по включительно",
+    ),
 ) -> TrackerTicketListResponse:
     """
     Список тикетов `users.tracker_tickets` с пагинацией и QoS-сортировкой для 1-й линии.
@@ -154,14 +167,18 @@ async def list_tracker_tickets(
 
     total = 0
     rows: list[dict[str, Any]] = []
+    list_stats: dict[str, float | None] = {"avg_rating": None, "avg_rating_mine": None}
     for attempt in range(2):
         try:
-            total, rows = await ticket_svc.fetch_tracker_list_page(
+            total, rows, list_stats = await ticket_svc.fetch_tracker_list_page(
                 db,
                 viewer_id=viewer_skystream_id,
                 closed=closed,
                 page=page,
                 per_page=per_page,
+                subscriber_q=subscriber_q,
+                date_from=date_from,
+                date_to=date_to,
             )
             break
         except NotSupportedError as exc:
@@ -237,10 +254,26 @@ async def list_tracker_tickets(
                 communication_label=comm_label,
                 date_of_create=m["date_of_create"],
                 updated_at=m.get("updated_at"),
+                date_of_close=m.get("date_of_close"),
+                rating=int(m["rating"]) if m.get("rating") is not None else None,
+                rating_comment=m.get("rating_comment"),
             )
         )
 
-    return TrackerTicketListResponse(total=total, page=page, per_page=per_page, items=items)
+    stats = None
+    if closed:
+        stats = TrackerTicketListStats(
+            avg_rating=list_stats.get("avg_rating"),
+            avg_rating_mine=list_stats.get("avg_rating_mine"),
+        )
+
+    return TrackerTicketListResponse(
+        total=total,
+        page=page,
+        per_page=per_page,
+        items=items,
+        stats=stats,
+    )
 
 
 _CALL_PLACEHOLDER_TITLE = "Звонок"

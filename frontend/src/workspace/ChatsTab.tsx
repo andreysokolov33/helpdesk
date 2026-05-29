@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import DatePickerField from "@/components/DatePickerField";
 import {
   fetchOpenTrackerTickets,
   ticketListStatusColumn,
-  trackerApiRowToTicketRow,
   type TrackerTicketListItem,
+  type TrackerTicketListStats,
 } from "@/api/tracker";
-import { formatTicketUpdatedLocal, formatWorkDurationSince } from "@/utils/ticketFormat";
+import {
+  formatRatingAvg,
+  formatTicketUpdatedLocal,
+  formatWorkDurationBetween,
+  formatWorkDurationSince,
+  ratingToneClass,
+} from "@/utils/ticketFormat";
 import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT, type TicketRow } from "@/data/mockCc";
 
 type ChatMsg = { id: string; side: "cl" | "ag" | "note"; text: string; time: string };
@@ -29,8 +36,21 @@ function CallCenterPhoneIcon() {
   );
 }
 
+function RatingStars({ value }: { value: number | null }) {
+  if (value == null) return <span className="ch-muted">—</span>;
+  return (
+    <span className="ch-rating" title={`Оценка: ${value}`}>
+      <span className="ch-rating-num">{value}</span>
+      <span className="ch-rating-stars" aria-hidden>
+        {"★".repeat(value)}
+        {"☆".repeat(Math.max(0, 5 - value))}
+      </span>
+    </span>
+  );
+}
+
 export default function ChatsTab() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
   const idParam = Number(params.get("id")) || 0;
@@ -82,11 +102,36 @@ export default function ChatsTab() {
 
   const [listRows, setListRows] = useState<TrackerTicketListItem[]>([]);
   const [listTotal, setListTotal] = useState(0);
+  const [listStats, setListStats] = useState<TrackerTicketListStats | null>(null);
   const [listPage, setListPage] = useState(1);
   const [perPage, setPerPage] = useState(20);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState("");
   const [nowPulse, setNowPulse] = useState(() => Date.now());
+
+  const closedMode = params.get("closed") === "true";
+  const dateFrom = params.get("date_from") ?? "";
+  const dateTo = params.get("date_to") ?? "";
+  const [subscriberInput, setSubscriberInput] = useState(() => params.get("subscriber_q") ?? "");
+  const subscriberQ = params.get("subscriber_q") ?? "";
+
+  useEffect(() => {
+    setSubscriberInput(subscriberQ);
+  }, [subscriberQ]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const trimmed = subscriberInput.trim();
+      if (trimmed === subscriberQ) return;
+      const next = new URLSearchParams(params);
+      if (trimmed) next.set("subscriber_q", trimmed);
+      else next.delete("subscriber_q");
+      next.delete("page");
+      setParams(next, { replace: true });
+      setListPage(1);
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [subscriberInput, subscriberQ, params, setParams]);
 
   useEffect(() => {
     if (!listMode) return;
@@ -101,10 +146,18 @@ export default function ChatsTab() {
       setListLoading(true);
       setListError("");
       try {
-        const data = await fetchOpenTrackerTickets({ page: listPage, per_page: perPage, closed: false });
+        const data = await fetchOpenTrackerTickets({
+          page: listPage,
+          per_page: perPage,
+          closed: closedMode,
+          subscriber_q: subscriberQ || undefined,
+          date_from: closedMode && dateFrom ? dateFrom : undefined,
+          date_to: closedMode && dateTo ? dateTo : undefined,
+        });
         if (cancelled) return;
         setListRows(data.items);
         setListTotal(data.total);
+        setListStats(data.stats);
       } catch (e) {
         if (!cancelled) setListError(e instanceof Error ? e.message : "Ошибка загрузки");
       } finally {
@@ -114,7 +167,27 @@ export default function ChatsTab() {
     return () => {
       cancelled = true;
     };
-  }, [listMode, listPage, perPage]);
+  }, [listMode, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo]);
+
+  function setClosedMode(nextClosed: boolean) {
+    const next = new URLSearchParams(params);
+    if (nextClosed) next.set("closed", "true");
+    else {
+      next.delete("closed");
+      next.delete("date_from");
+      next.delete("date_to");
+    }
+    setParams(next, { replace: true });
+    setListPage(1);
+  }
+
+  function setDateFilter(key: "date_from" | "date_to", value: string) {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+    setListPage(1);
+  }
 
   function openChatFromApi(row: TrackerTicketListItem) {
     navigate(`/tickets/${row.id}`);
@@ -160,12 +233,131 @@ export default function ChatsTab() {
 
   if (listMode) {
     const totalPages = Math.max(1, Math.ceil(listTotal / perPage));
+    const tableClass = closedMode ? "ch-table-wrap ch-table-wrap--closed" : "ch-table-wrap";
+
+    function renderTicketCell(row: TrackerTicketListItem) {
+      return (
+        <div className="ch-row-main">
+          <div className="ch-row-head">
+            {row.source === "call_center" ? (
+              <span className="ch-call-ico" title="Зарегистрирован после звонка на горячую линию">
+                <CallCenterPhoneIcon />
+              </span>
+            ) : null}
+            {row.object_type === "user" && (row.subscriber_is_juridical ?? 0) === 2 ? (
+              <span className="ch-jur-mark" title="Юридическое лицо">
+                ЮЛ
+              </span>
+            ) : null}
+            <span className="ch-row-id">#{row.id}</span>
+            {!closedMode && row.has_unread ? <span className="ch-unread-dot" title="Нужен ответ" /> : null}
+            <span className="ch-row-title" title={row.title}>
+              {row.title}
+            </span>
+          </div>
+          {row.object_type === "user" && row.subscriber_profile_user_id != null && (row.subscriber_name || "").trim() ? (
+            <Link
+              className="ch-row-userlink"
+              to={`/users/${row.subscriber_profile_user_id}`}
+              title={row.subscriber_name ?? undefined}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.subscriber_name}
+            </Link>
+          ) : null}
+          {row.category_label ? (
+            <span className="ch-row-cat" title={row.category_label}>
+              {row.category_label}
+            </span>
+          ) : null}
+        </div>
+      );
+    }
+
+    function renderRow(row: TrackerTicketListItem) {
+      const statusCol = ticketListStatusColumn(row);
+      const workEnd = closedMode ? row.date_of_close || row.updated_at : null;
+      const workDuration = closedMode
+        ? formatWorkDurationBetween(row.date_of_create, workEnd, nowPulse)
+        : formatWorkDurationSince(row.date_of_create, nowPulse);
+
+      return (
+        <div
+          key={row.id}
+          className={`ch-row${!closedMode && row.has_unread ? " ch-row--unread" : ""}${closedMode ? " ch-row--closed" : ""}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => openChatFromApi(row)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openChatFromApi(row);
+            }
+          }}
+        >
+          {renderTicketCell(row)}
+          <div className="ch-status-cell">
+            {statusCol.kind === "comm" ? (
+              <span className={`ch-comm ch-comm--${statusCol.state}`} title={statusCol.label}>
+                {statusCol.label}
+              </span>
+            ) : (
+              <span className={`ch-status ch-status--${statusCol.status}`} title={statusCol.label}>
+                {statusCol.label}
+              </span>
+            )}
+          </div>
+          {!closedMode ? (
+            <>
+              <span
+                className={`ch-priority ch-priority--${row.priority ?? "middle"}`}
+                title={row.priority_label ?? "Средний"}
+              >
+                {row.priority_label ?? "Средний"}
+              </span>
+              <span className="ch-muted ch-mono">{formatTicketUpdatedLocal(row.date_of_create)}</span>
+              <span className="ch-muted ch-mono">{workDuration}</span>
+              <div className="ch-exec-cell">
+                <span
+                  className={`ch-line ch-line--${
+                    row.support_line === 1 || row.support_line === 2 || row.support_line === 3
+                      ? row.support_line
+                      : "o"
+                  }`}
+                >
+                  {row.support_line_label}
+                </span>
+                {row.assignee_is_viewer ? <span className="ch-you-pill">Вы</span> : null}
+              </div>
+              <span className="ch-muted ch-time ch-mono">
+                {formatTicketUpdatedLocal(row.updated_at || row.date_of_create)}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="ch-muted ch-mono">{formatTicketUpdatedLocal(row.date_of_create)}</span>
+              <span className="ch-muted ch-mono">{workDuration}</span>
+              <div className="ch-rating-cell" title={row.rating_comment ?? undefined}>
+                <RatingStars value={row.rating} />
+                {row.rating_comment ? (
+                  <span className="ch-rating-comment">{row.rating_comment}</span>
+                ) : null}
+              </div>
+              <span className="ch-muted ch-time ch-mono">
+                {formatTicketUpdatedLocal(row.date_of_close || row.updated_at || row.date_of_create)}
+              </span>
+            </>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className="tp on">
         <div className="pg">
           <div className="ch-list-head">
             <div>
-              <div className="ch-list-title">Тикеты</div>
+              <div className="ch-list-title">{closedMode ? "Закрытые тикеты" : "Тикеты"}</div>
             </div>
             <div className="ch-list-toolbar">
               <label className="ch-per-label">
@@ -185,116 +377,105 @@ export default function ChatsTab() {
                   ))}
                 </select>
               </label>
+              <button
+                type="button"
+                className={`ch-mode-btn${closedMode ? " ch-mode-btn--active" : ""}`}
+                onClick={() => setClosedMode(!closedMode)}
+              >
+                {closedMode ? "Открытые" : "Закрытые"}
+              </button>
             </div>
+          </div>
+
+          {closedMode ? (
+            <div className="ch-closed-stats" aria-label="Статистика закрытых тикетов">
+              <div className="ch-stat-pill">
+                <span className="ch-stat-pill__label">Всего закрытых</span>
+                <span className="ch-stat-pill__val">{listTotal}</span>
+              </div>
+              <div className={`ch-stat-pill ch-stat-pill--rated ${ratingToneClass(listStats?.avg_rating ?? null)}`.trim()}>
+                <span className="ch-stat-pill__label">Средний рейтинг</span>
+                <span className="ch-stat-pill__val">{formatRatingAvg(listStats?.avg_rating ?? null)}</span>
+              </div>
+              <div className={`ch-stat-pill ch-stat-pill--rated ${ratingToneClass(listStats?.avg_rating_mine ?? null)}`.trim()}>
+                <span className="ch-stat-pill__label">Мой рейтинг</span>
+                <span className="ch-stat-pill__val">{formatRatingAvg(listStats?.avg_rating_mine ?? null)}</span>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="ch-filters">
+            <label className="ch-filter-field ch-filter-field--grow">
+              <span className="ch-filter-label">Абонент</span>
+              <input
+                type="search"
+                className="ch-filter-input"
+                placeholder="ФИО, id или логин"
+                value={subscriberInput}
+                onChange={(e) => setSubscriberInput(e.target.value)}
+              />
+            </label>
+            {closedMode ? (
+              <div className="ch-date-range">
+                <span className="ch-filter-label ch-date-range-label">Период закрытия</span>
+                <div className="ch-date-range-row">
+                  <div className="ch-date-field">
+                    <span className="ch-date-field-cap">С</span>
+                    <DatePickerField
+                      value={dateFrom}
+                      onChange={(v) => setDateFilter("date_from", v)}
+                      placeholder="дд.мм.гггг"
+                    />
+                  </div>
+                  <span className="ch-date-range-sep" aria-hidden>
+                    —
+                  </span>
+                  <div className="ch-date-field">
+                    <span className="ch-date-field-cap">По</span>
+                    <DatePickerField
+                      value={dateTo}
+                      minDate={dateFrom || undefined}
+                      onChange={(v) => setDateFilter("date_to", v)}
+                      placeholder="дд.мм.гггг"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {listError ? <div className="ch-list-err">{listError}</div> : null}
           {listLoading ? <div className="ch-list-loading">Загрузка…</div> : null}
 
-          <div className="ch-table-wrap">
-            <div className="ch-list-meta-row ch-list-thead">
+          <div className={tableClass}>
+            <div className={`ch-list-meta-row ch-list-thead${closedMode ? " ch-list-thead--closed" : ""}`}>
               <span>Тикет</span>
               <span>Статус</span>
-              <span>Приоритет</span>
-              <span>В работе</span>
-              <span>Исполнитель</span>
-              <span>Обновлён</span>
+              {closedMode ? (
+                <>
+                  <span>Открыт</span>
+                  <span>В работе</span>
+                  <span>Оценка</span>
+                  <span>Закрыт</span>
+                </>
+              ) : (
+                <>
+                  <span>Приоритет</span>
+                  <span>Открыт</span>
+                  <span>В работе</span>
+                  <span>Исполнитель</span>
+                  <span>Обновлён</span>
+                </>
+              )}
             </div>
 
-            <div className="ch-list-body">
-              {listRows.map((row) => {
-                const statusCol = ticketListStatusColumn(row);
-                return (
-                <div
-                  key={row.id}
-                  className={`ch-row${row.has_unread ? " ch-row--unread" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openChatFromApi(row)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      openChatFromApi(row);
-                    }
-                  }}
-                >
-                  <div className="ch-row-main">
-                    <div className="ch-row-head">
-                      {row.source === "call_center" ? (
-                        <span className="ch-call-ico" title="Зарегистрирован после звонка на горячую линию">
-                          <CallCenterPhoneIcon />
-                        </span>
-                      ) : null}
-                      <span className="ch-row-id">#{row.id}</span>
-                      {row.has_unread ? <span className="ch-unread-dot" title="Нужен ответ" /> : null}
-                      <span
-                        className={
-                          row.object_type === "user" && (row.subscriber_is_juridical ?? 0) === 2
-                            ? "ch-row-title ch-row-title--jur"
-                            : "ch-row-title"
-                        }
-                        title={row.title}
-                      >
-                        {row.title}
-                      </span>
-                    </div>
-                    {row.object_type === "user" && row.subscriber_profile_user_id != null && (row.subscriber_name || "").trim() ? (
-                      <Link
-                        className="ch-row-userlink"
-                        to={`/users/${row.subscriber_profile_user_id}`}
-                        title={row.subscriber_name ?? undefined}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {row.subscriber_name}
-                      </Link>
-                    ) : null}
-                    {row.category_label ? (
-                      <span className="ch-row-cat" title={row.category_label}>
-                        {row.category_label}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="ch-status-cell">
-                    {statusCol.kind === "comm" ? (
-                      <span className={`ch-comm ch-comm--${statusCol.state}`} title={statusCol.label}>
-                        {statusCol.label}
-                      </span>
-                    ) : (
-                      <span className={`ch-status ch-status--${statusCol.status}`} title={statusCol.label}>
-                        {statusCol.label}
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    className={`ch-priority ch-priority--${row.priority ?? "middle"}`}
-                    title={row.priority_label ?? "Средний"}
-                  >
-                    {row.priority_label ?? "Средний"}
-                  </span>
-                  <span className="ch-muted ch-mono">{formatWorkDurationSince(row.date_of_create, nowPulse)}</span>
-                  <div className="ch-exec-cell">
-                    <span
-                      className={`ch-line ch-line--${
-                        row.support_line === 1 || row.support_line === 2 || row.support_line === 3
-                          ? row.support_line
-                          : "o"
-                      }`}
-                    >
-                      {row.support_line_label}
-                    </span>
-                    {row.assignee_is_viewer ? <span className="ch-you-pill">Вы</span> : null}
-                  </div>
-                  <span className="ch-muted ch-time ch-mono">
-                    {formatTicketUpdatedLocal(row.updated_at || row.date_of_create)}
-                  </span>
-                </div>
-                );
-              })}
-            </div>
+            <div className="ch-list-body">{listRows.map(renderRow)}</div>
           </div>
 
           {!listLoading && listRows.length === 0 && !listError ? (
-            <div className="ch-list-empty">Нет открытых тикетов</div>
+            <div className="ch-list-empty">
+              {closedMode ? "Нет закрытых тикетов" : "Нет открытых тикетов"}
+            </div>
           ) : null}
 
           <div className="ch-pager">

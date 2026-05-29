@@ -1588,7 +1588,7 @@
 
 #tp-ticket .tk-comment-input {
   flex: 1;
-  min-height: 44px;
+  min-height: 52px;
   max-height: 160px;
   resize: vertical;
   border: none;
@@ -1662,7 +1662,7 @@
 
 /* TipTap editable area */
 #tp-ticket .tk-rte .ProseMirror {
-  min-height: 42px;
+  min-height: 52px;
   max-height: 160px;
   overflow-y: auto;
   outline: none;

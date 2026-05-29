@@ -1469,7 +1469,7 @@ export default function TicketPage() {
                       ref={commentInputRef}
                       className="tk-comment-input"
                       value={commentDraft}
-                      placeholder="Комментарий для коллег…"
+                      placeholder="Комментарий для коллег… Ctrl + Enter — отправить"
                       disabled={sending}
                       rows={2}
                       onChange={(e) => setCommentDraft(e.target.value)}
@@ -1502,9 +1502,6 @@ export default function TicketPage() {
                         />
                       </svg>
                     </button>
-                  </div>
-                  <div className="tk-composer__hint">
-                    Ctrl+Enter — отправить · Esc — отмена
                   </div>
                 </>
               ) : !detail.can_reply && detail.chat_mode === "mail" ? (
@@ -1549,7 +1546,13 @@ export default function TicketPage() {
                   <div className="tk-composer__box">
                     <RichEditor
                       ref={editorRef}
-                      placeholder={editingId ? "Измените текст сообщения…" : replyTo ? "Ваш ответ…" : "Ответ клиенту…"}
+                      placeholder={
+                        editingId
+                          ? "Измените текст сообщения… Ctrl + Enter — сохранить"
+                          : replyTo
+                            ? "Ваш ответ… Ctrl + Enter — отправить"
+                            : "Ответ клиенту… Ctrl + Enter — отправить"
+                      }
                       disabled={sending}
                       onSubmit={submit}
                       onEscape={handleEditorEscape}
@@ -1745,9 +1748,6 @@ export default function TicketPage() {
                       </div>
                     </div>
                   ) : null}
-                  <div className="tk-composer__hint">
-                    {editingId ? "Ctrl+Enter — сохранить · Esc — отмена" : "Ctrl+Enter — отправить · Esc — отмена ответа"}
-                  </div>
                 </>
               )}
             </div>
