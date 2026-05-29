@@ -103,7 +103,7 @@ export default function SubscriberSearchField({
         .finally(() => {
           if (!cancelled) setLoading(false);
         });
-    }, 280);
+    }, 150);
 
     return () => {
       cancelled = true;

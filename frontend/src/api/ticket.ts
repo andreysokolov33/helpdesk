@@ -38,6 +38,9 @@ export type TicketSubscriberTariffSummary = {
   type_label?: string | null;
   remain_traffic_mb?: number | null;
   full_packet_mb?: number | null;
+  jur_main_packet_mb?: number | null;
+  jur_dop_packet_mb?: number | null;
+  overrun_mb?: number | null;
   rate_up?: string | null;
   rate_down?: string | null;
   msk_reset?: string | null;
@@ -98,6 +101,14 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export async function fetchTicketDetail(ticketId: number): Promise<TicketDetail> {
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}`);
+}
+
+export async function linkTicketSubscriber(ticketId: number, userId: number): Promise<TicketDetail> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/subscriber`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId }),
+  });
 }
 
 export type FetchTicketMessagesOpts = {

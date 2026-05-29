@@ -141,6 +141,38 @@ def _subscriber_columns(ud_sq):
     )
 
 
+def _row_to_hit_simple(row: Any) -> dict[str, Any]:
+    """Быстрый hit по PK без join user_details (только users + jur + station)."""
+    is_jur = int(row.is_juridical or 0)
+    login = (row.login or "").strip()
+    if is_jur == 2:
+        name = (row.short_name_organization or "").strip() or login
+        email = (row.email_organization or "").strip() or None
+        phone = (row.phone_organization or "").strip() or None
+        id_doc = (row.inn or "").strip() or None
+    else:
+        name = (row.full_name or "").strip() or login
+        email = (row.email or "").strip() or None
+        phone = (row.mob_tel or "").strip() or None
+        id_doc = (row.passport or "").strip() or None
+    station_id = getattr(row, "station_id", None)
+    if station_id is None and getattr(row, "id_grp", None):
+        gid = int(row.id_grp)
+        station_id = gid if gid > 0 else None
+    hotspot_id = getattr(row, "hotspot_id", None)
+    return {
+        "id": int(row.id),
+        "login": login,
+        "name": name,
+        "email": email,
+        "phone": phone,
+        "id_doc": id_doc,
+        "is_juridical": is_jur,
+        "station_id": int(station_id) if station_id else None,
+        "hotspot_id": int(hotspot_id) if hotspot_id else None,
+    }
+
+
 def _row_to_hit(row: Any) -> dict[str, Any]:
     is_jur = int(row.is_juridical or 0)
     if is_jur == 0:
@@ -197,6 +229,8 @@ async def _fetch(
     limit: int,
     pl: str,
     digits: str | None,
+    *,
+    filter_hits: bool = True,
 ) -> None:
     if len(out) >= limit:
         return
@@ -206,12 +240,46 @@ async def _fetch(
         if uid in seen:
             continue
         hit = _row_to_hit(row)
-        if not _hit_matches_pattern(hit, pl, digits):
+        if filter_hits and not _hit_matches_pattern(hit, pl, digits):
             continue
         seen.add(uid)
         out.append(hit)
         if len(out) >= limit:
             return
+
+
+async def _search_by_id_fast(session: AsyncSession, uid: int) -> dict[str, Any] | None:
+    u = User
+    jcl = JurClientList
+    ig = IpGroup
+    row = (
+        await session.execute(
+            select(
+                u.id,
+                u.login,
+                u.is_juridical,
+                u.full_name,
+                u.email,
+                u.mob_tel,
+                u.passport,
+                u.id_grp,
+                jcl.short_name_organization,
+                jcl.email_organization,
+                jcl.phone_organization,
+                jcl.inn,
+                case((u.id_grp > 0, u.id_grp), else_=None).label("station_id"),
+                case((ig.id_hotspot > 0, ig.id_hotspot), else_=None).label("hotspot_id"),
+            )
+            .select_from(u)
+            .outerjoin(jcl, jcl.id == u.juridical_id)
+            .outerjoin(ig, ig.id == u.id_grp)
+            .where(u.id == uid)
+            .limit(1)
+        )
+    ).first()
+    if not row:
+        return None
+    return _row_to_hit_simple(row)
 
 
 async def run_subscriber_search(
@@ -240,23 +308,13 @@ async def run_subscriber_search(
     passport_sql = _passport_sql(ud_sq, u)
     passport_lower = func.lower(passport_sql)
 
-    # 1. Точный ID (PK)
+    # 1. Точный ID (PK) — без тяжёлого window по user_details
     if pl.isdigit():
-        uid = int(pl)
-        stmt = (
-            select(*cols)
-            .select_from(u)
-            .outerjoin(ud_sq, ud_join)
-            .outerjoin(ig, ig_join)
-            .outerjoin(jcl, jcl.id == u.juridical_id)
-            .where(u.id == uid)
-            .limit(1)
-        )
-        await _fetch(session, stmt, seen, out, limit, pl, digits)
-        if len(out) >= limit:
-            return out
+        hit = await _search_by_id_fast(session, int(pl))
+        if hit:
+            return [hit]
 
-    # 2. Поля users.user
+    # 2–4. Один запрос вместо трёх последовательных
     user_conds = [
         func.lower(u.login).like(like),
         func.lower(u.email).like(like),
@@ -282,22 +340,6 @@ async def run_subscriber_search(
             ]
         )
 
-    stmt_user = (
-        select(*cols)
-        .select_from(u)
-        .outerjoin(ud_sq, ud_join)
-        .outerjoin(ig, ig_join)
-        .outerjoin(jcl, jcl.id == u.juridical_id)
-        .where(or_(*user_conds))
-        .distinct(u.id)
-        .order_by(u.id)
-        .limit(limit)
-    )
-    await _fetch(session, stmt_user, seen, out, limit, pl, digits)
-    if len(out) >= limit:
-        return out
-
-    # 3. user_details (ФИО, паспорт по полям)
     fio_lower = func.lower(
         func.trim(
             func.concat_ws(
@@ -321,22 +363,6 @@ async def run_subscriber_search(
         number.like(like),
     ]
 
-    stmt_details = (
-        select(*cols)
-        .select_from(u)
-        .join(ud_sq, ud_join)
-        .outerjoin(ig, ig_join)
-        .outerjoin(jcl, jcl.id == u.juridical_id)
-        .where(or_(*details_conds))
-        .distinct(u.id)
-        .order_by(u.id)
-        .limit(limit - len(out))
-    )
-    await _fetch(session, stmt_details, seen, out, limit, pl, digits)
-    if len(out) >= limit:
-        return out
-
-    # 4. Юрлица
     jur_conds = [
         func.lower(jcl.short_name_organization).like(like),
         func.lower(jcl.name_organization).like(like),
@@ -351,17 +377,18 @@ async def run_subscriber_search(
             )
         )
 
-    stmt_jur = (
+    all_conds = user_conds + details_conds + jur_conds
+    stmt_combined = (
         select(*cols)
         .select_from(u)
         .outerjoin(ud_sq, ud_join)
         .outerjoin(ig, ig_join)
-        .join(jcl, jcl.id == u.juridical_id)
-        .where(or_(*jur_conds))
+        .outerjoin(jcl, jcl.id == u.juridical_id)
+        .where(or_(*all_conds))
         .distinct(u.id)
         .order_by(u.id)
-        .limit(limit - len(out))
+        .limit(limit)
     )
-    await _fetch(session, stmt_jur, seen, out, limit, pl, digits)
+    await _fetch(session, stmt_combined, seen, out, limit, pl, digits)
 
     return out

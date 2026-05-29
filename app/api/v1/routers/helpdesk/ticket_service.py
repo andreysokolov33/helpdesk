@@ -1245,6 +1245,8 @@ async def load_ticket_detail(
         except HTTPException:
             subscriber_account = None
 
+    chat_mode = chat_mode_for_source(source)
+
     return {
         "id": int(d["id"]),
         "title": d.get("title") or f"Тикет #{ticket_id}",
@@ -1281,10 +1283,56 @@ async def load_ticket_detail(
         "updated_at": d.get("updated_at"),
         "updated_at_iso": _iso(d.get("updated_at")),
         "assigned_at_iso": _iso(assigned_at_row["start_time"]) if assigned_at_row else None,
-        "chat_mode": chat_mode_for_source(source),
-        "can_reply": d.get("user_id") is not None,
+        "chat_mode": chat_mode,
+        "can_reply": chat_mode == "tracker" or d.get("user_id") is not None,
         "subscriber_account": subscriber_account,
     }
+
+
+async def link_ticket_subscriber(
+    db: AsyncSession,
+    ticket_id: int,
+    user_id: int,
+    viewer_id: int,
+) -> dict[str, Any]:
+    """Привязать абонента к тикету без user_id (object_type=user, person_type=user)."""
+    exists = (
+        await db.execute(
+            text('SELECT id FROM users."user" WHERE id = :uid'),
+            {"uid": user_id},
+        )
+    ).mappings().first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
+
+    row = (
+        await db.execute(
+            text("SELECT id, user_id FROM users.tracker_tickets WHERE id = :id"),
+            {"id": ticket_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    if row.get("user_id") is not None:
+        raise HTTPException(status_code=400, detail="Абонент уже привязан к тикету")
+
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET user_id = :uid,
+                object_type = 'user',
+                person_type = 'user',
+                caller_name = NULL,
+                updated_at = :now
+            WHERE id = :ticket_id
+            """
+        ),
+        {"uid": user_id, "now": now, "ticket_id": ticket_id},
+    )
+    await db.commit()
+    return await load_ticket_detail(db, ticket_id, viewer_id)
 
 
 async def _mail_link_bounds(db: AsyncSession, ticket_id: int) -> tuple[int | None, int | None]:

@@ -9,6 +9,11 @@ function fmtTrafficMb(n: number | null | undefined) {
   return n.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 
+function clampMainMb(n: number | null | undefined): number | null {
+  if (n == null || Number.isNaN(n)) return null;
+  return Math.max(0, n);
+}
+
 function statusClass(label: string): string {
   if (label === "Активен") return "ok";
   if (label === "Заморожен" || label === "Неактивен") return "red";
@@ -18,15 +23,22 @@ function statusClass(label: string): string {
 
 type Props = {
   account: TicketSubscriberAccountSummary;
+  isJuridical: number;
 };
 
-export default function TicketSubscriberAccountSidebar({ account }: Props) {
+export default function TicketSubscriberAccountSidebar({ account, isJuridical }: Props) {
   const t = account.tariff;
+  const isJur = isJuridical === 2;
+  const isFrozen = t.status_label === "Заморожен";
+  const isLimited = t.type_label === "Лимитный";
   const trafficLabel = t.type_label === "Безлимитный" ? "Суточный трафик" : "Трафик";
   const speed =
     t.rate_up && t.rate_down
       ? `↑ ${t.rate_up} / ↓ ${t.rate_down}`
       : t.rate_up || t.rate_down || null;
+  const showJurLimited = isJur && isLimited;
+  const mainRemainMb = clampMainMb(t.jur_main_packet_mb);
+  const overrunMb = t.overrun_mb != null && t.overrun_mb > 0 ? t.overrun_mb : null;
 
   return (
     <>
@@ -61,7 +73,55 @@ export default function TicketSubscriberAccountSidebar({ account }: Props) {
                 <span className="kvv">{t.type_label}</span>
               </div>
             ) : null}
-            {t.remain_traffic_mb != null && t.full_packet_mb != null ? (
+
+            {showJurLimited && isFrozen ? (
+              <>
+                {mainRemainMb != null ? (
+                  <div className="kv">
+                    <span className="kvk">Остаток основного пакета</span>
+                    <span className="kvv">{fmtTrafficMb(mainRemainMb)} МБ</span>
+                  </div>
+                ) : null}
+                {overrunMb != null ? (
+                  <div className="kv">
+                    <span className="kvk">Использовано доп. трафика</span>
+                    <span className="kvv red">{fmtTrafficMb(overrunMb)} МБ</span>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {showJurLimited && !isFrozen ? (
+              <>
+                {t.remain_traffic_mb != null && t.full_packet_mb != null ? (
+                  <div className="kv">
+                    <span className="kvk">Трафик (остаток / всего)</span>
+                    <span className={`kvv${overrunMb ? " red" : ""}`}>
+                      {fmtTrafficMb(t.remain_traffic_mb)} / {fmtTrafficMb(t.full_packet_mb)} МБ
+                    </span>
+                  </div>
+                ) : null}
+                {t.jur_main_packet_mb != null ? (
+                  <div className="kv">
+                    <span className="kvk">Основной пакет (ЮЛ)</span>
+                    <span className="kvv">{fmtTrafficMb(t.jur_main_packet_mb)} МБ</span>
+                  </div>
+                ) : null}
+                {t.jur_dop_packet_mb != null ? (
+                  <div className="kv">
+                    <span className="kvk">Доп. пакет (ЮЛ)</span>
+                    <span className="kvv">{fmtTrafficMb(t.jur_dop_packet_mb)} МБ</span>
+                  </div>
+                ) : null}
+                {overrunMb != null ? (
+                  <div className="tk-side-overrun" role="status">
+                    Перерасход трафика: ~{overrunMb.toFixed(1)} МБ
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {!showJurLimited && t.remain_traffic_mb != null && t.full_packet_mb != null ? (
               <div className="kv">
                 <span className="kvk">{trafficLabel}</span>
                 <span className="kvv">
@@ -69,6 +129,7 @@ export default function TicketSubscriberAccountSidebar({ account }: Props) {
                 </span>
               </div>
             ) : null}
+
             {speed ? (
               <div className="kv">
                 <span className="kvk">Скорость</span>

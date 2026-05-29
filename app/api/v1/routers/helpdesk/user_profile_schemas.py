@@ -83,6 +83,9 @@ class TicketSubscriberTariffSummary(BaseModel):
     type_label: Optional[str] = None
     remain_traffic_mb: Optional[float] = None
     full_packet_mb: Optional[float] = None
+    jur_main_packet_mb: Optional[float] = None
+    jur_dop_packet_mb: Optional[float] = None
+    overrun_mb: Optional[float] = None
     rate_up: Optional[str] = None
     rate_down: Optional[str] = None
     msk_reset: Optional[str] = None

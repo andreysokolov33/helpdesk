@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
 from app.api.v1.routers.helpdesk.schemas import (
+    LinkTicketSubscriberRequest,
     RegisterCallRequest,
     RegisterCallResponse,
     TicketCategoriesResponse,
@@ -362,6 +363,23 @@ async def get_ticket(
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> TicketDetailResponse:
     data = await ticket_svc.load_ticket_detail(db, ticket_id, int(user["user_id"]))
+    return TicketDetailResponse(**data)
+
+
+@router.patch("/{ticket_id}/subscriber", response_model=TicketDetailResponse)
+async def link_ticket_subscriber(
+    ticket_id: int,
+    payload: LinkTicketSubscriberRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketDetailResponse:
+    """Привязать абонента к тикету, у которого user_id ещё не задан."""
+    data = await ticket_svc.link_ticket_subscriber(
+        db,
+        ticket_id,
+        int(payload.user_id),
+        int(user["user_id"]),
+    )
     return TicketDetailResponse(**data)
 
 

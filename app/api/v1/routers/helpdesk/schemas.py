@@ -86,6 +86,10 @@ class RegisterCallResponse(BaseModel):
     id: int
 
 
+class LinkTicketSubscriberRequest(BaseModel):
+    user_id: int = Field(..., ge=1, description="ID выбранного абонента")
+
+
 class DeskSearchKbHit(BaseModel):
     """Заглушка под будущий поиск по базе знаний."""
 

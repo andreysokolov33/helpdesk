@@ -135,7 +135,7 @@ export default function UniversalSearch() {
         .finally(() => {
           if (!cancelled) setLoading(false);
         });
-    }, 280);
+    }, 150);
 
     return () => {
       cancelled = true;

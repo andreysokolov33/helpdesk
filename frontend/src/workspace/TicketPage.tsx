@@ -59,6 +59,7 @@ import FileBadge, { resolveFileExt, truncateFilename } from "@/components/FileBa
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 import TicketMacroBar from "@/components/TicketMacroBar";
 import TicketSubscriberAccountSidebar from "@/components/TicketSubscriberAccountSidebar";
+import TicketLinkSubscriberModal from "@/workspace/TicketLinkSubscriberModal";
 import { macroTextToEditorHtml, type HelpdeskMacro } from "@/api/macros";
 import { validateTicketMessage } from "@/utils/ticketMessageValidation";
 
@@ -152,6 +153,7 @@ export default function TicketPage() {
   const [sideOpen, setSideOpen] = useState(true);
   const [classifyOpen, setClassifyOpen] = useState(false);
   const [classifyAction, setClassifyAction] = useState<ClassifyAction>("close");
+  const [linkSubscriberOpen, setLinkSubscriberOpen] = useState(false);
   const [nowPulse, setNowPulse] = useState(() => Date.now());
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkCache, setCheckCache] = useState<FastCheckResponse | null>(null);
@@ -1044,10 +1046,10 @@ export default function TicketPage() {
             </div>
 
             <div className="tk-composer">
-              {!detail.can_reply ? (
+              {!detail.can_reply && detail.chat_mode === "mail" ? (
                 <div className="tk-no-reply">
-                  Абонент не определён — ответ в чат недоступен. Укажите абонента в карточке или завершите
-                  обработку звонка.
+                  Абонент не определён — ответ в личном кабинете недоступен. Привяжите абонента в карточке
+                  тикета.
                 </div>
               ) : (
                 <>
@@ -1387,40 +1389,58 @@ export default function TicketPage() {
             <div className="ips">
               <div className="ipb">
                 <div className="ipl">Абонент</div>
-                <div
-                  className={detail.subscriber_is_juridical === 2 ? "tk-side-name tk-side-name--jur" : "tk-side-name"}
-                >
-                  <span
-                    aria-hidden
-                    style={{
-                      display: "inline-block",
-                      width: 8,
-                      height: 8,
-                      borderRadius: 999,
-                      background: online ? "var(--ok)" : "var(--lm)",
-                      marginRight: 8,
-                      verticalAlign: "middle",
-                      boxShadow: online ? "0 0 0 2px rgba(27,122,72,.14)" : "none",
-                    }}
-                  />
-                  {subscriberSidebarName}
-                </div>
-                {detail.caller_name && detail.user_id == null ? (
-                  <div className="tk-side-meta">Как представился: {detail.caller_name}</div>
-                ) : null}
-                {detail.user_id != null ? <div className="tk-side-meta">ID: {detail.user_id}</div> : null}
-                {detail.subscriber_login ? (
-                  <div className="tk-side-meta">Логин: {detail.subscriber_login}</div>
-                ) : null}
-                {detail.subscriber_profile_user_id != null ? (
-                  <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-profile-link">
-                    Карточка абонента →
-                  </Link>
-                ) : null}
+                {detail.user_id == null ? (
+                  <>
+                    <div className="tk-side-unknown" role="status">
+                      Не удалось определить абонента
+                    </div>
+                    {detail.caller_name ? (
+                      <div className="tk-side-meta">Как представился: {detail.caller_name}</div>
+                    ) : null}
+                    <button type="button" className="tb3 tk-link-subscriber-btn" onClick={() => setLinkSubscriberOpen(true)}>
+                      Найти абонента
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className={
+                        detail.subscriber_is_juridical === 2 ? "tk-side-name tk-side-name--jur" : "tk-side-name"
+                      }
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          display: "inline-block",
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: online ? "var(--ok)" : "var(--lm)",
+                          marginRight: 8,
+                          verticalAlign: "middle",
+                          boxShadow: online ? "0 0 0 2px rgba(27,122,72,.14)" : "none",
+                        }}
+                      />
+                      {subscriberSidebarName}
+                    </div>
+                    <div className="tk-side-meta">ID: {detail.user_id}</div>
+                    {detail.subscriber_login ? (
+                      <div className="tk-side-meta">Логин: {detail.subscriber_login}</div>
+                    ) : null}
+                    {detail.subscriber_profile_user_id != null ? (
+                      <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-profile-link">
+                        Карточка абонента →
+                      </Link>
+                    ) : null}
+                  </>
+                )}
               </div>
 
               {detail.subscriber_account && detail.user_id != null ? (
-                <TicketSubscriberAccountSidebar account={detail.subscriber_account} />
+                <TicketSubscriberAccountSidebar
+                  account={detail.subscriber_account}
+                  isJuridical={detail.subscriber_is_juridical}
+                />
               ) : null}
 
               <div className="ipb">
@@ -1497,6 +1517,16 @@ export default function TicketPage() {
         action={classifyAction}
         onClose={() => setClassifyOpen(false)}
         onConfirm={() => setClassifyOpen(false)}
+      />
+
+      <TicketLinkSubscriberModal
+        open={linkSubscriberOpen}
+        ticketId={detail.id}
+        onClose={() => setLinkSubscriberOpen(false)}
+        onLinked={(next) => {
+          setDetail(next);
+          setToast({ message: "Абонент привязан к тикету", variant: "success" });
+        }}
       />
 
       {toast ? (

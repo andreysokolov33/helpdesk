@@ -10,9 +10,11 @@
   --tc-purple:  #7c3aed;
   --tc-pink:    #db2777;
 
+  --bg-red:      #fecaca;
   --bg-yellow:   #fde68a;
   --bg-green:    #bbf7d0;
   --bg-blue:     #bfdbfe;
+  --bg-purple:   #e9d5ff;
   --bg-pink:     #fce7f3;
   --bg-lavender: #ede9fe;
   --bg-orange:   #fed7aa;
@@ -27,9 +29,11 @@
   --tc-purple:  #c084fc;
   --tc-pink:    #f472b6;
 
+  --bg-red:      rgba(248, 113, 113, 0.28);
   --bg-yellow:   rgba(251, 191, 36, 0.28);
   --bg-green:    rgba(74, 222, 128, 0.22);
   --bg-blue:     rgba(96, 165, 250, 0.22);
+  --bg-purple:   rgba(192, 132, 252, 0.25);
   --bg-pink:     rgba(244, 114, 182, 0.22);
   --bg-lavender: rgba(167, 139, 250, 0.22);
   --bg-orange:   rgba(251, 146, 60, 0.28);
@@ -44,9 +48,11 @@
 [data-tc="purple"]  { color: var(--tc-purple); }
 [data-tc="pink"]    { color: var(--tc-pink); }
 
+[data-bg="red"]      { background: var(--bg-red);      border-radius: 3px; padding: 0 1px; }
 [data-bg="yellow"]   { background: var(--bg-yellow);   border-radius: 3px; padding: 0 1px; }
 [data-bg="green"]    { background: var(--bg-green);    border-radius: 3px; padding: 0 1px; }
 [data-bg="blue"]     { background: var(--bg-blue);     border-radius: 3px; padding: 0 1px; }
+[data-bg="purple"]   { background: var(--bg-purple);   border-radius: 3px; padding: 0 1px; }
 [data-bg="pink"]     { background: var(--bg-pink);     border-radius: 3px; padding: 0 1px; }
 [data-bg="lavender"] { background: var(--bg-lavender); border-radius: 3px; padding: 0 1px; }
 [data-bg="orange"]   { background: var(--bg-orange);   border-radius: 3px; padding: 0 1px; }
@@ -784,6 +790,67 @@
   color: var(--red);
 }
 
+#tp-ticket .tk-side-unknown {
+  font-size: 13px;
+  color: var(--i2);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+/* Как .tb3 в тулбаре (Инженерам / Завершить) */
+#tp-ticket .ipb .tk-link-subscriber-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 5px;
+  border: 1px solid var(--ln);
+  background: var(--p);
+  font-family: var(--f);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--i2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--a);
+}
+
+#tp-ticket .ipb .tk-link-subscriber-btn:hover {
+  background: var(--bg);
+}
+
+#tp-ticket .tk-side-overrun {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: var(--r2);
+  background: rgba(198, 40, 40, 0.08);
+  color: var(--bad, #c62828);
+}
+
+.tk-link-sub-modal .call-field {
+  margin-bottom: 0;
+}
+
+/* Выпадающий список поиска в модалке — не обрезать overflow clf-box */
+.clf-mo .clf-box.tk-link-sub-modal {
+  overflow: visible;
+}
+
+.clf-mo .tk-link-sub-modal .clf-bd {
+  overflow: visible;
+}
+
+.clf-mo .sr-wrap {
+  overflow: visible;
+}
+
+.clf-mo .sr-wrap .sd.sr-drop.vis {
+  z-index: 1200;
+}
+
 #tp-ticket .tk-side-tariff-empty {
   font-size: 12px;
   font-weight: 600;
@@ -1502,6 +1569,14 @@
   min-width: 220px;
 }
 
+#tp-ticket .tk-rte__popover--color {
+  padding: 10px 12px 12px;
+  /* 8 свотчей × 22px + 7 промежутков × 5px + отступы */
+  min-width: 252px;
+  width: max-content;
+  max-width: min(96vw, 280px);
+}
+
 [data-theme="dark"] #tp-ticket .tk-rte__popover {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
 }
@@ -1515,10 +1590,14 @@
   margin-bottom: 6px;
 }
 
+#tp-ticket .tk-rte__palette-label--bg {
+  margin-top: 10px;
+}
+
 #tp-ticket .tk-rte__palette {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  gap: 5px;
 }
 
 /* Color swatches */

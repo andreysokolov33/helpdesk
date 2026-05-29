@@ -9,7 +9,6 @@ import {
 import { useEditor, EditorContent } from "@tiptap/react";
 import { Mark, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 
 // ── Custom mark extensions ─────────────────────────────────────────────────────
@@ -91,26 +90,19 @@ const BgColorMark = Mark.create({
 
 // ── Palettes (keys → CSS variables) ──────────────────────────────────────────
 
-const TEXT_COLORS = [
-  { key: "",         label: "Обычный" },
-  { key: "red",      label: "Красный" },
-  { key: "orange",   label: "Оранжевый" },
-  { key: "yellow",   label: "Жёлтый" },
-  { key: "green",    label: "Зелёный" },
-  { key: "blue",     label: "Синий" },
-  { key: "purple",   label: "Фиолетовый" },
-  { key: "pink",     label: "Розовый" },
-];
+/** Общий набор ключей — одинаковое число цветов для текста и фона. */
+const PALETTE_COLOR_KEYS = [
+  { key: "red", label: "Красный" },
+  { key: "orange", label: "Оранжевый" },
+  { key: "yellow", label: "Жёлтый" },
+  { key: "green", label: "Зелёный" },
+  { key: "blue", label: "Синий" },
+  { key: "purple", label: "Фиолетовый" },
+  { key: "pink", label: "Розовый" },
+] as const;
 
-const BG_COLORS = [
-  { key: "",         label: "Без фона" },
-  { key: "yellow",   label: "Жёлтый" },
-  { key: "green",    label: "Зелёный" },
-  { key: "blue",     label: "Синий" },
-  { key: "pink",     label: "Розовый" },
-  { key: "lavender", label: "Лавандовый" },
-  { key: "orange",   label: "Оранжевый" },
-];
+const TEXT_COLORS = [{ key: "", label: "Обычный" }, ...PALETTE_COLOR_KEYS];
+const BG_COLORS = [{ key: "", label: "Без фона" }, ...PALETTE_COLOR_KEYS];
 
 const HEADING_LEVELS = [1, 2, 3] as const;
 
@@ -154,13 +146,14 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        link: {
+          openOnClick: false,
+          HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
+        },
+      }),
       TextColorMark,
       BgColorMark,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
-      }),
       Placeholder.configure({ placeholder }),
     ],
     editable: !disabled,
@@ -363,7 +356,6 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
 
           {panel === "color" && (
             <div className="tk-rte__popover tk-rte__popover--color">
-              {/* Text color row */}
               <div className="tk-rte__palette-label">Цвет текста</div>
               <div className="tk-rte__palette">
                 {TEXT_COLORS.map((c) => (
@@ -384,9 +376,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
                   />
                 ))}
               </div>
-
-              {/* Background highlight row */}
-              <div className="tk-rte__palette-label" style={{ marginTop: 8 }}>Выделение фона</div>
+              <div className="tk-rte__palette-label tk-rte__palette-label--bg">Выделение фона</div>
               <div className="tk-rte__palette">
                 {BG_COLORS.map((c) => (
                   <button
