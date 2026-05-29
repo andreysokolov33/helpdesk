@@ -1,6 +1,11 @@
 from pydantic import BaseModel, field_validator
 
 
+class AuthMeResponse(BaseModel):
+    user_id: int
+    role: str | None = None
+
+
 class LoginRequest(BaseModel):
     login: str
     password: str

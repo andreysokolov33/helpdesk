@@ -13,7 +13,7 @@ from app.api.v1.routers.auth.dao import (
     SkystreamUsersDAO,
     SubscriberDAO,
 )
-from app.api.v1.routers.auth.schemas import LoginRequest
+from app.api.v1.routers.auth.schemas import AuthMeResponse, LoginRequest
 from app.core.auth_utils import auth_cookie_options, create_token, decode_jwt_token
 from app.database import background_db_session, get_db
 from app.utils.redis_functions import (
@@ -219,3 +219,12 @@ async def logout(
         response.delete_cookie(key=cookie_name, **cookie_opts)
 
     return {"message": "Successfully logged out"}
+
+
+@router.get("/me", response_model=AuthMeResponse)
+async def auth_me(request: Request) -> AuthMeResponse:
+    """Текущий оператор helpdesk (из AuthMiddleware)."""
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return AuthMeResponse(user_id=int(user["user_id"]), role=user.get("role"))

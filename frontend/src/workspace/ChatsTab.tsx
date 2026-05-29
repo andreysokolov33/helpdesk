@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { fetchAuthMe } from "@/api/auth";
 import DatePickerField from "@/components/DatePickerField";
 import {
   fetchOpenTrackerTickets,
@@ -14,6 +15,12 @@ import {
   formatWorkDurationSince,
   ratingToneClass,
 } from "@/utils/ticketFormat";
+import {
+  CHATS_LIST_PER_PAGE_OPTIONS,
+  loadChatsPerPage,
+  saveChatsPerPage,
+  type ChatsListPerPage,
+} from "@/utils/chatsListPrefs";
 import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT, type TicketRow } from "@/data/mockCc";
 
 type ChatMsg = { id: string; side: "cl" | "ag" | "note"; text: string; time: string };
@@ -104,7 +111,9 @@ export default function ChatsTab() {
   const [listTotal, setListTotal] = useState(0);
   const [listStats, setListStats] = useState<TrackerTicketListStats | null>(null);
   const [listPage, setListPage] = useState(1);
-  const [perPage, setPerPage] = useState(20);
+  const [perPage, setPerPage] = useState<ChatsListPerPage>(20);
+  const [listPrefsReady, setListPrefsReady] = useState(false);
+  const viewerIdRef = useRef<number | null>(null);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState("");
   const [nowPulse, setNowPulse] = useState(() => Date.now());
@@ -140,7 +149,24 @@ export default function ChatsTab() {
   }, [listMode]);
 
   useEffect(() => {
-    if (!listMode) return;
+    let cancelled = false;
+    fetchAuthMe()
+      .then((me) => {
+        if (cancelled) return;
+        viewerIdRef.current = me.user_id;
+        setPerPage(loadChatsPerPage(me.user_id));
+        setListPrefsReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setListPrefsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!listMode || !listPrefsReady) return;
     let cancelled = false;
     (async () => {
       setListLoading(true);
@@ -167,7 +193,14 @@ export default function ChatsTab() {
     return () => {
       cancelled = true;
     };
-  }, [listMode, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo]);
+  }, [listMode, listPrefsReady, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo]);
+
+  function handlePerPageChange(next: ChatsListPerPage) {
+    setPerPage(next);
+    setListPage(1);
+    const uid = viewerIdRef.current;
+    if (uid != null) saveChatsPerPage(uid, next);
+  }
 
   function setClosedMode(nextClosed: boolean) {
     const next = new URLSearchParams(params);
@@ -366,11 +399,10 @@ export default function ChatsTab() {
                   className="ch-per-select"
                   value={perPage}
                   onChange={(e) => {
-                    setPerPage(Number(e.target.value));
-                    setListPage(1);
+                    handlePerPageChange(Number(e.target.value) as ChatsListPerPage);
                   }}
                 >
-                  {[10, 20, 50, 100].map((n) => (
+                  {CHATS_LIST_PER_PAGE_OPTIONS.map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
