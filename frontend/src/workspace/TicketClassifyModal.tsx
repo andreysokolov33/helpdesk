@@ -16,7 +16,8 @@ type Props = {
   initialCategoryParentId?: number | null;
   action: ClassifyAction;
   onClose: () => void;
-  onConfirm: (payload: { categoryId: number; leaf: TicketCategoryLeaf; comment: string }) => void;
+  onConfirm: (payload: { categoryId: number; leaf: TicketCategoryLeaf; comment: string }) => void | Promise<void>;
+  confirming?: boolean;
 };
 
 export default function TicketClassifyModal({
@@ -28,6 +29,7 @@ export default function TicketClassifyModal({
   action,
   onClose,
   onConfirm,
+  confirming = false,
 }: Props) {
   const [groups, setGroups] = useState<TicketCategoryGroup[]>([]);
   const [loading, setLoading] = useState(false);
@@ -101,11 +103,12 @@ export default function TicketClassifyModal({
   }
 
   function handleSubmit() {
+    if (confirming) return;
     if (!parentId || !childId || !selectedLeaf) {
       setWarn("Выберите категорию и подкатегорию");
       return;
     }
-    onConfirm({ categoryId: selectedLeaf.id, leaf: selectedLeaf, comment: comment.trim() });
+    void onConfirm({ categoryId: selectedLeaf.id, leaf: selectedLeaf, comment: comment.trim() });
   }
 
   return (
@@ -190,7 +193,11 @@ export default function TicketClassifyModal({
             <textarea
               className="clf-ta"
               value={comment}
-              placeholder="Краткое описание решения…"
+              placeholder={
+                action === "esc"
+                  ? "Комментарий для инженеров…"
+                  : "Краткое описание решения…"
+              }
               onChange={(e) => setComment(e.target.value)}
             />
           </div>
@@ -199,11 +206,16 @@ export default function TicketClassifyModal({
         </div>
 
         <div className="clf-ft">
-          <button type="button" className="clf-btn sec" onClick={onClose}>
+          <button type="button" className="clf-btn sec" onClick={onClose} disabled={confirming}>
             Отмена
           </button>
-          <button type="button" className="clf-btn pri" disabled={loading} onClick={handleSubmit}>
-            Подтвердить
+          <button
+            type="button"
+            className="clf-btn pri"
+            disabled={loading || confirming}
+            onClick={handleSubmit}
+          >
+            {confirming ? "Сохранение…" : "Подтвердить"}
           </button>
         </div>
       </div>

@@ -820,6 +820,19 @@
   background: var(--bg);
 }
 
+#tp-ticket .tk-side-validity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+#tp-ticket .tk-side-validity__remain {
+  color: var(--i3);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 #tp-ticket .tk-side-overrun {
   margin-top: 8px;
   padding: 8px 10px;
@@ -857,6 +870,91 @@
   color: var(--i3);
   line-height: 1.45;
   padding: 2px 0 4px;
+}
+
+#tp-ticket .tk-side-tariff-none {
+  margin-top: 2px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--i2);
+  text-align: center;
+  background: var(--nbg);
+  border: 1.5px dashed var(--ln);
+  border-radius: 10px;
+}
+
+.ch-tariff-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  line-height: 1.2;
+}
+
+[data-theme="light"] .ch-tariff-badge--frozen {
+  background: #e8f1ff;
+  color: #1450a0;
+  border-color: #c5daf5;
+}
+
+[data-theme="dark"] .ch-tariff-badge--frozen {
+  background: rgba(80, 160, 255, 0.16);
+  color: #9fd0ff;
+  border-color: rgba(120, 190, 255, 0.28);
+}
+
+[data-theme="light"] .ch-tariff-badge--active {
+  background: #e8f5ee;
+  color: #0d6b3d;
+  border-color: #bfe3cf;
+}
+
+[data-theme="dark"] .ch-tariff-badge--active {
+  background: rgba(63, 190, 114, 0.14);
+  color: #7ee0a4;
+  border-color: rgba(63, 190, 114, 0.28);
+}
+
+[data-theme="light"] .ch-tariff-badge--planned {
+  background: #fff8e6;
+  color: #8a5a00;
+  border-color: #f5e0a8;
+}
+
+[data-theme="dark"] .ch-tariff-badge--planned {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+[data-theme="light"] .ch-tariff-badge--inactive {
+  background: #eceef0;
+  color: #4a5560;
+  border-color: #d5d9de;
+}
+
+[data-theme="dark"] .ch-tariff-badge--inactive {
+  background: rgba(255, 255, 255, 0.06);
+  color: #b8c5d4;
+  border-color: var(--ln);
+}
+
+[data-theme="light"] .ch-tariff-badge--ended {
+  background: #fff0e8;
+  color: #a04808;
+  border-color: #f5d4a8;
+}
+
+[data-theme="dark"] .ch-tariff-badge--ended {
+  background: rgba(240, 168, 48, 0.14);
+  color: #ffc878;
+  border-color: rgba(240, 168, 48, 0.32);
 }
 
 #tp-ticket .tk-side-account .kv {
@@ -1292,6 +1390,14 @@
   white-space: nowrap;
 }
 
+#tp-ticket .tk-macros__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
 #tp-ticket .tk-macros__row {
   display: flex;
   align-items: center;
@@ -1300,6 +1406,29 @@
   min-width: 0;
   flex-wrap: nowrap;
   overflow: hidden;
+}
+
+#tp-ticket .tk-macros__mode {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+#tp-ticket .tk-macros__mode-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
 }
 
 #tp-ticket .tk-macros__chip {
@@ -1326,6 +1455,22 @@
 #tp-ticket .tk-macros__chip:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+#tp-ticket .tk-macros__chip--mode {
+  position: relative;
+  flex-shrink: 0;
+  border-color: var(--ac);
+  color: var(--ac);
+  font-weight: 600;
+}
+
+#tp-ticket .tk-macros__chip--mode:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ac) 12%, transparent);
+}
+
+#tp-ticket .tk-macros__chip--mode-active {
+  background: color-mix(in srgb, var(--ac) 18%, var(--p));
 }
 
 #tp-ticket .tk-macros__chip--more {
@@ -1401,6 +1546,71 @@
   padding: 10px 14px 12px;
   background: var(--p);
   border-top: 1px solid var(--ln);
+}
+
+#tp-ticket .tk-composer--comments {
+  background: color-mix(in srgb, #e8a838 14%, var(--p));
+  border-top-color: color-mix(in srgb, #c88612 35%, var(--ln));
+}
+
+[data-theme="dark"] #tp-ticket .tk-composer--comments {
+  background: color-mix(in srgb, #a66f10 22%, var(--p));
+  border-top-color: color-mix(in srgb, #c88612 40%, var(--ln));
+}
+
+#tp-ticket .tk-composer__box--plain {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+}
+
+#tp-ticket .tk-comment-input {
+  flex: 1;
+  min-height: 44px;
+  max-height: 160px;
+  resize: vertical;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--t1);
+  outline: none;
+}
+
+#tp-ticket .tk-comment-input::placeholder {
+  color: var(--i3);
+}
+
+#tp-ticket .tk-chat-main--comments .tk-chat-scroll {
+  background: color-mix(in srgb, #e8a838 12%, var(--bg));
+}
+
+[data-theme="dark"] #tp-ticket .tk-chat-main--comments .tk-chat-scroll {
+  background: color-mix(in srgb, #a66f10 18%, var(--bg));
+}
+
+#tp-ticket .tk-chat-main--comments .tk-chat-feed {
+  flex: 1;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+#tp-ticket .tk-chat-comments-banner {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9a6610;
+  text-align: center;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #e8a838 18%, var(--p));
+}
+
+[data-theme="dark"] #tp-ticket .tk-chat-comments-banner {
+  color: #e8b86a;
+  background: color-mix(in srgb, #a66f10 28%, var(--p));
 }
 
 /* ── Composer box (wraps RichEditor) ── */

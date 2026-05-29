@@ -10,9 +10,20 @@ type Props = {
   message: TicketMessage;
   onAction: (action: MessageMenuAction, message: TicketMessage) => void;
   onClose: () => void;
+  allowReply?: boolean;
+  /** Служебные комментарии: только изменить / удалить (своё сообщение). */
+  commentMode?: boolean;
 };
 
-export default function TicketMessageContextMenu({ x, y, message, onAction, onClose }: Props) {
+export default function TicketMessageContextMenu({
+  x,
+  y,
+  message,
+  onAction,
+  onClose,
+  allowReply = true,
+  commentMode = false,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const own = isOwnTicketMessage(message.side);
 
@@ -48,14 +59,34 @@ export default function TicketMessageContextMenu({ x, y, message, onAction, onCl
     el.style.top = `${top}px`;
   }, [x, y]);
 
+  if (commentMode) {
+    return (
+      <div ref={ref} className="tk-msg-menu" style={{ left: x, top: y }} role="menu">
+        <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("edit", message)}>
+          Изменить
+        </button>
+        <button
+          type="button"
+          className="tk-msg-menu__item tk-msg-menu__item--danger"
+          role="menuitem"
+          onClick={() => onAction("delete", message)}
+        >
+          Удалить
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div ref={ref} className="tk-msg-menu" style={{ left: x, top: y }} role="menu">
       <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("copy", message)}>
         Копировать
       </button>
-      <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("reply", message)}>
-        Ответить
-      </button>
+      {allowReply ? (
+        <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("reply", message)}>
+          Ответить
+        </button>
+      ) : null}
       {own ? (
         <>
           <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("edit", message)}>

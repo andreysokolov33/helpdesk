@@ -1,5 +1,5 @@
 import { formatDateTimeLocal } from "@/utils/dateTime";
-import { isStaffOutboundMessage } from "@/utils/ticketMessages";
+import { isOwnTicketMessage } from "@/utils/ticketMessages";
 
 type Props = {
   side: string;
@@ -8,7 +8,7 @@ type Props = {
 };
 
 export default function TicketDeliveryTicks({ side, recipientReadAtIso, ticketSource }: Props) {
-  if (!isStaffOutboundMessage(side)) return null;
+  if (!isOwnTicketMessage(side)) return null;
 
   const isLk = ticketSource === "lk";
   const read = Boolean(recipientReadAtIso?.trim());

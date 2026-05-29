@@ -33,9 +33,13 @@ export type TicketMessage = {
 
 export type TicketSubscriberTariffSummary = {
   connected: boolean;
+  state: string;
   tariff_name?: string | null;
   status_label: string;
   type_label?: string | null;
+  frozen_at_label?: string | null;
+  unfreeze_at_label?: string | null;
+  frozen_remaining_label?: string | null;
   remain_traffic_mb?: number | null;
   full_packet_mb?: number | null;
   jur_main_packet_mb?: number | null;
@@ -45,6 +49,8 @@ export type TicketSubscriberTariffSummary = {
   rate_down?: string | null;
   msk_reset?: string | null;
   local_reset?: string | null;
+  valid_date_label?: string | null;
+  remaining_label?: string | null;
 };
 
 export type TicketSubscriberAccountSummary = {
@@ -108,6 +114,26 @@ export async function linkTicketSubscriber(ticketId: number, userId: number): Pr
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export async function transferTicketToEngineers(
+  ticketId: number,
+  payload: { categoryId: number; comment?: string },
+): Promise<TicketDetail> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/transfer-to-engineers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      category_id: payload.categoryId,
+      comment: payload.comment?.trim() || null,
+    }),
+  });
+}
+
+export async function takeTicketBackToKs(ticketId: number): Promise<TicketDetail> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/take-back-to-ks`, {
+    method: "POST",
   });
 }
 

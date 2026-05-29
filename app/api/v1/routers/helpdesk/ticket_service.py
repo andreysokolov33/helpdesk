@@ -25,8 +25,10 @@ from app.constants import (
 )
 from app.models.users import TrackerTickets
 from app.models.users import (
+    TrackerComments,
     TrackerMessageAttachment,
     TrackerMessages,
+    TrackerTicketLineHistory,
     UserMailAttachment,
 )
 from app.api.v1.routers.helpdesk import user_profile_service as profile_svc
@@ -1335,6 +1337,252 @@ async def link_ticket_subscriber(
     return await load_ticket_detail(db, ticket_id, viewer_id)
 
 
+async def _close_active_line_segment(
+    db: AsyncSession,
+    ticket_id: int,
+    now: datetime,
+) -> None:
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_ticket_line_history
+            SET end_time = :now
+            WHERE id = (
+                SELECT id FROM users.tracker_ticket_line_history
+                WHERE ticket_id = :ticket_id
+                  AND support_line IS NOT NULL
+                  AND end_time IS NULL
+                ORDER BY id DESC
+                LIMIT 1
+            )
+            """
+        ),
+        {"ticket_id": ticket_id, "now": now},
+    )
+
+
+def _add_line_history_event(
+    db: AsyncSession,
+    *,
+    ticket_id: int,
+    changed_by: int,
+    now: datetime,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    db.add(
+        TrackerTicketLineHistory(
+            ticket_id=ticket_id,
+            support_line=None,
+            start_time=now,
+            changed_by=changed_by,
+            event_type=event_type,
+            payload=payload,
+        )
+    )
+
+
+def _open_line_segment(
+    db: AsyncSession,
+    *,
+    ticket_id: int,
+    support_line: int,
+    changed_by: int,
+    now: datetime,
+) -> None:
+    db.add(
+        TrackerTicketLineHistory(
+            ticket_id=ticket_id,
+            support_line=support_line,
+            start_time=now,
+            changed_by=changed_by,
+            state="active",
+        )
+    )
+
+
+async def _change_ticket_support_line(
+    db: AsyncSession,
+    *,
+    ticket_id: int,
+    from_line: int,
+    to_line: int,
+    changed_by: int,
+    now: datetime,
+) -> None:
+    await _close_active_line_segment(db, ticket_id, now)
+    _open_line_segment(
+        db,
+        ticket_id=ticket_id,
+        support_line=to_line,
+        changed_by=changed_by,
+        now=now,
+    )
+    _add_line_history_event(
+        db,
+        ticket_id=ticket_id,
+        changed_by=changed_by,
+        now=now,
+        event_type="line_changed",
+        payload={"from_line": from_line, "to_line": to_line},
+    )
+
+
+async def _validate_leaf_category(
+    db: AsyncSession,
+    *,
+    category_id: int,
+    catalog_source: str,
+) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, parent_id, name
+                FROM users.ticket_categories
+                WHERE id = :cid
+                  AND is_active = true
+                  AND source = :src
+                  AND parent_id IS NOT NULL
+                """
+            ),
+            {"cid": category_id, "src": catalog_source},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=400, detail="Некорректная категория для этого тикета")
+    return dict(row)
+
+
+async def _load_ticket_row_for_line_ops(db: AsyncSession, ticket_id: int) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, support_line, status::text AS status, source, category_id
+                FROM users.tracker_tickets
+                WHERE id = :id
+                """
+            ),
+            {"id": ticket_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    status = str(row["status"] or "")
+    if status in TRACKER_CLOSED_STATUSES:
+        raise HTTPException(status_code=400, detail="Тикет уже закрыт")
+    return dict(row)
+
+
+async def transfer_ticket_to_engineers(
+    db: AsyncSession,
+    ticket_id: int,
+    category_id: int,
+    comment: str | None,
+    author_id: int,
+) -> dict[str, Any]:
+    """Передача тикета на линию инженеров (support_line=2) с опциональной классификацией."""
+    row = await _load_ticket_row_for_line_ops(db, ticket_id)
+    from_line = int(row["support_line"] or 1)
+    if from_line != 1:
+        raise HTTPException(status_code=400, detail="Тикет уже на линии инженеров")
+
+    catalog = catalog_source_for_ticket(row.get("source"))
+    await _validate_leaf_category(db, category_id=category_id, catalog_source=catalog)
+
+    now = datetime.now(timezone.utc)
+    old_category_id = row.get("category_id")
+    new_category_id = int(category_id)
+
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET support_line = 2,
+                category_id = :category_id,
+                assigned_to = NULL,
+                updated_at = :now
+            WHERE id = :ticket_id
+            """
+        ),
+        {"category_id": new_category_id, "now": now, "ticket_id": ticket_id},
+    )
+
+    await _change_ticket_support_line(
+        db,
+        ticket_id=ticket_id,
+        from_line=from_line,
+        to_line=2,
+        changed_by=author_id,
+        now=now,
+    )
+
+    if old_category_id != new_category_id:
+        _add_line_history_event(
+            db,
+            ticket_id=ticket_id,
+            changed_by=author_id,
+            now=now,
+            event_type="category_changed",
+            payload={
+                "from_category_id": int(old_category_id) if old_category_id is not None else None,
+                "to_category_id": new_category_id,
+            },
+        )
+
+    text_clean = (comment or "").strip()
+    if text_clean:
+        db.add(
+            TrackerComments(
+                ticket_id=ticket_id,
+                author_id=author_id,
+                body=text_clean,
+            )
+        )
+
+    await db.commit()
+    return await load_ticket_detail(db, ticket_id, author_id)
+
+
+async def take_ticket_back_to_ks(
+    db: AsyncSession,
+    ticket_id: int,
+    author_id: int,
+) -> dict[str, Any]:
+    """Вернуть тикет на линию КС (support_line=1) и взять в работу."""
+    row = await _load_ticket_row_for_line_ops(db, ticket_id)
+    from_line = int(row["support_line"] or 1)
+    if from_line != 2:
+        raise HTTPException(status_code=400, detail="Тикет не на линии инженеров")
+
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET support_line = 1,
+                assigned_to = :assigned_to,
+                updated_at = :now
+            WHERE id = :ticket_id
+            """
+        ),
+        {"assigned_to": author_id, "now": now, "ticket_id": ticket_id},
+    )
+
+    await _change_ticket_support_line(
+        db,
+        ticket_id=ticket_id,
+        from_line=from_line,
+        to_line=1,
+        changed_by=author_id,
+        now=now,
+    )
+
+    await db.commit()
+    return await load_ticket_detail(db, ticket_id, author_id)
+
+
 async def _mail_link_bounds(db: AsyncSession, ticket_id: int) -> tuple[int | None, int | None]:
     row = (
         await db.execute(
@@ -2449,3 +2697,298 @@ async def detach_ticket_attachment(
                 os.remove(abs_path)
         except OSError:
             pass
+
+
+def _comment_staff_label(role: str | None) -> str:
+    if (role or "").strip().lower() == "engineer":
+        return "Инженер"
+    return "Контактный сервис"
+
+
+def _comment_side(*, author_id: int, viewer_id: int, role: str | None) -> tuple[str, str]:
+    if author_id == viewer_id:
+        return ("me", "Вы")
+    label = _comment_staff_label(role)
+    if (role or "").strip().lower() == "engineer":
+        return ("engineer", label)
+    return ("support", label)
+
+
+def _comment_row_to_item(row: Any, viewer_id: int) -> dict[str, Any]:
+    author_id = int(row["author_id"])
+    role = row.get("author_role")
+    side, author_name = _comment_side(author_id=author_id, viewer_id=viewer_id, role=role)
+    updated = row.get("updated_ad")
+    edit_meta = _message_edit_meta(updated_at=updated if isinstance(updated, datetime) else None)
+    return {
+        "id": int(row["id"]),
+        "side": side,
+        "text": (row.get("text") or "").strip(),
+        "author_name": author_name,
+        "is_me": author_id == viewer_id,
+        "created_at_iso": _iso(row.get("created_at")),
+        **edit_meta,
+    }
+
+
+async def _assert_lk_ticket_for_comments(db: AsyncSession, ticket_id: int) -> None:
+    row = (
+        await db.execute(
+            text("SELECT COALESCE(source, '') AS source FROM users.tracker_tickets WHERE id = :id"),
+            {"id": ticket_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    if not is_lk_ticket_source(row.get("source")):
+        raise HTTPException(status_code=400, detail="Комментарии доступны только для тикетов ЛК")
+
+
+def _validate_comment_text(text: str) -> None:
+    clean = (text or "").strip()
+    if not clean:
+        raise HTTPException(status_code=400, detail="Введите текст комментария")
+    if len(clean) > 8000:
+        raise HTTPException(status_code=400, detail="Комментарий слишком длинный")
+
+
+_COMMENT_SELECT = """
+    SELECT c.id, c.author_id, c.text, c.created_at, c.updated_ad,
+           su.role AS author_role
+    FROM users.tracker_comments c
+    LEFT JOIN users.skystream_users su ON su.id = c.author_id
+    WHERE c.ticket_id = :ticket_id
+"""
+
+
+async def list_ticket_comments(
+    db: AsyncSession,
+    ticket_id: int,
+    viewer_id: int,
+    *,
+    limit: int = 40,
+    before_id: int | None = None,
+    after_id: int | None = None,
+    since_id: int = 0,
+) -> tuple[list[dict[str, Any]], bool, bool]:
+    await _assert_lk_ticket_for_comments(db, ticket_id)
+    lim = max(1, min(int(limit), 100))
+
+    if since_id > 0 and before_id is None and after_id is None:
+        rows = (
+            await db.execute(
+                text(
+                    f"""
+                    {_COMMENT_SELECT}
+                      AND c.id > :since_id
+                    ORDER BY c.id ASC
+                    """
+                ),
+                {"ticket_id": ticket_id, "since_id": since_id},
+            )
+        ).mappings().all()
+        items = [_comment_row_to_item(r, viewer_id) for r in rows]
+        return items, False, False
+
+    if before_id is not None and before_id > 0:
+        rows = (
+            await db.execute(
+                text(
+                    f"""
+                    {_COMMENT_SELECT}
+                      AND c.id < :before_id
+                    ORDER BY c.id DESC
+                    LIMIT :lim
+                    """
+                ),
+                {"ticket_id": ticket_id, "before_id": before_id, "lim": lim},
+            )
+        ).mappings().all()
+        rows = list(reversed(rows))
+        has_older = bool(
+            (
+                await db.execute(
+                    text(
+                        f"""
+                        SELECT 1 FROM users.tracker_comments c
+                        WHERE c.ticket_id = :ticket_id AND c.id < :first_id
+                        LIMIT 1
+                        """
+                    ),
+                    {"ticket_id": ticket_id, "first_id": int(rows[0]["id"]) if rows else before_id},
+                )
+            ).scalar()
+        )
+        items = [_comment_row_to_item(r, viewer_id) for r in rows]
+        return items, has_older, False
+
+    if after_id is not None and after_id > 0:
+        rows = (
+            await db.execute(
+                text(
+                    f"""
+                    {_COMMENT_SELECT}
+                      AND c.id > :after_id
+                    ORDER BY c.id ASC
+                    LIMIT :lim
+                    """
+                ),
+                {"ticket_id": ticket_id, "after_id": after_id, "lim": lim},
+            )
+        ).mappings().all()
+        has_newer = bool(
+            (
+                await db.execute(
+                    text(
+                        f"""
+                        SELECT 1 FROM users.tracker_comments c
+                        WHERE c.ticket_id = :ticket_id AND c.id > :last_id
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "ticket_id": ticket_id,
+                        "last_id": int(rows[-1]["id"]) if rows else after_id,
+                    },
+                )
+            ).scalar()
+        )
+        items = [_comment_row_to_item(r, viewer_id) for r in rows]
+        return items, False, has_newer
+
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                {_COMMENT_SELECT}
+                ORDER BY c.id DESC
+                LIMIT :lim
+                """
+            ),
+            {"ticket_id": ticket_id, "lim": lim},
+        )
+    ).mappings().all()
+    rows = list(reversed(rows))
+    has_older = False
+    if rows:
+        has_older = bool(
+            (
+                await db.execute(
+                    text(
+                        """
+                        SELECT 1 FROM users.tracker_comments c
+                        WHERE c.ticket_id = :ticket_id AND c.id < :first_id
+                        LIMIT 1
+                        """
+                    ),
+                    {"ticket_id": ticket_id, "first_id": int(rows[0]["id"])},
+                )
+            ).scalar()
+        )
+    items = [_comment_row_to_item(r, viewer_id) for r in rows]
+    return items, has_older, False
+
+
+async def send_ticket_comment(
+    db: AsyncSession,
+    ticket_id: int,
+    author_id: int,
+    text_body: str,
+) -> dict[str, Any]:
+    await _assert_lk_ticket_for_comments(db, ticket_id)
+    _validate_comment_text(text_body)
+    clean = text_body.strip()
+    now = datetime.now(timezone.utc)
+    row = (
+        await db.execute(
+            text(
+                """
+                INSERT INTO users.tracker_comments (ticket_id, author_id, text)
+                VALUES (:ticket_id, :author_id, :text)
+                RETURNING id
+                """
+            ),
+            {"ticket_id": ticket_id, "author_id": author_id, "text": clean},
+        )
+    ).mappings().first()
+    await db.execute(
+        text("UPDATE users.tracker_tickets SET updated_at = :now WHERE id = :tid"),
+        {"now": now, "tid": ticket_id},
+    )
+    await db.commit()
+    cid = int(row["id"])
+    loaded = (
+        await db.execute(
+            text(f"{_COMMENT_SELECT} AND c.id = :cid"),
+            {"ticket_id": ticket_id, "cid": cid},
+        )
+    ).mappings().first()
+    if not loaded:
+        raise HTTPException(status_code=500, detail="Не удалось создать комментарий")
+    return _comment_row_to_item(loaded, author_id)
+
+
+async def edit_ticket_comment(
+    db: AsyncSession,
+    ticket_id: int,
+    comment_id: int,
+    author_id: int,
+    text_body: str,
+) -> dict[str, Any]:
+    await _assert_lk_ticket_for_comments(db, ticket_id)
+    _validate_comment_text(text_body)
+    clean = text_body.strip()
+    now = datetime.now(timezone.utc)
+    updated = (
+        await db.execute(
+            text(
+                """
+                UPDATE users.tracker_comments
+                SET text = :text, updated_ad = :now
+                WHERE id = :cid AND ticket_id = :tid AND author_id = :aid
+                RETURNING id
+                """
+            ),
+            {"text": clean, "now": now, "cid": comment_id, "tid": ticket_id, "aid": author_id},
+        )
+    ).mappings().first()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Комментарий не найден или нет прав на изменение")
+    await db.execute(
+        text("UPDATE users.tracker_tickets SET updated_at = :now WHERE id = :tid"),
+        {"now": now, "tid": ticket_id},
+    )
+    await db.commit()
+    loaded = (
+        await db.execute(
+            text(f"{_COMMENT_SELECT} AND c.id = :cid"),
+            {"ticket_id": ticket_id, "cid": comment_id},
+        )
+    ).mappings().first()
+    return _comment_row_to_item(loaded, author_id)
+
+
+async def delete_ticket_comment(
+    db: AsyncSession,
+    ticket_id: int,
+    comment_id: int,
+    author_id: int,
+) -> None:
+    await _assert_lk_ticket_for_comments(db, ticket_id)
+    res = await db.execute(
+        text(
+            """
+            DELETE FROM users.tracker_comments
+            WHERE id = :cid AND ticket_id = :tid AND author_id = :aid
+            """
+        ),
+        {"cid": comment_id, "tid": ticket_id, "aid": author_id},
+    )
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Комментарий не найден или нет прав на удаление")
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        text("UPDATE users.tracker_tickets SET updated_at = :now WHERE id = :tid"),
+        {"now": now, "tid": ticket_id},
+    )
+    await db.commit()

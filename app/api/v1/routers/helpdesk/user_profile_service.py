@@ -39,6 +39,7 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     format_seconds_remaining,
     format_speed_display,
     format_valid_date_countdown,
+    format_valid_date_remaining,
     jur_frozen_traffic_mb,
     jur_traffic_overrun_mb,
     parse_speed_line,
@@ -280,6 +281,14 @@ def _has_radusergroup(trow: Optional[dict[str, Any]]) -> bool:
     return bool(((trow or {}).get("rad_groupname") or "").strip())
 
 
+def _is_limited_tariff_ended(trow: Optional[dict[str, Any]]) -> bool:
+    """Лимитный тариф: groupname=disabled в radusergroup — пакет исчерпан, услуга ещё до valid_date."""
+    if not trow:
+        return False
+    gn = ((trow.get("rad_groupname") or "").strip().lower())
+    return (trow.get("real_type") or "").strip() == "default" and gn == "disabled"
+
+
 def _build_tariff(
     trow: Optional[dict[str, Any]],
     freeze: Optional[dict[str, Any]],
@@ -358,9 +367,21 @@ def _build_tariff(
         msk_reset, local_reset = traffic_reset_labels(trow.get("msk_hour"), trow.get("gmt"))
         renew = trow.get("traffic_renew_count")
 
-    state = "active" if is_active else "inactive"
-    if planned:
+    tariff_ended = _is_limited_tariff_ended(trow)
+    if tariff_ended:
+        state = "ended"
+        is_active = False
+    elif planned:
         state = "planned_freeze"
+    elif is_active:
+        state = "active"
+    else:
+        state = "inactive"
+
+    remain_mb = bytes_to_mb(remain)
+    full_mb = bytes_to_mb(full)
+    if tariff_ended:
+        remain_mb = 0.0
 
     return ProfileTariffActive(
         state=state,
@@ -370,10 +391,11 @@ def _build_tariff(
         rate_up=format_speed_display(up),
         rate_down=format_speed_display(down),
         speed_unlimited=real_type == "unlim_fap",
-        remain_traffic_mb=bytes_to_mb(remain),
-        full_packet_mb=bytes_to_mb(full),
+        remain_traffic_mb=remain_mb,
+        full_packet_mb=full_mb,
         disconnect_at_label=disconnect_label,
         valid_date_label=format_dt_msk(valid_date),
+        remaining_label=format_valid_date_remaining(valid_date),
         jur_main_packet_mb=jur_main_mb,
         jur_dop_packet_mb=jur_dop_mb,
         overrun_mb=overrun,
@@ -687,16 +709,24 @@ def _profile_tariff_to_ticket_summary(
     tariff: Optional[ProfileTariffActive],
 ) -> TicketSubscriberTariffSummary:
     if not tariff:
-        return TicketSubscriberTariffSummary(connected=False, status_label="Не подключен")
+        return TicketSubscriberTariffSummary(
+            connected=False,
+            state="none",
+            status_label="Нет активного тарифа",
+        )
 
-    if tariff.state == "frozen":
+    state = tariff.state
+    if state == "frozen":
         status_label = "Заморожен"
-    elif tariff.state == "planned_freeze":
+    elif state == "planned_freeze":
         status_label = "Запланирована заморозка"
+    elif state == "ended":
+        status_label = "Тариф закончился"
     elif tariff.is_active:
         status_label = "Активен"
     else:
         status_label = "Неактивен"
+        state = "inactive"
 
     type_label = "Безлимитный" if tariff.speed_unlimited else "Лимитный"
     rate_up = tariff.rate_up if tariff.rate_up and tariff.rate_up != "—" else None
@@ -704,9 +734,13 @@ def _profile_tariff_to_ticket_summary(
 
     return TicketSubscriberTariffSummary(
         connected=True,
+        state=state,
         tariff_name=tariff.tariff_name,
         status_label=status_label,
         type_label=type_label,
+        frozen_at_label=tariff.frozen_at,
+        unfreeze_at_label=tariff.unfreeze_at,
+        frozen_remaining_label=tariff.frozen_remaining_label,
         remain_traffic_mb=tariff.remain_traffic_mb,
         full_packet_mb=tariff.full_packet_mb,
         jur_main_packet_mb=tariff.jur_main_packet_mb,
@@ -716,6 +750,8 @@ def _profile_tariff_to_ticket_summary(
         rate_down=rate_down,
         msk_reset=tariff.msk_reset,
         local_reset=tariff.local_reset,
+        valid_date_label=tariff.valid_date_label,
+        remaining_label=tariff.remaining_label,
     )
 
 

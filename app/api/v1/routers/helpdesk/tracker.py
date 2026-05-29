@@ -12,12 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
 from app.api.v1.routers.helpdesk.schemas import (
     LinkTicketSubscriberRequest,
+    TransferTicketToEngineersRequest,
     RegisterCallRequest,
     RegisterCallResponse,
     TicketCategoriesResponse,
     TicketCategoryGroup,
     TicketCategoryLeaf,
     TicketDetailResponse,
+    TicketCommentEditRequest,
+    TicketCommentItem,
+    TicketCommentSendResponse,
+    TicketCommentsResponse,
     TicketMarkReadRequest,
     TicketMessageEditRequest,
     TicketMessageItem,
@@ -381,6 +386,125 @@ async def link_ticket_subscriber(
         int(user["user_id"]),
     )
     return TicketDetailResponse(**data)
+
+
+@router.post("/{ticket_id}/transfer-to-engineers", response_model=TicketDetailResponse)
+async def transfer_ticket_to_engineers(
+    ticket_id: int,
+    payload: TransferTicketToEngineersRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketDetailResponse:
+    """Передача тикета на линию инженеров (support_line=2) с классификацией."""
+    data = await ticket_svc.transfer_ticket_to_engineers(
+        db,
+        ticket_id,
+        int(payload.category_id),
+        payload.comment,
+        int(user["user_id"]),
+    )
+    return TicketDetailResponse(**data)
+
+
+@router.post("/{ticket_id}/take-back-to-ks", response_model=TicketDetailResponse)
+async def take_ticket_back_to_ks(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketDetailResponse:
+    """Вернуть тикет на линию КС (support_line=1) и взять в работу."""
+    data = await ticket_svc.take_ticket_back_to_ks(
+        db,
+        ticket_id,
+        int(user["user_id"]),
+    )
+    return TicketDetailResponse(**data)
+
+
+@router.get("/{ticket_id}/comments", response_model=TicketCommentsResponse)
+async def get_ticket_comments(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+    limit: int = Query(20, ge=1, le=100, description="Размер порции"),
+    before_id: int | None = Query(None, ge=1, description="Комментарии старее id"),
+    after_id: int | None = Query(None, ge=1, description="Комментарии новее id"),
+    since_id: int = Query(0, ge=0, description="Поллинг: id > since_id"),
+) -> TicketCommentsResponse:
+    if before_id is not None and after_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Укажите не более одного из before_id и after_id",
+        )
+    if since_id > 0 and (before_id is not None or after_id is not None):
+        raise HTTPException(
+            status_code=400,
+            detail="since_id нельзя сочетать с before_id или after_id",
+        )
+    raw, has_older, has_newer = await ticket_svc.list_ticket_comments(
+        db,
+        ticket_id,
+        int(user["user_id"]),
+        limit=limit,
+        before_id=before_id,
+        after_id=after_id,
+        since_id=since_id,
+    )
+    return TicketCommentsResponse(
+        comments=[TicketCommentItem(**c) for c in raw],
+        has_older=has_older,
+        has_newer=has_newer,
+    )
+
+
+@router.post("/{ticket_id}/comments", response_model=TicketCommentSendResponse)
+async def send_ticket_comment(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+    text: str = Form(""),
+) -> TicketCommentSendResponse:
+    raw = await ticket_svc.send_ticket_comment(
+        db,
+        ticket_id,
+        int(user["user_id"]),
+        text,
+    )
+    return TicketCommentSendResponse(comment=TicketCommentItem(**raw))
+
+
+@router.patch("/{ticket_id}/comments/{comment_id}", response_model=TicketCommentItem)
+async def edit_ticket_comment(
+    ticket_id: int,
+    comment_id: int,
+    payload: TicketCommentEditRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketCommentItem:
+    raw = await ticket_svc.edit_ticket_comment(
+        db,
+        ticket_id,
+        comment_id,
+        int(user["user_id"]),
+        payload.text,
+    )
+    return TicketCommentItem(**raw)
+
+
+@router.delete("/{ticket_id}/comments/{comment_id}")
+async def delete_ticket_comment(
+    ticket_id: int,
+    comment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> dict[str, str]:
+    await ticket_svc.delete_ticket_comment(
+        db,
+        ticket_id,
+        comment_id,
+        int(user["user_id"]),
+    )
+    return {"status": "ok"}
 
 
 @router.get("/{ticket_id}/messages", response_model=TicketMessagesResponse)

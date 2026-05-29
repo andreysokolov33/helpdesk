@@ -28,7 +28,7 @@ class ProfileOnline(BaseModel):
 
 
 class ProfileTariffActive(BaseModel):
-    state: Literal["active", "inactive", "frozen", "planned_freeze"]
+    state: Literal["active", "inactive", "frozen", "planned_freeze", "ended"]
     tariff_name: str
     real_type: Optional[str] = None
     is_active: bool
@@ -45,6 +45,7 @@ class ProfileTariffActive(BaseModel):
     local_reset: Optional[str] = None
     valid_date_label: Optional[str] = None
     disconnect_at_label: Optional[str] = None
+    remaining_label: Optional[str] = None
     planned_freeze_at: Optional[str] = None
     frozen_at: Optional[str] = None
     unfreeze_at: Optional[str] = None
@@ -78,9 +79,15 @@ class TicketSubscriberTariffSummary(BaseModel):
     """Краткая информация о тарифе для сайдбара тикета."""
 
     connected: bool = False
+    """Есть подключённый тариф в radusergroup / freeze."""
+    state: str = "none"
+    """none | active | frozen | planned_freeze | inactive | ended — для бейджа в UI."""
     tariff_name: Optional[str] = None
     status_label: str = "Не подключен"
     type_label: Optional[str] = None
+    frozen_at_label: Optional[str] = None
+    unfreeze_at_label: Optional[str] = None
+    frozen_remaining_label: Optional[str] = None
     remain_traffic_mb: Optional[float] = None
     full_packet_mb: Optional[float] = None
     jur_main_packet_mb: Optional[float] = None
@@ -90,6 +97,10 @@ class TicketSubscriberTariffSummary(BaseModel):
     rate_down: Optional[str] = None
     msk_reset: Optional[str] = None
     local_reset: Optional[str] = None
+    valid_date_label: Optional[str] = None
+    """Дата окончания тарифа (МСК), из user_service_date.valid_date."""
+    remaining_label: Optional[str] = None
+    """Остаток срока: «осталось N дн HH:MM»."""
 
 
 class TicketSubscriberAccountSummary(BaseModel):

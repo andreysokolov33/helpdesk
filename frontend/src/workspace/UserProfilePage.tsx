@@ -58,6 +58,10 @@ function fmtTrafficMb(n: number) {
   return n.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 
+function hasJurDopPacket(mb: number | null | undefined): boolean {
+  return mb != null && mb > 0;
+}
+
 function statusClass(us: number | null) {
   if (us === 3) return "up-badge arch";
   if (us === 2) return "up-badge frz";
@@ -347,10 +351,17 @@ function TariffCard({
               <span className="up-v">{tariff.jur_main_packet_mb.toLocaleString("ru-RU")} МБ</span>
             </div>
           ) : null}
-          {tariff.jur_dop_packet_mb != null ? (
+          {(isJuridical === 2 && !tariff.speed_unlimited) ||
+          hasJurDopPacket(tariff.jur_dop_packet_mb) ? (
             <div className="up-kv">
-              <span className="up-k">Доп. пакет (ЮЛ)</span>
-              <span className="up-v">{tariff.jur_dop_packet_mb.toLocaleString("ru-RU")} МБ</span>
+              <span className="up-k">
+                {hasJurDopPacket(tariff.jur_dop_packet_mb) ? "Доп. пакет (ЮЛ)" : "Доп. пакет"}
+              </span>
+              <span className="up-v">
+                {hasJurDopPacket(tariff.jur_dop_packet_mb)
+                  ? `${tariff.jur_dop_packet_mb!.toLocaleString("ru-RU")} МБ`
+                  : "не предусмотрен"}
+              </span>
             </div>
           ) : null}
           {tariff.overrun_mb != null && tariff.overrun_mb > 0 ? (

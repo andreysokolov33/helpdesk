@@ -90,6 +90,15 @@ class LinkTicketSubscriberRequest(BaseModel):
     user_id: int = Field(..., ge=1, description="ID выбранного абонента")
 
 
+class TransferTicketToEngineersRequest(BaseModel):
+    category_id: int = Field(..., ge=1, description="ID подкатегории (лист ticket_categories)")
+    comment: str | None = Field(
+        None,
+        max_length=8000,
+        description="Комментарий при передаче инженерам (необязательно)",
+    )
+
+
 class DeskSearchKbHit(BaseModel):
     """Заглушка под будущий поиск по базе знаний."""
 
@@ -187,6 +196,31 @@ class TicketMessagesResponse(BaseModel):
 
 class TicketMarkReadRequest(BaseModel):
     message_ids: list[int] = Field(default_factory=list)
+
+
+class TicketCommentItem(BaseModel):
+    id: int
+    side: str
+    text: str
+    author_name: str
+    is_me: bool = False
+    created_at_iso: str | None = None
+    is_edited: bool = False
+    updated_at_iso: str | None = None
+
+
+class TicketCommentsResponse(BaseModel):
+    comments: list[TicketCommentItem]
+    has_older: bool = False
+    has_newer: bool = False
+
+
+class TicketCommentEditRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=8000)
+
+
+class TicketCommentSendResponse(BaseModel):
+    comment: TicketCommentItem
 
 
 class TicketSendMessageResponse(BaseModel):

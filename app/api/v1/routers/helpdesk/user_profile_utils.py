@@ -262,6 +262,23 @@ def format_valid_date_countdown(valid_date: datetime | None, *, now: datetime | 
     return f"через {mins} мин."
 
 
+def format_valid_date_remaining(valid_date: datetime | None, *, now: datetime | None = None) -> str | None:
+    """Остаток срока тарифа: «осталось N дн HH:MM»."""
+    if not valid_date:
+        return None
+    ref = now or datetime.now(timezone.utc)
+    end = valid_date if valid_date.tzinfo else valid_date.replace(tzinfo=timezone.utc)
+    end = end.astimezone(timezone.utc)
+    ref = ref.astimezone(timezone.utc)
+    total_sec = int((end - ref).total_seconds())
+    if total_sec <= 0:
+        return "срок действия истёк"
+    days, rem = divmod(total_sec, 86400)
+    hours = rem // 3600
+    mins = (rem % 3600) // 60
+    return f"осталось {days} дн {hours:02d}:{mins:02d}"
+
+
 def coalesce_int(*values: int | None) -> int:
     for v in values:
         if v is not None:

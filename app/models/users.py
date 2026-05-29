@@ -1013,6 +1013,30 @@ class TrackerMessagesReads(Base):
         comment='Время прочтения')
 
 
+class TrackerComments(Base):
+    __tablename__ = 'tracker_comments'
+    __table_args__ = (
+        ForeignKeyConstraint(['author_id'], ['users.skystream_users.id'],
+                             ondelete='CASCADE', name='fk_tracker_comments_author'),
+        ForeignKeyConstraint(['ticket_id'], ['users.tracker_tickets.id'],
+                             ondelete='CASCADE', name='fk_tracker_comments_ticket'),
+        PrimaryKeyConstraint('id', name='tracker_comments_pkey'),
+        Index('idx_tracker_comments_author_id', 'author_id'),
+        Index('idx_tracker_comments_created_at', 'created_at'),
+        Index('idx_tracker_comments_ticket_id', 'ticket_id'),
+        {'schema': 'users'},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=False), primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    author_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    body: Mapped[str] = mapped_column("text", Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(True), nullable=False, server_default=text('now()'))
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        "updated_ad", DateTime(True), nullable=True)
+
+
 class TrackerTicketLineHistory(Base):
     __tablename__ = 'tracker_ticket_line_history'
     __table_args__ = (
