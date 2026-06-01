@@ -11,9 +11,9 @@ services:
       PORT: 8000
     volumes:
       - helpdesk_logs:/app/logs
-      - helpdesk_uploads:/app/uploads
+      # Медиа чата на диске проекта (nginx alias → ./uploads)
+      - ./uploads:/app/uploads
     restart: unless-stopped
 
 volumes:
   helpdesk_logs:
-  helpdesk_uploads:
