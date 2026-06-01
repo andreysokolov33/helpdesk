@@ -495,6 +495,15 @@ export default function UserProfilePage() {
   }, [reload]);
 
   useEffect(() => {
+    if (!Number.isFinite(uid)) return;
+    const prev = document.title;
+    document.title = `Профиль ${uid}`;
+    return () => {
+      document.title = prev;
+    };
+  }, [uid]);
+
+  useEffect(() => {
     const el = profileWrapRef.current;
     if (!el) return;
 
