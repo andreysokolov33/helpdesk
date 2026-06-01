@@ -97,11 +97,25 @@ export type ProfileTicketListResponse = {
   items: ProfileTicket[];
 };
 
+function formatApiDetail(detail: unknown, status: number): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((item) => {
+      if (item && typeof item === "object" && "msg" in item) {
+        return String((item as { msg: string }).msg);
+      }
+      return String(item);
+    });
+    if (msgs.length) return msgs.join("; ");
+  }
+  return `HTTP ${status}`;
+}
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { credentials: "include", ...init });
-  const data = (await res.json().catch(() => ({}))) as { detail?: string } & Partial<T>;
+  const data = (await res.json().catch(() => ({}))) as { detail?: unknown } & Partial<T>;
   if (!res.ok) {
-    throw new Error(typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`);
+    throw new Error(formatApiDetail(data.detail, res.status));
   }
   return data as T;
 }
@@ -284,4 +298,25 @@ export function fetchPasswordResetPoll(userId: number, codeId: number): Promise<
 
 export function generatePasswordResetCode(userId: number): Promise<PasswordResetGenerateResult> {
   return api(`/api/v1/helpdesk/users/${userId}/password-reset/generate`, { method: "POST" });
+}
+
+export type TrafficDetailSendRequest = {
+  date_from: string;
+  date_to: string;
+};
+
+export type TrafficDetailSendResponse = {
+  message: string;
+  email: string;
+};
+
+export function postTrafficDetailSend(
+  userId: number,
+  body: TrafficDetailSendRequest,
+): Promise<TrafficDetailSendResponse> {
+  return api<TrafficDetailSendResponse>(`/api/v1/helpdesk/users/${userId}/traffic-detail/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

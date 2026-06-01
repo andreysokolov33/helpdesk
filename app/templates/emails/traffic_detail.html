@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 0; width: 100% !important; background-color: #F4F7F9; }
+        .body-table { font-family: 'Manrope', 'Segoe UI', Arial, sans-serif; color: #0A1E36; }
+        .content-card { background-color: #FFFFFF; border-radius: 24px; padding: 45px; }
+        .h1 { font-size: 24px; font-weight: 800; line-height: 32px; margin: 0 0 20px 0; }
+        .text { font-size: 16px; font-weight: 400; line-height: 26px; color: #5C6A7A; margin: 0 0 20px 0; }
+        .period-box {
+            background-color: #F0F4F8; border: 2px dashed #0A1E36; border-radius: 16px;
+            padding: 24px 30px; text-align: center; margin: 24px 0;
+        }
+        .period-label {
+            font-size: 12px; text-transform: uppercase; font-weight: 700;
+            color: #0A1E36; margin: 0 0 8px 0; letter-spacing: 1px;
+        }
+        .period-value { font-size: 22px; font-weight: 800; color: #FF1300; margin: 0; }
+        .sheets-list { margin: 0; padding-left: 22px; font-size: 15px; line-height: 26px; color: #5C6A7A; }
+        .sheets-list li { margin-bottom: 8px; }
+        .info-note {
+            background-color: #FDF2F2; border-left: 4px solid #FF1300;
+            padding: 18px 20px; border-radius: 0 12px 12px 0; margin-top: 24px;
+        }
+        .info-note p { margin: 0; font-size: 14px; line-height: 22px; color: #5C6A7A; }
+        .footer-text { font-size: 12px; color: #94A3B8; line-height: 18px; text-align: center; }
+    </style>
+</head>
+<body class="body-table">
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#F4F7F9">
+        <tr>
+            <td align="center" style="padding: 40px 10px;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px;">
+                    <tr>
+                        <td align="center" style="padding-bottom: 35px;">
+                            <table border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td style="font-size: 40px; font-weight: 600; color: #0A1E36; letter-spacing: -1.5px;">WIFI</td>
+                                    <td style="padding: 0 8px;">
+                                        <div style="width: 50px; height: 50px; border-radius: 50%; background: radial-gradient(circle at center, #FF1300 20%, transparent 25%), conic-gradient(from 0deg, #FF1300, transparent);"></div>
+                                    </td>
+                                    <td style="font-size: 40px; font-weight: 600; color: #0A1E36; letter-spacing: -1.5px;">ТОЧКА</td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="content-card">
+                            <h1 class="h1">Здравствуйте!</h1>
+                            <p class="text">
+                                По вашему запросу направляем детализацию расхода трафика по учётной записи
+                                <strong>{{ user_id }}</strong>.
+                            </p>
+                            <p class="text">Файл Excel во вложении содержит данные за период:</p>
+                            <div class="period-box">
+                                <p class="period-label">Период детализации</p>
+                                <p class="period-value">с {{ period_from }} по {{ period_to }}</p>
+                            </div>
+                            <p class="text">
+                                <strong>Время указано по Москве (МСК, UTC+3).</strong>
+                            </p>
+                            <p class="text">На каждом листе файла:</p>
+                            <ol class="sheets-list">
+                                <li><strong>Детализация сессий</strong> — начало и окончание сессии, объём входящего и исходящего трафика (МБ), IP-адрес и тип подключения (PPPoE / HOTSPOT). Для незавершённой сессии в колонке окончания указано «Активная сессий».</li>
+                                <li><strong>Суточный трафик</strong> — суммарный расход за каждый день выбранного периода.</li>
+                                <li><strong>Почасовой трафик</strong> — расход трафика по часам (МСК) за выбранные даты.</li>
+                            </ol>
+                            <p class="text">Внизу каждого листа приведены итоговые суммы по числовым столбцам.</p>
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0" class="info-note">
+                                <tr>
+                                    <td>
+                                        <p>Если вы не запрашивали детализацию — обратитесь в службу поддержки WiFiТочка.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin-top: 40px; font-size: 16px; font-weight: 700;">
+                                Служба поддержки WiFiТочка
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 30px 40px;" class="footer-text">
+                            Это автоматическое письмо, отвечать на него не нужно.<br>
+                            Сформировано в соответствии с требованиями ФЗ-149 и ФЗ-152.<br>
+                            © WiFiТочка. Все права защищены.
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

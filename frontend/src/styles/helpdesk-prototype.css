@@ -1362,8 +1362,20 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 [data-theme="light"] .fc-hotspot-auth__addr{color:#0a1e36}
 .up-fc-html a.fc-hotspot-auth__addr,.up-fc-html .fc-hotspot-auth a{text-decoration:none;color:inherit}
 
+/* Детализация трафика (профиль → Статистика) */
+.up-traffic-detail{display:flex;flex-direction:column;gap:12px;min-width:0}
+.up-traffic-detail-intro{margin:0;font-size:12px;line-height:1.55;color:var(--i2)}
+.up-traffic-detail-email{margin:0;font-size:12px;line-height:1.5;color:var(--ink)}
+.up-traffic-detail-dates{
+  display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 10px
+}
+.up-traffic-detail-date-field{flex:1 1 120px;min-width:0;display:flex;flex-direction:column;gap:4px}
+.up-traffic-detail-sep{align-self:center;padding-bottom:8px;color:var(--i3);font-weight:700}
+.up-traffic-detail-send{margin-top:4px}
+.up-traffic-detail-ok{margin:0;font-size:12px;font-weight:700;color:var(--ok)}
+
 /* История платежей (профиль → Статистика) */
-.up-stats .up-stub:has(.up-payments),.up-stats .up-stub:has(.up-tariffs){overflow:hidden}
+.up-stats .up-stub:has(.up-payments),.up-stats .up-stub:has(.up-tariffs),.up-stats .up-stub:has(.up-traffic-detail){overflow:hidden}
 .up-payments{
   min-width:0;display:flex;flex-direction:column;min-height:0;flex:1 1 auto;height:100%
 }

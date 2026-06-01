@@ -21,7 +21,12 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
 )
 from app.api.v1.routers.helpdesk import fast_check_service as fc_svc
 from app.api.v1.routers.helpdesk import password_reset_service as pwd_svc
+from app.api.v1.routers.helpdesk import traffic_detail_service as td_svc
 from app.api.v1.routers.helpdesk import user_profile_service as svc
+from app.api.v1.routers.helpdesk.traffic_detail_schemas import (
+    TrafficDetailSendRequest,
+    TrafficDetailSendResponse,
+)
 from app.database import get_db
 
 router = APIRouter(prefix="/v1/helpdesk/users", tags=["Helpdesk — абонент"])
@@ -167,6 +172,17 @@ async def fast_check(
     db: AsyncSession = Depends(get_db),
 ) -> FastCheckResponse:
     return await fc_svc.run_fast_check(db, user_id)
+
+
+@router.post("/{user_id}/traffic-detail/send", response_model=TrafficDetailSendResponse)
+async def send_traffic_detail(
+    user_id: int,
+    body: TrafficDetailSendRequest,
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
+    db: AsyncSession = Depends(get_db),
+) -> TrafficDetailSendResponse:
+    return await td_svc.send_traffic_detail(db, user_id, body, operator, request)
 
 
 @router.post("/{user_id}/disconnect-sessions", response_model=ActionMessage)

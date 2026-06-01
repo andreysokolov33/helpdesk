@@ -86,6 +86,15 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: Optional[str] = Field(default=None, description="Celery broker")
     CELERY_RESULT_BACKEND: Optional[str] = Field(default=None, description="Celery results")
 
+    SMTP_HOST_SKYSTREAM: Optional[str] = Field(default=None, description="SMTP host (детализация трафика)")
+    SMTP_PORT_SKYSTREAM: int = Field(465, ge=1, le=65535, description="SMTP port")
+    SMTP_USE_SSL_SKYSTREAM: bool = Field(True, description="SMTP SSL (порт 465)")
+    SMTP_STARTTLS_SKYSTREAM: bool = Field(False, description="SMTP STARTTLS")
+    SMTP_USER_SKYSTREAM: Optional[str] = Field(default=None, description="SMTP login")
+    SMTP_PASSWORD_SKYSTREAM: Optional[str] = Field(default=None, description="SMTP password")
+    SMTP_FROM_EMAIL_SKYSTREAM: Optional[str] = Field(default=None, description="From email")
+    SMTP_FROM_NAME_SKYSTREAM: str = Field("WiFiТочка", description="From display name")
+
     @model_validator(mode="before")
     @classmethod
     def compute_database_url(cls, values: dict) -> dict:

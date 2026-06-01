@@ -19,6 +19,7 @@ import { AuthPageHelp } from "@/components/AuthPageHelp";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import PaymentsHistoryPanel from "@/components/PaymentsHistoryPanel";
 import TariffsHistoryPanel from "@/components/TariffsHistoryPanel";
+import TrafficDetailPanel from "@/components/TrafficDetailPanel";
 import DatePickerField, { dateYmdToIso } from "@/components/DatePickerField";
 import { PasswordResetModal } from "@/components/PasswordResetModal";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
@@ -38,6 +39,7 @@ const REPORTS = [
   { id: "check", label: "Быстрая проверка пользователя" },
   { id: "payments", label: "История платежей" },
   { id: "tariffs", label: "История подключенных тарифов" },
+  { id: "traffic_detail", label: "Детализация трафика" },
 ] as const;
 
 function fmtMoney(n: number) {
@@ -750,6 +752,14 @@ export default function UserProfilePage() {
                   <PaymentsHistoryPanel userId={p.user_id} />
                 ) : report === "tariffs" ? (
                   <TariffsHistoryPanel userId={p.user_id} />
+                ) : report === "traffic_detail" ? (
+                  <TrafficDetailPanel
+                    userId={p.user_id}
+                    email={p.email}
+                    isJuridical={p.is_juridical}
+                    onSuccess={(msg) => setToast({ message: msg, variant: "success" })}
+                    onError={(msg) => setToast({ message: msg, variant: "error" })}
+                  />
                 ) : (
                   <p className="up-muted">Раздел «{REPORTS.find((x) => x.id === report)?.label}» — скоро</p>
                 )}
