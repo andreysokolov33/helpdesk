@@ -20,6 +20,8 @@ from app.core.redis import RedisCache
 from app.models.users import PasswordResetCode
 
 CODE_TTL_MINUTES = 10
+# Код, выданный оператором в helpdesk (ЛК: «У меня есть код для восстановления»)
+RESET_TYPE_OPERATOR = "operator"
 _pwd_reset_display = RedisCache(prefix="helpdesk_pwd_reset_display")
 
 
@@ -32,7 +34,7 @@ def _hash_code(code: str, salt: str) -> str:
 
 
 def _gen_code() -> str:
-    return f"{secrets.randbelow(1_000_000):06d}"
+    return f"{secrets.randbelow(10_000):04d}"
 
 
 def _gen_salt() -> str:
@@ -203,6 +205,7 @@ async def generate_password_reset_code(
         code_salt=salt,
         expires_at=expires_at,
         is_active=True,
+        reset_type=RESET_TYPE_OPERATOR,
     )
     session.add(row)
     await session.flush()

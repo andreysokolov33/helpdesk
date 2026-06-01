@@ -1546,6 +1546,11 @@ class PasswordResetCode(Base):
     deactivation_reason: Mapped[Optional[str]] = mapped_column(String(32))
     deactivated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     failed_attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    reset_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        comment="Способ сброса: email, bot, operator (код оператора helpdesk)",
+    )
 
 
 class HelpdeskMacros(Base):
