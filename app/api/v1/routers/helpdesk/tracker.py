@@ -320,6 +320,7 @@ async def register_call(
 
     ticket = TrackerTickets(
         author=author_id,
+        assigned_to=author_id,
         user_id=ticket_user_id,
         support_line=1,
         status="in_progress",

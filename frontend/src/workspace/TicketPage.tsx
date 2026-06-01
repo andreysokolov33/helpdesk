@@ -1984,12 +1984,6 @@ export default function TicketPage() {
                     <span className="kvv">{detail.station_name}</span>
                   </div>
                 ) : null}
-                {detail.assignee_name ? (
-                  <div className="kv">
-                    <span className="kvk">Исполнитель</span>
-                    <span className="kvv">{detail.assignee_name}</span>
-                  </div>
-                ) : null}
                 <div className="kv">
                   <span className="kvk">Создан</span>
                   <span className="kvv">{formatTicketCreated(detail.date_of_create_iso) || "—"}</span>
