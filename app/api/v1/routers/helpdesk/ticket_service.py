@@ -1773,7 +1773,7 @@ async def transfer_ticket_to_engineers(
         )
 
     text_clean = (comment or "").strip()
-    if text_clean:
+    if text_clean and is_lk_ticket_source(row.get("source")):
         db.add(
             TrackerComments(
                 ticket_id=ticket_id,

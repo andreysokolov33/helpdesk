@@ -71,3 +71,8 @@ export function sourceBadgeClass(source: string | null | undefined): SourceBadge
   }
   return "other";
 }
+
+/** Переписка ЛК (user_mail), быстрые ответы и комментарии при передаче инженерам. */
+export function isLkTicketSource(source: string | null | undefined): boolean {
+  return (source ?? "").trim().toLowerCase() === "lk";
+}

@@ -12,6 +12,7 @@ import TicketClassifyModal, { type ClassifyAction } from "@/workspace/TicketClas
 import TicketFastCheckDrawer from "@/workspace/TicketFastCheckDrawer";
 import { formatWorkDurationSince } from "@/utils/ticketFormat";
 import {
+  isLkTicketSource,
   priorityBadgeClass,
   sourceBadgeClass,
   ticketSupportLineBadgeClass,
@@ -360,6 +361,16 @@ export default function TicketPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!detail || isLkTicketSource(detail.source)) return;
+    if (chatPanel !== "subscriber") {
+      setChatPanel("subscriber");
+      setCommentEditingId(null);
+      setCommentDraft("");
+      setCommentDeleteTarget(null);
+    }
+  }, [detail, chatPanel]);
+
   useLayoutEffect(() => {
     if (didInitialAutoscrollRef.current) return;
     if (loading || error || !detail) return;
@@ -526,7 +537,7 @@ export default function TicketPage() {
     const obs = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
-        if (chatPanel === "comments") void loadOlderComments();
+        if (isLkTicketSource(detail.source) && chatPanel === "comments") void loadOlderComments();
         else void loadOlderMessages();
       },
       {
@@ -650,7 +661,7 @@ export default function TicketPage() {
   }, [loading, error, detail, pollMessages]);
 
   useEffect(() => {
-    if (loading || error || !detail || chatPanel !== "comments") return;
+    if (loading || error || !detail || !isLkTicketSource(detail.source) || chatPanel !== "comments") return;
     const id = window.setInterval(() => void pollComments(), MSG_POLL_MS);
     return () => window.clearInterval(id);
   }, [loading, error, detail, chatPanel, pollComments]);
@@ -704,7 +715,7 @@ export default function TicketPage() {
       }
       const next = await transferTicketToEngineers(detail.id, {
         categoryId: payload.categoryId,
-        comment: payload.comment || undefined,
+        comment: isLkTicketSource(detail.source) ? payload.comment || undefined : undefined,
       });
       setDetail(next);
       setClassifyOpen(false);
@@ -761,6 +772,7 @@ export default function TicketPage() {
   }
 
   function setChatPanelMode(mode: TicketChatPanelMode) {
+    if (!isLkTicketSource(detail?.source)) return;
     if (mode === chatPanel) return;
     setChatPanel(mode);
     setContextMenu(null);
@@ -832,7 +844,7 @@ export default function TicketPage() {
 
   function handleMessageMenuAction(action: MessageMenuAction, msg: TicketMessage) {
     setContextMenu(null);
-    const isCommentsPanel = chatPanel === "comments";
+    const isCommentsPanel = isLkTicketSource(detail?.source) && chatPanel === "comments";
     if (!detail?.is_open && action !== "copy") return;
     if (action === "copy") {
       const text = msg.text?.trim() || "";
@@ -957,7 +969,7 @@ export default function TicketPage() {
 
   async function submit() {
     if (!detail?.is_open) return;
-    if (chatPanel === "comments") {
+    if (isLkTicketSource(detail.source) && chatPanel === "comments") {
       await submitComment();
       return;
     }
@@ -1189,7 +1201,9 @@ export default function TicketPage() {
   })();
   const introBody = detail.body?.trim() || "";
   const chatMessages = messages.filter((m) => !m.is_initial);
-  const isCommentsPanel = chatPanel === "comments";
+  const isLkTicket = isLkTicketSource(detail.source);
+  const isCommentsPanel = isLkTicket && chatPanel === "comments";
+  const hideQuickReplies = !isLkTicket;
   const feedMessages = isCommentsPanel ? comments.map(commentToMessage) : chatMessages;
   const hasIntro = !isCommentsPanel && introBody.length > 0;
   const feedLoadingOlder = isCommentsPanel ? commentsLoadingOlder : loadingOlder;
@@ -1220,7 +1234,7 @@ export default function TicketPage() {
 
   return (
     <div className="tp on" id="tp-ticket" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", position: "relative" }}>
+      <div className="tk-ticket-shell">
         <div className="tbar">
           <button type="button" className="tbk" onClick={() => navigate("/chats")}>
             ← Назад
@@ -1429,13 +1443,15 @@ export default function TicketPage() {
             <div className={`tk-composer${isCommentsPanel ? " tk-composer--comments" : ""}`}>
               {!detail.is_open ? (
                 <>
-                  <TicketMacroBar
-                    hideMacros
-                    onPick={applyMacro}
-                    chatPanel={chatPanel}
-                    onChatPanelChange={setChatPanelMode}
-                    subscriberUnreadCount={subscriberChatUnread}
-                  />
+                  {isLkTicket ? (
+                    <TicketMacroBar
+                      hideMacros
+                      onPick={applyMacro}
+                      chatPanel={chatPanel}
+                      onChatPanelChange={setChatPanelMode}
+                      subscriberUnreadCount={subscriberChatUnread}
+                    />
+                  ) : null}
                   <div className="tk-no-reply">
                     {isCommentsPanel
                       ? "Тикет закрыт — служебные комментарии доступны только для просмотра"
@@ -1445,6 +1461,7 @@ export default function TicketPage() {
               ) : isCommentsPanel ? (
                 <>
                   <TicketMacroBar
+                    hideMacros={hideQuickReplies}
                     disabled={sending}
                     onPick={applyMacro}
                     chatPanel={chatPanel}
@@ -1511,8 +1528,9 @@ export default function TicketPage() {
                 </div>
               ) : (
                 <>
-                  {!editingId ? (
+                  {!editingId && isLkTicket ? (
                     <TicketMacroBar
+                      hideMacros={hideQuickReplies}
                       disabled={sending}
                       onPick={applyMacro}
                       chatPanel={chatPanel}
@@ -1989,6 +2007,7 @@ export default function TicketPage() {
       </div>
 
       <TicketClassifyModal
+        key={`${detail.id}-${classifyAction}`}
         open={classifyOpen}
         ticketId={detail.id}
         ticketSource={detail.source}

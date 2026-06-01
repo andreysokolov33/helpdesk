@@ -8,7 +8,7 @@ export type TicketChatPanelMode = "subscriber" | "comments";
 
 type Props = {
   disabled?: boolean;
-  /** Без макросов — только переключатель чат / комментарии (закрытый тикет). */
+  /** Без быстрых ответов (тикет не ЛК или закрыт) — при наличии onChatPanelChange остаётся переключатель. */
   hideMacros?: boolean;
   onPick: (macro: HelpdeskMacro) => void;
   chatPanel?: TicketChatPanelMode;
@@ -32,6 +32,11 @@ export default function TicketMacroBar({
   const measureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (hideMacros) {
+      setMacros([]);
+      setVisibleCount(0);
+      return;
+    }
     let cancelled = false;
     void fetchHelpdeskMacros()
       .then((items) => {
@@ -46,7 +51,7 @@ export default function TicketMacroBar({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hideMacros]);
 
   useLayoutEffect(() => {
     setMenuOpen(false);

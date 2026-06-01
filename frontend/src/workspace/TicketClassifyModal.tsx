@@ -5,6 +5,7 @@ import {
   type TicketCategoryLeaf,
 } from "@/api/ticketCategories";
 import { resolveTicketCategorySelection } from "@/utils/ticketCategorySelection";
+import { isLkTicketSource } from "@/utils/ticketLabels";
 
 export type ClassifyAction = "close" | "esc";
 
@@ -95,6 +96,8 @@ export default function TicketClassifyModal({
     action === "esc"
       ? `Заявка #${ticketId} — передача инженерам`
       : `Заявка #${ticketId} — завершение`;
+
+  const showCommentField = action === "close" || (action === "esc" && isLkTicketSource(ticketSource));
 
   function handleParentChange(value: string) {
     setParentId(value);
@@ -188,19 +191,21 @@ export default function TicketClassifyModal({
             </select>
           </div>
 
-          <div>
-            <div className="clf-lbl">Комментарий (необязательно)</div>
-            <textarea
-              className="clf-ta"
-              value={comment}
-              placeholder={
-                action === "esc"
-                  ? "Комментарий для инженеров…"
-                  : "Краткое описание решения…"
-              }
-              onChange={(e) => setComment(e.target.value)}
-            />
-          </div>
+          {showCommentField ? (
+            <div>
+              <div className="clf-lbl">Комментарий (необязательно)</div>
+              <textarea
+                className="clf-ta"
+                value={comment}
+                placeholder={
+                  action === "esc"
+                    ? "Комментарий для инженеров…"
+                    : "Краткое описание решения…"
+                }
+                onChange={(e) => setComment(e.target.value)}
+              />
+            </div>
+          ) : null}
 
           <div className="clf-warn">{warn}</div>
         </div>
