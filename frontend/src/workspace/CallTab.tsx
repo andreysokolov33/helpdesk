@@ -1,11 +1,27 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import SubscriberSearchField from "@/components/SubscriberSearchField";
 import type { SubscriberSearchHit } from "@/api/search";
 import { registerCall } from "@/api/tracker";
 
+type CallLocationState = { returnTo?: string };
+
 export default function CallTab() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  function cancel() {
+    const returnTo = (location.state as CallLocationState | null)?.returnTo;
+    if (returnTo) {
+      navigate(returnTo);
+      return;
+    }
+    if (location.key !== "default") {
+      navigate(-1);
+      return;
+    }
+    navigate("/");
+  }
   const [desc, setDesc] = useState("");
   const [subscriber, setSubscriber] = useState<SubscriberSearchHit | null>(null);
   const [unknownSubscriber, setUnknownSubscriber] = useState(false);
@@ -132,7 +148,7 @@ export default function CallTab() {
           {error ? <div className="call-error" role="alert">{error}</div> : null}
 
           <footer className="call-card__footer">
-            <button type="button" className="tb call-btn-sec" onClick={() => navigate("/")} disabled={submitting}>
+            <button type="button" className="tb call-btn-sec" onClick={cancel} disabled={submitting}>
               Отмена
             </button>
             <button type="button" className="call-btn-primary" onClick={submit} disabled={submitting}>

@@ -43,6 +43,7 @@ class ProfileTariffActive(BaseModel):
     traffic_renew_count: Optional[int] = None
     msk_reset: Optional[str] = None
     local_reset: Optional[str] = None
+    last_traffic_reset_label: Optional[str] = None
     valid_date_label: Optional[str] = None
     disconnect_at_label: Optional[str] = None
     remaining_label: Optional[str] = None
@@ -54,6 +55,7 @@ class ProfileTariffActive(BaseModel):
     can_freeze: bool = False
     can_unfreeze: bool = False
     can_cancel_planned_freeze: bool = False
+    can_remove_ended_tariff: bool = False
     can_disconnect_sessions: bool = True
 
 
@@ -79,7 +81,7 @@ class TicketSubscriberTariffSummary(BaseModel):
     """Краткая информация о тарифе для сайдбара тикета."""
 
     connected: bool = False
-    """Есть подключённый тариф в radusergroup / freeze."""
+    """Есть подключенный тариф в radusergroup / freeze."""
     state: str = "none"
     """none | active | frozen | planned_freeze | inactive | ended — для бейджа в UI."""
     tariff_name: Optional[str] = None
@@ -161,6 +163,9 @@ class UserProfileResponse(BaseModel):
     netflow_tariff: Optional[str] = None
     health_check: ProfileHealthCheck = Field(default_factory=ProfileHealthCheck)
     tickets: ProfileTicketListResponse = Field(default_factory=ProfileTicketListResponse)
+    disconnect_sessions_remaining: int = 2
+    disconnect_sessions_limit: int = 2
+    disconnect_sessions_window_minutes: int = 30
 
 
 class FreezeRequest(BaseModel):

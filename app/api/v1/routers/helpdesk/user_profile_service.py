@@ -48,8 +48,22 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     traffic_reset_labels,
 )
 from app.api.v1.routers.helpdesk.operator_log_service import write_operator_log
-from app.api.v1.routers.users.dao import RadacctDAO, UserFreezeTariffDAO, UsersDAO
-from app.core.user_cache import on_tariff_freeze_changed, on_unarchive
+from app.api.v1.routers.users.dao import (
+    RadacctDAO,
+    ResetTrafficActionDAO,
+    UserArchiveDAO,
+    UserFreezeTariffDAO,
+    UsersDAO,
+)
+from app.core.user_cache import (
+    DISCONNECT_SESSIONS_MAX,
+    DISCONNECT_SESSIONS_WINDOW_SEC,
+    check_disconnect_sessions_allowed,
+    get_disconnect_sessions_remaining,
+    on_tariff_freeze_changed,
+    on_unarchive,
+    record_disconnect_sessions_success,
+)
 from app.api.v1.routers.users.subscriber_search import _format_passport
 from app.constants import STATUS_DISPLAY, SUPPORT_LINE_DISPLAY
 from app.models.users import TrackerTickets, User, UserDetails, UserFreezeTariff
@@ -289,6 +303,10 @@ def _is_limited_tariff_ended(trow: Optional[dict[str, Any]]) -> bool:
     return (trow.get("real_type") or "").strip() == "default" and gn == "disabled"
 
 
+def _last_traffic_reset_label(ts: Optional[datetime]) -> str:
+    return format_dt_msk(ts) if ts else "Еще не было"
+
+
 def _build_tariff(
     trow: Optional[dict[str, Any]],
     freeze: Optional[dict[str, Any]],
@@ -296,6 +314,7 @@ def _build_tariff(
     *,
     service_meta: Optional[dict[str, Any]] = None,
     jur_normal: Optional[int] = None,
+    last_script_reset_at: Optional[datetime] = None,
 ) -> Optional[ProfileTariffActive]:
     is_fl = is_jur == 0
 
@@ -327,7 +346,8 @@ def _build_tariff(
             can_unfreeze=is_fl,
             can_freeze=False,
             can_cancel_planned_freeze=False,
-            can_disconnect_sessions=False,
+            can_remove_ended_tariff=False,
+            can_disconnect_sessions=is_jur == 2,
         )
 
     if not _has_radusergroup(trow):
@@ -402,11 +422,18 @@ def _build_tariff(
         traffic_renew_count=renew,
         msk_reset=msk_reset,
         local_reset=local_reset,
+        last_traffic_reset_label=(
+            _last_traffic_reset_label(last_script_reset_at)
+            if real_type == "unlim_fap"
+            else None
+        ),
         planned_freeze_at=format_dt_msk(freeze.get("date_freeze")) if planned else None,
         unfreeze_at=format_dt_msk(freeze.get("date_unfreeze")) if planned else None,
         can_freeze=is_fl and is_active and not planned,
         can_unfreeze=False,
         can_cancel_planned_freeze=is_fl and planned,
+        can_remove_ended_tariff=is_fl and tariff_ended,
+        can_disconnect_sessions=True,
     )
 
 
@@ -695,12 +722,18 @@ async def _load_tariff_bundle(
     jur_normal = None
     if freeze_sname and personal.is_juridical == 2:
         jur_normal = await _load_jur_normal_traffic(session, freeze_sname)
+    last_script_reset_at: Optional[datetime] = None
+    if trow and (trow.get("real_type") or "").strip() == "unlim_fap":
+        last_script_reset_at = await ResetTrafficActionDAO.find_last_script_reset_at(
+            session, user_id
+        )
     tariff = _build_tariff(
         trow,
         freeze,
         personal.is_juridical,
         service_meta=service_meta,
         jur_normal=jur_normal,
+        last_script_reset_at=last_script_reset_at,
     )
     return tariff, netflow_note, netflow_tariff
 
@@ -820,6 +853,9 @@ async def get_user_profile(
     online = _online_from_radacct_summary(is_online, last_end)
     tariff, netflow_note, netflow_tariff = tariff_res
     health = _build_health_check(personal, online, tariff, balance)
+    _, disconnect_remaining = await get_disconnect_sessions_remaining(user_id)
+    if tariff is not None and disconnect_remaining <= 0:
+        tariff = tariff.model_copy(update={"can_disconnect_sessions": False})
 
     return UserProfileResponse(
         personal=personal,
@@ -831,6 +867,9 @@ async def get_user_profile(
         netflow_tariff=netflow_tariff,
         health_check=health,
         tickets=tickets,
+        disconnect_sessions_remaining=disconnect_remaining,
+        disconnect_sessions_limit=DISCONNECT_SESSIONS_MAX,
+        disconnect_sessions_window_minutes=max(1, DISCONNECT_SESSIONS_WINDOW_SEC // 60),
     )
 
 
@@ -840,7 +879,8 @@ async def remove_ended_tariff(
     operator: dict[str, Any],
     request: Request,
 ) -> TariffBlockResponse:
-    """Отключение завершённого тарифа (radius.remove_user) для ФЛ и ЮЛ."""
+    """Отключение завершённого тарифа (radius.remove_user) — только для ФЛ."""
+    await _require_physical_subscriber(session, user_id)
     row = await UsersDAO.find_one_or_none(session, id=user_id)
     if not row:
         raise HTTPException(status_code=404, detail="Абонент не найден")
@@ -891,15 +931,21 @@ async def remove_ended_tariff(
 
 
 async def unarchive_user(session: AsyncSession, user_id: int) -> ActionMessage:
-    await _require_physical_subscriber(session, user_id)
+    row = await _require_physical_subscriber(session, user_id)
+    if int(row.get("user_status") or 0) != 3 and int(row.get("archive") or 0) != 1:
+        raise HTTPException(status_code=400, detail="Учётная запись не в архиве")
+
     n = await UsersDAO.update(
         session,
         filter_by={"id": user_id},
         user_status=1,
         archive=0,
+        auto_commit=False,
     )
     if not n:
         raise HTTPException(status_code=404, detail="Абонент не найден")
+    await UserArchiveDAO.delete(session, auto_commit=False, user_id=user_id)
+    await session.commit()
     await on_unarchive(session, user_id)
     return ActionMessage(message="Учётная запись восстановлена")
 
@@ -941,7 +987,10 @@ async def _log_tariff_action(
     )
 
 
-async def force_disconnect(session: AsyncSession, login: str) -> ActionMessage:
+async def force_disconnect(session: AsyncSession, user_id: int, login: str) -> ActionMessage:
+    allowed, limit_msg = await check_disconnect_sessions_allowed(user_id)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=limit_msg)
     if await count_open_sessions(session, login) < 1:
         raise HTTPException(status_code=400, detail="Нет активных сессий")
     await _call_radius_proc(
@@ -950,6 +999,7 @@ async def force_disconnect(session: AsyncSession, login: str) -> ActionMessage:
         {"login": login},
     )
     await session.commit()
+    await record_disconnect_sessions_success(user_id)
     return ActionMessage(message="Сессии будут закрыты в течение минуты")
 
 

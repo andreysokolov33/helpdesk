@@ -140,7 +140,7 @@ export function AuthPageHelp({ hotspotAddress }: Props) {
           <li>
             <span className="up-help-step-name">Страница не открылась сама</span>
             <p>
-              Убедитесь, что Wi‑Fi подключён. Откройте <strong>любой браузер</strong> и в{" "}
+              Убедитесь, что Wi‑Fi подключен. Откройте <strong>любой браузер</strong> и в{" "}
               <strong>адресной строке</strong> (не в поиске Google/Yandex) введите адрес страницы авторизации:
             </p>
             {addr ? (

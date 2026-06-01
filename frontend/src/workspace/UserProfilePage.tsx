@@ -140,6 +140,9 @@ function TariffCard({
   onCancelPlan,
   onRemoveEndedTariff,
   openSessionsCount,
+  disconnectSessionsRemaining,
+  disconnectSessionsLimit,
+  disconnectSessionsWindowMinutes,
   onDisconnect,
 }: {
   tariff: ProfileTariff | null;
@@ -147,6 +150,9 @@ function TariffCard({
   netflowTariff: string | null;
   isJuridical: number;
   openSessionsCount: number;
+  disconnectSessionsRemaining: number;
+  disconnectSessionsLimit: number;
+  disconnectSessionsWindowMinutes: number;
   onFreeze: () => void;
   onUnfreeze: () => void;
   onCancelPlan: () => void;
@@ -158,10 +164,10 @@ function TariffCard({
       <div className="card up-card up-tariff up-tariff-main">
         <div className="ct up-tariff-title">Тарифный план</div>
         <div className="up-tariff-empty" role="status">
-          <div className="up-tariff-empty__title">Тариф не подключён</div>
+          <div className="up-tariff-empty__title">Тариф не подключен</div>
           <p className="up-tariff-empty__text">
             Абоненту нужно выбрать подходящий тарифный план в личном кабинете на странице{" "}
-            <strong>«Тариф»</strong>. Без подключённого тарифа доступ в интернет недоступен.
+            <strong>«Тариф»</strong>. Без подключенного тарифа доступ в интернет недоступен.
           </p>
         </div>
       </div>
@@ -171,7 +177,9 @@ function TariffCard({
   const isFrozen = tariff?.state === "frozen";
   const isPlannedFreeze = tariff?.state === "planned_freeze";
   const isTariffEnded = Boolean(tariff && !isFrozen && !isPlannedFreeze && !tariff.is_active);
-  const canManageTariff = isJuridical === 0;
+  const isJur = isJuridical === 2;
+  const canManageTariff = !isJur;
+  const canRemoveEnded = canManageTariff && Boolean(tariff?.can_remove_ended_tariff);
   const freezeLabel = tariff?.can_unfreeze
     ? "Разморозить"
     : isPlannedFreeze
@@ -191,7 +199,14 @@ function TariffCard({
       : onFreeze;
   const sessionsLabel =
     openSessionsCount > 0 ? `Закрыть сессии (${openSessionsCount})` : "Закрыть сессии";
-  const showSessionsBtn = !isFrozen && tariff?.can_disconnect_sessions !== false;
+  const sessionsAllowed =
+    tariff?.can_disconnect_sessions !== false && disconnectSessionsRemaining > 0;
+  const showSessionsBtn = sessionsAllowed && (!isFrozen || isJur);
+  const sessionsLimitMsg = `Лимит сброса сессий исчерпан (${disconnectSessionsLimit} раза за ${disconnectSessionsWindowMinutes} мин.)`;
+  const sessionsBtnTitle = disconnectSessionsRemaining <= 0 ? sessionsLimitMsg : undefined;
+  const showFreezeBtn = canManageTariff && !isFrozen;
+  const showToolbar = showFreezeBtn || (isJur && showSessionsBtn);
+  const sessionsOnlyToolbar = isJur && showSessionsBtn && !showFreezeBtn;
 
   return (
     <div className="card up-card up-tariff up-tariff-main">
@@ -200,7 +215,7 @@ function TariffCard({
       </div>
 
       {isTariffEnded ? (
-        onRemoveEndedTariff ? (
+        canRemoveEnded && onRemoveEndedTariff ? (
           <button
             type="button"
             className="up-tariff-ended-banner up-tariff-ended-banner--action"
@@ -214,23 +229,35 @@ function TariffCard({
             Тариф закончился
           </div>
         )
-      ) : canManageTariff && !isFrozen ? (
-        <div className="up-tariff-toolbar">
-          <button
-            type="button"
-            className="up-tariff-btn up-tariff-btn--freeze"
-            disabled={!freezeEnabled}
-            onClick={freezeEnabled ? freezeHandler : undefined}
-          >
-            {freezeLabel}
-          </button>
+      ) : null}
+      {showToolbar ? (
+        <div
+          className={
+            sessionsOnlyToolbar
+              ? "up-tariff-toolbar up-tariff-toolbar--sessions-only"
+              : "up-tariff-toolbar"
+          }
+        >
+          {showFreezeBtn ? (
+            <button
+              type="button"
+              className="up-tariff-btn up-tariff-btn--freeze"
+              disabled={!freezeEnabled}
+              onClick={freezeEnabled ? freezeHandler : undefined}
+            >
+              {freezeLabel}
+            </button>
+          ) : null}
           {showSessionsBtn ? (
-            <button type="button" className="up-tariff-btn up-tariff-btn--sessions" onClick={onDisconnect}>
+            <button
+              type="button"
+              className="up-tariff-btn up-tariff-btn--sessions"
+              title={sessionsBtnTitle}
+              onClick={onDisconnect}
+            >
               {sessionsLabel}
             </button>
-          ) : (
-            <span />
-          )}
+          ) : null}
         </div>
       ) : null}
 
@@ -266,6 +293,16 @@ function TariffCard({
             {canManageTariff && tariff.can_unfreeze ? (
               <button type="button" className="up-frozen-unfreeze-btn" onClick={onUnfreeze}>
                 Разморозить тариф
+              </button>
+            ) : null}
+            {isJur && showSessionsBtn ? (
+              <button
+                type="button"
+                className="up-frozen-unfreeze-btn up-tariff-btn--sessions"
+                title={sessionsBtnTitle}
+                onClick={onDisconnect}
+              >
+                {sessionsLabel}
               </button>
             ) : null}
           </div>
@@ -369,9 +406,16 @@ function TariffCard({
           ) : null}
           {tariff.speed_unlimited && tariff.msk_reset ? (
             <>
-              <div className="up-kv">
+              <div className="up-kv up-kv--multiline">
                 <span className="up-k">Сброс суточного трафика</span>
-                <span className="up-v">{tariff.msk_reset}</span>
+                <span className="up-v up-v-col">
+                  <span className="up-v-main">{tariff.msk_reset}</span>
+                  {tariff.last_traffic_reset_label ? (
+                    <span className="up-kv-sub">
+                      Последний сброс: {tariff.last_traffic_reset_label}
+                    </span>
+                  ) : null}
+                </span>
               </div>
               <div className="up-kv">
                 <span className="up-k">Местное время (по МСК)</span>
@@ -615,6 +659,9 @@ export default function UserProfilePage() {
                 netflowTariff={data.netflow_tariff}
                 isJuridical={p.is_juridical}
                 openSessionsCount={data.open_sessions_count}
+                disconnectSessionsRemaining={data.disconnect_sessions_remaining}
+                disconnectSessionsLimit={data.disconnect_sessions_limit}
+                disconnectSessionsWindowMinutes={data.disconnect_sessions_window_minutes}
                 onFreeze={() => {
                   setFreezeDate("");
                   setUnfreezeDate("");
@@ -624,7 +671,16 @@ export default function UserProfilePage() {
                 onUnfreeze={() => setModal("unfreeze")}
                 onCancelPlan={() => setModal("cancel_planned_freeze")}
                 onRemoveEndedTariff={() => setModal("remove_ended_tariff")}
-                onDisconnect={() => setModal("disconnect")}
+                onDisconnect={() => {
+                  if (data.disconnect_sessions_remaining <= 0) {
+                    setToast({
+                      message: `Лимит сброса сессий исчерпан (${data.disconnect_sessions_limit} раза за ${data.disconnect_sessions_window_minutes} мин.). Повторите позже.`,
+                      variant: "error",
+                    });
+                    return;
+                  }
+                  setModal("disconnect");
+                }}
               />
               <div className="up-aside-top">
                 <div className="card up-card up-metric-cell up-personal-metric">
@@ -696,7 +752,11 @@ export default function UserProfilePage() {
         <div className="card up-card">
           <div className="up-card-head">
             <div className="ct">История обращений</div>
-            <button type="button" className="up-btn sec" onClick={() => navigate("/call")}>
+            <button
+              type="button"
+              className="up-btn sec"
+              onClick={() => navigate("/call", { state: { returnTo: `/users/${uid}` } })}
+            >
               Регистрация звонка
             </button>
           </div>
@@ -892,6 +952,10 @@ export default function UserProfilePage() {
                   <p>
                     Активных сессий: {data.open_sessions_count}. После подтверждения они закроются в течение
                     минуты.
+                  </p>
+                  <p className="up-muted">
+                    Осталось попыток сброса за {data.disconnect_sessions_window_minutes} мин.:{" "}
+                    {data.disconnect_sessions_remaining} из {data.disconnect_sessions_limit}.
                   </p>
                   <div className="up-modal-actions">
                     <button type="button" className="up-btn sec" disabled={busy} onClick={() => setModal(null)}>

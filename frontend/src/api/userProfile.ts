@@ -35,6 +35,7 @@ export type ProfileTariff = {
   traffic_renew_count: number | null;
   msk_reset: string | null;
   local_reset: string | null;
+  last_traffic_reset_label: string | null;
   valid_date_label: string | null;
   disconnect_at_label: string | null;
   planned_freeze_at: string | null;
@@ -45,6 +46,7 @@ export type ProfileTariff = {
   can_freeze: boolean;
   can_unfreeze: boolean;
   can_cancel_planned_freeze: boolean;
+  can_remove_ended_tariff: boolean;
   can_disconnect_sessions: boolean;
 };
 
@@ -74,6 +76,9 @@ export type UserProfileResponse = {
   netflow_tariff: string | null;
   health_check: ProfileHealthCheck;
   tickets: ProfileTicketListResponse;
+  disconnect_sessions_remaining: number;
+  disconnect_sessions_limit: number;
+  disconnect_sessions_window_minutes: number;
 };
 
 export type TariffBlockResponse = {

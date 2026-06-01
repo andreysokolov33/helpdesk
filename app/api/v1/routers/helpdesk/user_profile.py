@@ -183,4 +183,4 @@ async def disconnect_sessions(
 
         raise HTTPException(status_code=404, detail="Абонент не найден")
     login = (u.get("login") or "").strip()
-    return await svc.force_disconnect(db, login)
+    return await svc.force_disconnect(db, user_id, login)

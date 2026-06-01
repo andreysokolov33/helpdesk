@@ -1002,7 +1002,26 @@ class OperatorFavoriteDAO(BaseDAO):
     
 class ResetTrafficActionDAO(BaseDAO):
     model = ResetTrafficAction
-    
+
+    @classmethod
+    async def find_last_script_reset_at(
+        cls, session: AsyncSession, user_id: int
+    ) -> Optional[datetime]:
+        """Последний автоматический (who=script) сброс суточного трафика."""
+        ts = (
+            await session.execute(
+                select(ResetTrafficAction.timestamp)
+                .where(
+                    ResetTrafficAction.user_id == user_id,
+                    ResetTrafficAction.who == "script",
+                )
+                .order_by(desc(ResetTrafficAction.timestamp))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return ts
+
+
 class RadgroupcheckDAO(BaseDAO):
     model = Radgroupcheck
     

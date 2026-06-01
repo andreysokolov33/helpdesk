@@ -811,7 +811,16 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 .up-stats .up-stub{
   flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;
   -webkit-overflow-scrolling:touch;
-  overscroll-behavior:contain
+  overscroll-behavior-y:auto
+}
+/* Быстрая проверка: до запуска — скролл страницы; после — сначала блок, затем страница */
+.up-stats .up-stub:has(.up-fast-check--page-scroll){
+  overflow-y:visible;
+  overscroll-behavior-y:auto
+}
+.up-stats .up-stub:has(.up-fast-check--panel-scroll){
+  overflow-y:auto;
+  overscroll-behavior-y:auto
 }
 .up-aside-top{
   grid-column:2;
@@ -871,7 +880,15 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 }
 .up-tariff-main{align-self:stretch;display:flex;flex-direction:column}
 .up-reset-pwd{width:100%;justify-content:center}
-.up-kv-sub{display:block;font-size:10px;font-weight:500;color:var(--i3);margin-top:2px}
+.up-kv-sub{
+  display:block;max-width:100%;font-size:10px;font-weight:500;line-height:1.35;
+  color:var(--i3);text-align:right
+}
+.up-v-col{
+  min-width:0;flex:1;display:flex;flex-direction:column;align-items:flex-end;
+  gap:2px;text-align:right
+}
+.up-v-col .up-v-main{font-weight:600;color:var(--ink)}
 .up-metric-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:112px;padding:16px 14px}
 .up-metric-cell .ct{margin-bottom:0}
 .up-metric-head{
@@ -1085,7 +1102,7 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 .up-sessions-hint{font-size:11px;color:var(--i3);padding:6px 0;line-height:1.4}
 .up-card{margin-bottom:0}
 .up-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-.up-kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--ln);font-size:12px}
+.up-kv{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--ln);font-size:12px}
 .up-kv:last-child{border-bottom:none}
 .up-kv--multiline{align-items:flex-start}
 .up-kv--multiline .up-k{padding-top:2px}
@@ -1154,6 +1171,8 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 }
 .up-modal-lead{margin:0 0 10px;line-height:1.55;font-size:13px}
 .up-tariff-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.up-tariff-toolbar--sessions-only{grid-template-columns:1fr}
+.up-tariff-toolbar--sessions-only .up-tariff-btn--sessions{width:100%}
 .up-tariff-btn{
   height:40px;
   padding:0 12px;
@@ -1394,7 +1413,7 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 [data-theme="dark"] .up-pay-type--gazprom{background:rgba(180,140,255,.12);color:#c9b4ff;border-color:rgba(180,140,255,.28)}
 [data-theme="dark"] .up-pay-type--alfa{background:rgba(255,120,80,.12);color:#ffb39a;border-color:rgba(255,120,80,.28)}
 
-/* История подключённых тарифов (общая сетка с платежами) */
+/* История подключенных тарифов (общая сетка с платежами) */
 .up-tariffs{
   min-width:0;display:flex;flex-direction:column;min-height:0;flex:1 1 auto;height:100%
 }
@@ -1443,6 +1462,26 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 [data-theme="dark"] .up-tariff-badge--unlim{background:rgba(180,140,255,.12);color:#c9b4ff;border-color:rgba(180,140,255,.28)}
 [data-theme="dark"] .up-tariff-badge--dop{background:var(--wbg);color:var(--wn);border-color:rgba(240,168,48,.35)}
 .up-fc-ok-msg{margin:0;font-size:13px;font-weight:600;color:var(--ok)}
+.up-fc-success-panel{display:flex;flex-direction:column;gap:0;min-height:0}
+.up-fc-no-problems{
+  display:flex;align-items:center;justify-content:center;min-height:88px;
+  padding:20px 16px 12px;font-size:22px;font-weight:800;line-height:1.25;
+  color:var(--ok);text-align:center;letter-spacing:-.02em
+}
+.up-fc-grid--stacked .up-fc-no-problems{min-height:72px;font-size:20px}
+.up-fc-summary{
+  margin:0;padding:12px 14px 4px;list-style:none;
+  border-top:1px solid var(--ln)
+}
+.up-fc-summary-row{
+  display:flex;flex-direction:column;gap:2px;padding:8px 0;
+  border-bottom:1px solid var(--ln);font-size:12px;line-height:1.35
+}
+.up-fc-summary-row:last-child{border-bottom:none;padding-bottom:0}
+.up-fc-summary-k{
+  font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.35px;color:var(--i3)
+}
+.up-fc-summary-v{font-weight:600;color:var(--ink);word-break:break-word}
 .up-fc-managers{margin-top:14px;padding-top:12px;border-top:1px solid var(--ln)}
 .up-fc-managers-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--i3);margin-bottom:8px}
 .up-fc-managers ul{margin:0;padding:0;list-style:none;font-size:12px;line-height:1.5}

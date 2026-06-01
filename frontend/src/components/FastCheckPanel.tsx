@@ -18,6 +18,55 @@ function stoppedAtLabel(stoppedAt: string, steps: FastCheckStep[]): string {
   return step?.check_label ?? stoppedAt;
 }
 
+type SummaryRow = { label: string; value: string };
+
+function formatConnectionTypes(inner: string): string {
+  return inner
+    .split(",")
+    .map((part) => part.replace(/:\s*\d+\s*$/, "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function buildFastCheckSummary(steps: FastCheckStep[]): SummaryRow[] {
+  const byCode = new Map(steps.map((s) => [s.test_code, s]));
+  const rows: SummaryRow[] = [];
+
+  const push = (code: string, label: string) => {
+    const step = byCode.get(code);
+    if (!step) return;
+    if (step.status === "skip" && !step.detail?.trim()) return;
+    const value =
+      step.detail?.trim() ||
+      (step.status === "pass" ? "В порядке" : step.status === "skip" ? "Не проверялось" : "—");
+    rows.push({ label, value });
+  };
+
+  push("account_status", "Статус УЗ");
+  push("tariff_state", "Наличие тарифа");
+  push("balance_tariff", "Баланс");
+  push("station_aliveness", "Станция на связи");
+
+  const sessions = byCode.get("active_sessions");
+  if (sessions) {
+    const detail = sessions.detail ?? "";
+    const parenOpen = detail.indexOf("(");
+    const parenClose = detail.lastIndexOf(")");
+    if (parenOpen !== -1 && parenClose > parenOpen) {
+      const conn = formatConnectionTypes(detail.slice(parenOpen + 1, parenClose));
+      if (conn) rows.push({ label: "Тип соединения", value: conn });
+    }
+    const countM = detail.match(/Активных сессий:\s*(\d+)/i);
+    rows.push({
+      label: "Наличие сессий",
+      value: countM ? `${countM[1]} активных` : detail.split("(")[0].trim() || "Есть",
+    });
+  }
+
+  push("session_limit", "Лимит сессий");
+  return rows;
+}
+
 type Props = {
   userId: number;
   onDisconnect?: () => void;
@@ -203,10 +252,19 @@ export default function FastCheckPanel({
 
   const showIdle = phase === "idle" && !data && !hideIdleUI;
 
+  const noProblemsFound = Boolean(
+    data?.steps.length &&
+      !data.steps.some((s) => s.status === "fail" || s.status === "warn"),
+  );
+
+  const panelScroll = Boolean(showPanel && data && phase !== "loading");
+
   const gridClass = layout === "stacked" ? "up-fc-grid up-fc-grid--stacked" : "up-fc-grid";
 
   return (
-    <div className="up-fast-check">
+    <div
+      className={`up-fast-check${panelScroll ? " up-fast-check--panel-scroll" : " up-fast-check--page-scroll"}`}
+    >
       {showIdle ? <p className="up-fc-intro">{INTRO}</p> : null}
 
       {showIdle ? (
@@ -227,7 +285,21 @@ export default function FastCheckPanel({
       {showPanel && data && phase !== "loading" ? (
         <div className={gridClass}>
           <div className="up-fc-actions">
-            {showActions ? (
+            {phase === "done" && noProblemsFound ? (
+              <div className="up-fc-success-panel">
+                <div className="up-fc-no-problems" role="status">
+                  Проблем не обнаружено
+                </div>
+                <ul className="up-fc-summary" aria-label="Краткие результаты проверки">
+                  {buildFastCheckSummary(data.steps).map((row) => (
+                    <li key={row.label} className="up-fc-summary-row">
+                      <span className="up-fc-summary-k">{row.label}</span>
+                      <span className="up-fc-summary-v">{row.value}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : showActions ? (
               <div
                 className="up-fc-html fc-block-wrap"
                 dangerouslySetInnerHTML={{ __html: activeStep!.actions_html! }}
@@ -293,7 +365,7 @@ export default function FastCheckPanel({
           <button type="button" className="up-btn sec" onClick={() => void runCheck()}>
             {repeatLabel}
           </button>
-          {data.stopped_at ? (
+          {noProblemsFound ? null : data.stopped_at ? (
             <span className="up-muted">
               Остановлено на: {stoppedAtLabel(data.stopped_at, data.steps)}
             </span>

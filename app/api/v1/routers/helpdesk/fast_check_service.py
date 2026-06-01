@@ -518,7 +518,7 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
                 )
         else:
             instr = await _load_instruction(session, cache, "tariff_state", 1)
-            steps.append(_step("tariff_state", 1, "pass", instr, detail="Тариф подключён и активен"))
+            steps.append(_step("tariff_state", 1, "pass", instr, detail="Тариф подключен и активен"))
 
     # --- 3. Баланс и платежи (всегда в цепочке) ---
     if run_balance_after_tariff_fail:
@@ -601,7 +601,7 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
     else:
         instr = await _load_instruction(session, cache, "balance_tariff", 8)
         steps.append(
-            _step("balance_tariff", 8, "skip", instr, detail="Тариф подключён — проверка не требуется")
+            _step("balance_tariff", 8, "skip", instr, detail="Тариф подключен — проверка не требуется")
         )
 
     # --- 4. Станция ---
