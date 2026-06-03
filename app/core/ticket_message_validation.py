@@ -65,8 +65,8 @@ def html_to_plain_text(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _has_letter(text: str) -> bool:
-    return any(ch.isalpha() for ch in text)
+def _has_letter_or_digit(text: str) -> bool:
+    return any(ch.isalpha() or ch.isdigit() for ch in text)
 
 
 def _is_single_short_word(word: str) -> bool:
@@ -100,7 +100,7 @@ def validate_ticket_message_text(text: str, *, has_attachments: bool) -> str | N
     if _DOTS_ONLY_RE.fullmatch(plain):
         return _VALIDATION_MESSAGES["dots_only"]
 
-    if not _has_letter(plain):
+    if not _has_letter_or_digit(plain):
         return _VALIDATION_MESSAGES["punctuation_only"]
 
     if _is_too_brief(plain):

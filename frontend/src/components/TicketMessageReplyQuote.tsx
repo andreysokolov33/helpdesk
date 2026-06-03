@@ -1,9 +1,20 @@
+import DOMPurify from "dompurify";
 import type { TicketMessageReplyPreview } from "@/api/ticket";
 
 type Props = {
   preview: TicketMessageReplyPreview;
   onJump?: (id: number) => void;
 };
+
+const PREVIEW_TAGS = ["b", "strong", "i", "em", "u", "s", "strike", "br", "span"];
+
+function sanitizePreview(html: string): string {
+  const clean = DOMPurify.sanitize(html.trim() || "…", {
+    ALLOWED_TAGS: PREVIEW_TAGS,
+    ALLOWED_ATTR: [],
+  });
+  return clean.replace(/<br\s*\/?>/gi, " ").trim() || "…";
+}
 
 export default function TicketMessageReplyQuote({ preview, onJump }: Props) {
   if (preview.is_deleted) {
@@ -15,7 +26,7 @@ export default function TicketMessageReplyQuote({ preview, onJump }: Props) {
   }
 
   const label = preview.author_name?.trim() || "Сообщение";
-  const snippet = preview.text?.trim() || "…";
+  const snippetHtml = sanitizePreview(preview.text ?? "");
 
   return (
     <button
@@ -25,7 +36,11 @@ export default function TicketMessageReplyQuote({ preview, onJump }: Props) {
       title="Перейти к сообщению"
     >
       <span className="tk-reply-quote__author">{label}</span>
-      <span className="tk-reply-quote__text">{snippet}</span>
+      <span
+        className="tk-reply-quote__text"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: snippetHtml }}
+      />
     </button>
   );
 }

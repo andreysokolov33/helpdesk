@@ -19,10 +19,10 @@ export function isStaffOutboundMessage(side: string): boolean {
   return side === "me" || side === "support" || side === "engineer";
 }
 
-/** Контекстное меню: сообщения абонента и свои. */
+/** Контекстное меню: все сообщения кроме bot. */
 export function canMessageContextMenu(side: string, messageId: number): boolean {
   if (messageId <= 0 || side === "bot") return false;
-  return side === "client" || isOwnTicketMessage(side);
+  return true;
 }
 
 export function mergeReadReceipts(

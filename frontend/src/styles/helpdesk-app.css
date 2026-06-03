@@ -1222,13 +1222,19 @@
 }
 
 #tp-ticket .tk-reply-quote__text {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 11px;
   color: var(--i2);
   line-height: 1.35;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+#tp-ticket .tk-reply-quote__text * {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
 }
 
 #tp-ticket .tk-reply-quote--deleted {
@@ -2456,6 +2462,29 @@
   border-radius: 10px;
   border: 1px solid var(--ln);
   display: block;
+}
+
+.tk-att-img__nophoto {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  border: 1px dashed var(--ln);
+  background: var(--bg-s, #f5f5f5);
+  color: var(--text-muted, #999);
+  font-size: 12px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.tk-att-img__nophoto-icon {
+  font-size: 22px;
+  opacity: 0.45;
+  filter: grayscale(1);
 }
 
 .tk-att-files {

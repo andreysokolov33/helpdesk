@@ -17,6 +17,7 @@ export const TICKET_MSG_VALIDATION_MESSAGES: Record<TicketMessageValidationReaso
 
 const DOTS_ONLY_RE = /^[\s.\u2026…·]+$/u;
 const LETTER_RE = /\p{L}/u;
+const DIGIT_RE = /\d/u;
 const SINGLE_SHORT_WORD_RE = /^[\p{L}]{1,3}$/u;
 
 /** Явные односложные ответы, которые не стоит отправлять клиенту. */
@@ -108,7 +109,7 @@ export function validateTicketMessage(
     };
   }
 
-  if (!LETTER_RE.test(plain)) {
+  if (!LETTER_RE.test(plain) && !DIGIT_RE.test(plain)) {
     return {
       ok: false,
       reason: "punctuation_only",

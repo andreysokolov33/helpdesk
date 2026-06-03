@@ -752,7 +752,7 @@ def ticket_list_order_by(viewer_id: int) -> tuple:
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _MEDIA_ROOT = os.path.abspath(settings.MEDIA_DIR)
 _IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-_ALLOWED_EXT = _IMAGE_EXT | {".pdf", ".xls", ".xlsx", ".csv"}
+_ALLOWED_EXT = _IMAGE_EXT | {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
 _UPLOAD_TOKEN_TTL_SEC = 15 * 60
 _MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 
@@ -2869,9 +2869,9 @@ def _looks_like_allowed(content: bytes, ext: str) -> bool:
         return content.startswith(b"BM")
     if ext == ".pdf":
         return content.startswith(b"%PDF-")
-    if ext == ".xlsx":
+    if ext in (".xlsx", ".docx"):
         return content.startswith(b"PK\x03\x04") or content.startswith(b"PK\x05\x06") or content.startswith(b"PK\x07\x08")
-    if ext == ".xls":
+    if ext in (".xls", ".doc"):
         return content.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1")
     if ext == ".csv":
         if b"\x00" in content:

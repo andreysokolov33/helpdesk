@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import RichEditor, { type RichEditorHandle } from "@/components/RichEditor";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
@@ -83,6 +84,19 @@ import { validateTicketMessage } from "@/utils/ticketMessageValidation";
 
 const MSG_POLL_MS = 5000;
 
+function AttachmentImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className="tk-att-img__nophoto">
+        <span className="tk-att-img__nophoto-icon">🖼</span>
+        Нет фото
+      </span>
+    );
+  }
+  return <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
+}
+
 type AttachBlockProps = { msg: TicketMessage };
 
 function AttachmentsBlock({
@@ -120,7 +134,7 @@ function AttachmentsBlock({
               onClick={() => onOpenImage(a.file_path)}
               title={a.original_filename || "Открыть изображение"}
             >
-              <img src={a.file_path} alt={a.original_filename || "Вложение"} loading="lazy" />
+              <AttachmentImage src={a.file_path} alt={a.original_filename || "Вложение"} />
             </button>
           ))}
         </div>
@@ -1024,22 +1038,22 @@ export default function TicketPage() {
         setUploads([]);
       } else {
         const created = await sendTicketMessage(ticketId, html, uploadSummary.doneTokens, null, replyTo?.id ?? null);
-        if (created.length) {
-          setMessages((prev) =>
-            applyReadReceiptsToMessages(mergeTicketMessages(prev, created), readReceiptsRef.current),
-          );
-        }
+        flushSync(() => {
+          if (created.length) {
+            setMessages((prev) =>
+              applyReadReceiptsToMessages(mergeTicketMessages(prev, created), readReceiptsRef.current),
+            );
+          }
+          setAtBottom(true);
+          setPendingNewCount(0);
+          setHasNewer(false);
+        });
         atBottomRef.current = true;
-        setAtBottom(true);
-        setPendingNewCount(0);
-        setHasNewer(false);
         editorRef.current?.clear();
         setUploads([]);
         setReplyTo(null);
-        requestAnimationFrame(() => {
-          const el = scrollRef.current;
-          if (el) scrollChatToBottom(el);
-        });
+        const el = scrollRef.current;
+        if (el) scrollChatToBottom(el);
       }
     } catch (e: unknown) {
       window.alert(e instanceof Error ? e.message : editingId ? "Не удалось сохранить" : "Не удалось отправить");
@@ -1546,7 +1560,7 @@ export default function TicketPage() {
                           replyTo.reply_preview ?? {
                             id: replyTo.id,
                             author_name: ticketAuthorLabel(replyTo, subscriberChatName),
-                            text: replyTo.text.slice(0, 100),
+                            text: replyTo.text,
                           }
                         }
                         onJump={scrollToMessage}
@@ -1722,7 +1736,7 @@ export default function TicketPage() {
                                 onClick={() => openImageViewer(a.file_path)}
                                 title={a.original_filename || "Открыть"}
                               >
-                                <img src={a.file_path} alt={a.original_filename || "Вложение"} loading="lazy" />
+                                <AttachmentImage src={a.file_path} alt={a.original_filename || "Вложение"} />
                               </button>
                             ) : (
                               <a
