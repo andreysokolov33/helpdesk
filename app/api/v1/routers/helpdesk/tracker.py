@@ -28,6 +28,7 @@ from app.api.v1.routers.helpdesk.schemas import (
     TicketMessageEditRequest,
     TicketMessageItem,
     TicketMessagesResponse,
+    TicketReadReceiptsResponse,
     TicketSendMessageResponse,
     HelpdeskMacroItem,
     HelpdeskMacrosResponse,
@@ -594,7 +595,7 @@ async def get_ticket_messages(
             detail="since_id нельзя сочетать с before_id, after_id или around_id",
         )
 
-    raw, mode, receipts, has_older, has_newer = await ticket_svc.list_ticket_messages(
+    raw, mode, receipts, read_by, has_older, has_newer = await ticket_svc.list_ticket_messages(
         db,
         ticket_id,
         int(user["user_id"]),
@@ -609,8 +610,27 @@ async def get_ticket_messages(
         chat_mode=mode,
         messages=[TicketMessageItem(**m) for m in raw],
         read_receipts=receipts,
+        read_by_receipts=read_by,
         has_older=has_older,
         has_newer=has_newer,
+    )
+
+
+@router.get("/{ticket_id}/messages/reads", response_model=TicketReadReceiptsResponse)
+async def get_ticket_message_reads(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketReadReceiptsResponse:
+    mode, receipts, read_by = await ticket_svc.get_ticket_read_receipts(
+        db,
+        ticket_id,
+        int(user["user_id"]),
+    )
+    return TicketReadReceiptsResponse(
+        chat_mode=mode,
+        read_receipts=receipts,
+        read_by_receipts=read_by,
     )
 
 

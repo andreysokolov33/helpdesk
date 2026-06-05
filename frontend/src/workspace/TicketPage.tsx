@@ -22,12 +22,12 @@ import {
 import {
   fetchTicketDetail,
   fetchTicketMessages,
+  fetchTicketReadReceipts,
   formatMsgTime,
   formatTicketCreated,
   closeTicket,
   reopenTicket,
   deleteTicketMessage,
-  normalizeReadReceipts,
   sendTicketMessage,
   takeTicketBackToKs,
   transferTicketToEngineers,
@@ -36,12 +36,14 @@ import {
   detachTicketAttachment,
   type TicketDetail,
   type TicketMessage,
+  type TicketMessageReadBy,
+  type TicketReadReceiptsResult,
 } from "@/api/ticket";
 import type { TicketCategoryLeaf } from "@/api/ticketCategories";
 import {
   applyReadReceiptsToMessages,
   canMessageContextMenu,
-  mergeReadReceipts,
+  mergeIncomingReadState,
   mergeTicketMessages,
   ticketAuthorLabel,
   ticketAvatarLetter,
@@ -59,6 +61,7 @@ import {
   minLoadedMessageId,
   preserveScrollOnPrepend,
   scrollChatToBottom,
+  watchChatScrollToBottom,
 } from "@/utils/ticketChatScroll";
 import { compressImageToWebp } from "@/utils/imageCompress";
 import { formatBytes } from "@/utils/formatBytes";
@@ -83,6 +86,7 @@ import { macroTextToEditorHtml, type HelpdeskMacro } from "@/api/macros";
 import { validateTicketMessage } from "@/utils/ticketMessageValidation";
 
 const MSG_POLL_MS = 5000;
+const READ_RECEIPTS_POLL_MS = 3000;
 
 function AttachmentImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
@@ -164,10 +168,12 @@ export default function TicketPage() {
   const editorRef = useRef<RichEditorHandle>(null);
   const messagesRef = useRef<TicketMessage[]>([]);
   const readReceiptsRef = useRef<Record<number, string>>({});
+  const readByReceiptsRef = useRef<Record<number, TicketMessageReadBy[]>>({});
   const atBottomRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const loadingNewerRef = useRef(false);
   const didInitialAutoscrollRef = useRef(false);
+  const initialScrollCleanupRef = useRef<(() => void) | null>(null);
 
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
@@ -319,6 +325,8 @@ export default function TicketPage() {
     setAtBottom(true);
     atBottomRef.current = true;
     didInitialAutoscrollRef.current = false;
+    initialScrollCleanupRef.current?.();
+    initialScrollCleanupRef.current = null;
     setChatPanel("subscriber");
     setComments([]);
     setCommentsHasOlder(false);
@@ -346,19 +354,16 @@ export default function TicketPage() {
         fetchTicketDetail(ticketId),
         fetchTicketMessages(ticketId, { limit: CHAT_PAGE_SIZE }),
       ]);
-      const receipts = normalizeReadReceipts(m.read_receipts);
+      const { receipts, readBy } = mergeIncomingReadState({}, {}, m);
       readReceiptsRef.current = receipts;
+      readByReceiptsRef.current = readBy;
       setDetail(d);
-      setMessages(applyReadReceiptsToMessages(m.messages, receipts));
+      setMessages(applyReadReceiptsToMessages(m.messages, receipts, readBy));
       setHasOlder(Boolean(m.has_older));
       setHasNewer(Boolean(m.has_newer));
       setPendingNewCount(0);
       atBottomRef.current = true;
       setAtBottom(true);
-      requestAnimationFrame(() => {
-        const el = scrollRef.current;
-        if (el) scrollChatToBottom(el);
-      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
       setDetail(null);
@@ -366,6 +371,7 @@ export default function TicketPage() {
       setHasOlder(false);
       setHasNewer(false);
       readReceiptsRef.current = {};
+      readByReceiptsRef.current = {};
     } finally {
       setLoading(false);
     }
@@ -390,11 +396,18 @@ export default function TicketPage() {
     if (loading || error || !detail) return;
     const el = scrollRef.current;
     if (!el) return;
-    scrollChatToBottom(el);
+
+    initialScrollCleanupRef.current?.();
+    initialScrollCleanupRef.current = watchChatScrollToBottom(el);
     didInitialAutoscrollRef.current = true;
     atBottomRef.current = true;
     setAtBottom(true);
     setPendingNewCount(0);
+
+    return () => {
+      initialScrollCleanupRef.current?.();
+      initialScrollCleanupRef.current = null;
+    };
   }, [loading, error, detail, messages.length]);
 
   useEffect(() => {
@@ -421,22 +434,57 @@ export default function TicketPage() {
     }
   }, [ticketId]);
 
+  const applyReadReceiptsUpdate = useCallback((raw: TicketReadReceiptsResult) => {
+      const { receipts, readBy } = mergeIncomingReadState(
+        readReceiptsRef.current,
+        readByReceiptsRef.current,
+        raw,
+      );
+      const receiptsChanged =
+        JSON.stringify(receipts) !== JSON.stringify(readReceiptsRef.current);
+      const readByChanged =
+        JSON.stringify(readBy) !== JSON.stringify(readByReceiptsRef.current);
+      if (!receiptsChanged && !readByChanged) return false;
+      readReceiptsRef.current = receipts;
+      readByReceiptsRef.current = readBy;
+      setMessages((prev) => applyReadReceiptsToMessages(prev, receipts, readBy));
+      return true;
+  }, []);
+
+  const pollReadReceipts = useCallback(async () => {
+    if (!Number.isFinite(ticketId) || ticketId <= 0) return;
+    try {
+      const res = await fetchTicketReadReceipts(ticketId);
+      applyReadReceiptsUpdate(res);
+    } catch {
+      /* поллинг галочек не мешает чату */
+    }
+  }, [ticketId, applyReadReceiptsUpdate]);
+
   const pollMessages = useCallback(async () => {
     if (!Number.isFinite(ticketId) || ticketId <= 0) return;
     const sinceId = maxLoadedMessageId(messagesRef.current);
     try {
       const res = await fetchTicketMessages(ticketId, { sinceId });
-      const incomingReceipts = normalizeReadReceipts(res.read_receipts);
-      const receipts = mergeReadReceipts(readReceiptsRef.current, incomingReceipts);
+      const { receipts, readBy } = mergeIncomingReadState(
+        readReceiptsRef.current,
+        readByReceiptsRef.current,
+        res,
+      );
       const hasNew = res.messages.length > 0;
-      const hasReceiptUpdates = Object.keys(incomingReceipts).length > 0;
-      if (!hasNew && !hasReceiptUpdates) return;
+      const receiptsChanged =
+        JSON.stringify(receipts) !== JSON.stringify(readReceiptsRef.current);
+      const readByChanged =
+        JSON.stringify(readBy) !== JSON.stringify(readByReceiptsRef.current);
+      if (!hasNew && !receiptsChanged && !readByChanged) return;
       readReceiptsRef.current = receipts;
+      readByReceiptsRef.current = readBy;
       const inCommentsPanel = chatPanelRef.current === "comments";
       setMessages((prev) => {
         const next = applyReadReceiptsToMessages(
           hasNew ? mergeTicketMessages(prev, res.messages) : prev,
           receipts,
+          readBy,
         );
         if (inCommentsPanel) {
           const unread = next.filter((m) => !m.is_initial && m.id > subscriberSeenMaxIdRef.current).length;
@@ -520,14 +568,16 @@ export default function TicketPage() {
     const prevTop = el.scrollTop;
     try {
       const res = await fetchTicketMessages(ticketId, { beforeId: minId, limit: CHAT_PAGE_SIZE });
-      const receipts = mergeReadReceipts(
+      const { receipts, readBy } = mergeIncomingReadState(
         readReceiptsRef.current,
-        normalizeReadReceipts(res.read_receipts),
+        readByReceiptsRef.current,
+        res,
       );
       readReceiptsRef.current = receipts;
+      readByReceiptsRef.current = readBy;
       setHasOlder(Boolean(res.has_older));
       setMessages((prev) =>
-        applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+        applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts, readBy),
       );
       requestAnimationFrame(() => {
         const box = scrollRef.current;
@@ -572,14 +622,16 @@ export default function TicketPage() {
     setLoadingNewer(true);
     try {
       const res = await fetchTicketMessages(ticketId, { afterId: maxId, limit: CHAT_PAGE_SIZE });
-      const receipts = mergeReadReceipts(
+      const { receipts, readBy } = mergeIncomingReadState(
         readReceiptsRef.current,
-        normalizeReadReceipts(res.read_receipts),
+        readByReceiptsRef.current,
+        res,
       );
       readReceiptsRef.current = receipts;
+      readByReceiptsRef.current = readBy;
       setHasNewer(Boolean(res.has_newer));
       setMessages((prev) =>
-        applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+        applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts, readBy),
       );
     } catch {
       /* тихо */
@@ -598,16 +650,18 @@ export default function TicketPage() {
       if (maxId <= 0) break;
       try {
         const res = await fetchTicketMessages(ticketId, { afterId: maxId, limit: CHAT_PAGE_SIZE });
-        const receipts = mergeReadReceipts(
+        const { receipts, readBy } = mergeIncomingReadState(
           readReceiptsRef.current,
-          normalizeReadReceipts(res.read_receipts),
+          readByReceiptsRef.current,
+          res,
         );
         readReceiptsRef.current = receipts;
+        readByReceiptsRef.current = readBy;
         more = Boolean(res.has_newer);
         setHasNewer(more);
         if (res.messages.length) {
           setMessages((prev) =>
-            applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+            applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts, readBy),
           );
         } else {
           more = false;
@@ -641,15 +695,17 @@ export default function TicketPage() {
       }
       try {
         const res = await fetchTicketMessages(ticketId, { aroundId: id, limit: CHAT_PAGE_SIZE });
-        const receipts = mergeReadReceipts(
+        const { receipts, readBy } = mergeIncomingReadState(
           readReceiptsRef.current,
-          normalizeReadReceipts(res.read_receipts),
+          readByReceiptsRef.current,
+          res,
         );
         readReceiptsRef.current = receipts;
+        readByReceiptsRef.current = readBy;
         setHasOlder(Boolean(res.has_older));
         setHasNewer(Boolean(res.has_newer));
         setMessages((prev) =>
-          applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts),
+          applyReadReceiptsToMessages(mergeTicketMessages(prev, res.messages), receipts, readBy),
         );
         setPendingNewCount(0);
         atBottomRef.current = false;
@@ -673,6 +729,13 @@ export default function TicketPage() {
     const id = window.setInterval(() => void pollMessages(), MSG_POLL_MS);
     return () => window.clearInterval(id);
   }, [loading, error, detail, pollMessages]);
+
+  useEffect(() => {
+    if (loading || error || !detail) return;
+    void pollReadReceipts();
+    const id = window.setInterval(() => void pollReadReceipts(), READ_RECEIPTS_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [loading, error, detail, pollReadReceipts]);
 
   useEffect(() => {
     if (loading || error || !detail || !isLkTicketSource(detail.source) || chatPanel !== "comments") return;
@@ -1041,7 +1104,11 @@ export default function TicketPage() {
         flushSync(() => {
           if (created.length) {
             setMessages((prev) =>
-              applyReadReceiptsToMessages(mergeTicketMessages(prev, created), readReceiptsRef.current),
+              applyReadReceiptsToMessages(
+                mergeTicketMessages(prev, created),
+                readReceiptsRef.current,
+                readByReceiptsRef.current,
+              ),
             );
           }
           setAtBottom(true);
@@ -1054,6 +1121,7 @@ export default function TicketPage() {
         setReplyTo(null);
         const el = scrollRef.current;
         if (el) scrollChatToBottom(el);
+        void pollReadReceipts();
       }
     } catch (e: unknown) {
       window.alert(e instanceof Error ? e.message : editingId ? "Не удалось сохранить" : "Не удалось отправить");
@@ -1429,7 +1497,7 @@ export default function TicketPage() {
                               <TicketDeliveryTicks
                                 side={m.side}
                                 recipientReadAtIso={m.recipient_read_at_iso}
-                                ticketSource={detail.source}
+                                readBy={m.read_by}
                               />
                             ) : null}
                           </div>

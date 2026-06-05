@@ -1,32 +1,42 @@
+import type { TicketMessageReadBy } from "@/api/ticket";
 import { formatDateTimeLocal } from "@/utils/dateTime";
 import { isOwnTicketMessage } from "@/utils/ticketMessages";
 
 type Props = {
   side: string;
   recipientReadAtIso?: string | null;
-  ticketSource: string;
+  readBy?: TicketMessageReadBy[];
 };
 
-export default function TicketDeliveryTicks({ side, recipientReadAtIso, ticketSource }: Props) {
+function formatReadLine(label: string, readAtIso: string): string {
+  const when = formatDateTimeLocal(readAtIso, { withYear: true, withSeconds: true });
+  return when ? `${label}: ${when}` : label;
+}
+
+function buildReadTooltip(readBy: TicketMessageReadBy[], fallbackReadAt?: string | null): string {
+  if (readBy.length) {
+    return readBy.map((r) => formatReadLine(r.label, r.read_at_iso)).join("\n");
+  }
+  if (fallbackReadAt?.trim()) {
+    return formatReadLine("Прочитано", fallbackReadAt);
+  }
+  return "";
+}
+
+export default function TicketDeliveryTicks({ side, recipientReadAtIso, readBy }: Props) {
   if (!isOwnTicketMessage(side)) return null;
 
-  const isLk = ticketSource === "lk";
-  const read = Boolean(recipientReadAtIso?.trim());
-  const readLabel = formatDateTimeLocal(recipientReadAtIso, { withYear: true, withSeconds: true });
-
-  const title = read
-    ? isLk
-      ? `Прочитано абонентом: ${readLabel}`
-      : `Прочитано инженером: ${readLabel}`
-    : isLk
-      ? "Абонент ещё не прочитал"
-      : "Инженер ещё не прочитал";
+  const readers = readBy ?? [];
+  const read = readers.length > 0 || Boolean(recipientReadAtIso?.trim());
+  const tooltip = read
+    ? buildReadTooltip(readers, recipientReadAtIso)
+    : "Ещё не прочитано";
 
   return (
     <span
       className={`tk-delivery${read ? " tk-delivery--read" : ""}`}
-      title={title}
-      aria-label={title}
+      title={tooltip}
+      aria-label={tooltip}
     >
       <span className="tk-delivery__tick" aria-hidden>
         ✓

@@ -146,6 +146,11 @@ class TicketMessageReplyPreview(BaseModel):
     is_deleted: bool = False
 
 
+class TicketMessageReadByItem(BaseModel):
+    label: str
+    read_at_iso: str
+
+
 class TicketMessageItem(BaseModel):
     id: int
     side: str
@@ -154,6 +159,7 @@ class TicketMessageItem(BaseModel):
     has_read: bool = True
     author_name: str | None = None
     recipient_read_at_iso: str | None = None
+    read_by: list[TicketMessageReadByItem] = Field(default_factory=list)
     reply_to_id: int | None = None
     is_edited: bool = False
     updated_at_iso: str | None = None
@@ -212,8 +218,15 @@ class TicketMessagesResponse(BaseModel):
     messages: list[TicketMessageItem]
     chat_mode: str
     read_receipts: dict[int, str] = Field(default_factory=dict)
+    read_by_receipts: dict[int, list[TicketMessageReadByItem]] = Field(default_factory=dict)
     has_older: bool = False
     has_newer: bool = False
+
+
+class TicketReadReceiptsResponse(BaseModel):
+    chat_mode: str
+    read_receipts: dict[int, str] = Field(default_factory=dict)
+    read_by_receipts: dict[int, list[TicketMessageReadByItem]] = Field(default_factory=dict)
 
 
 class TicketMarkReadRequest(BaseModel):

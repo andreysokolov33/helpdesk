@@ -1,4 +1,9 @@
-import type { TicketMessage } from "@/api/ticket";
+import {
+  normalizeReadByReceipts,
+  normalizeReadReceipts,
+  type TicketMessage,
+  type TicketMessageReadBy,
+} from "@/api/ticket";
 
 export function mergeTicketMessages(prev: TicketMessage[], incoming: TicketMessage[]): TicketMessage[] {
   if (!incoming.length) return prev;
@@ -38,16 +43,57 @@ export function mergeReadReceipts(
   return next;
 }
 
-export function applyReadReceiptsToMessages<T extends { id: number; side: string; recipient_read_at_iso?: string | null }>(
+export function mergeReadByReceipts(
+  prev: Record<number, TicketMessageReadBy[]>,
+  incoming: Record<number, TicketMessageReadBy[]> | undefined,
+): Record<number, TicketMessageReadBy[]> {
+  if (!incoming || !Object.keys(incoming).length) return prev;
+  const next = { ...prev };
+  for (const [k, readers] of Object.entries(incoming)) {
+    const id = Number(k);
+    if (Number.isFinite(id) && id > 0 && readers?.length) next[id] = readers;
+  }
+  return next;
+}
+
+export function mergeIncomingReadState(
+  prevReceipts: Record<number, string>,
+  prevReadBy: Record<number, TicketMessageReadBy[]>,
+  raw?: { read_receipts?: Record<string, string>; read_by_receipts?: Record<string, TicketMessageReadBy[]> },
+): { receipts: Record<number, string>; readBy: Record<number, TicketMessageReadBy[]> } {
+  return {
+    receipts: mergeReadReceipts(prevReceipts, normalizeReadReceipts(raw?.read_receipts)),
+    readBy: mergeReadByReceipts(prevReadBy, normalizeReadByReceipts(raw?.read_by_receipts)),
+  };
+}
+
+export function applyReadReceiptsToMessages<
+  T extends {
+    id: number;
+    side: string;
+    recipient_read_at_iso?: string | null;
+    read_by?: TicketMessageReadBy[];
+  },
+>(
   messages: T[],
   receipts: Record<number, string>,
+  readBy?: Record<number, TicketMessageReadBy[]>,
 ): T[] {
-  if (!Object.keys(receipts).length) return messages;
+  const hasReceipts = Object.keys(receipts).length > 0;
+  const hasReadBy = readBy && Object.keys(readBy).length > 0;
+  if (!hasReceipts && !hasReadBy) return messages;
   return messages.map((m) => {
     if (!isStaffOutboundMessage(m.side)) return m;
-    const iso = receipts[m.id] ?? m.recipient_read_at_iso;
-    if (!iso) return m;
-    return { ...m, recipient_read_at_iso: iso };
+    const hasReceipt = Object.prototype.hasOwnProperty.call(receipts, m.id);
+    const hasReadBy = Boolean(readBy && Object.prototype.hasOwnProperty.call(readBy, m.id));
+    const iso = hasReceipt ? receipts[m.id] : m.recipient_read_at_iso;
+    const readers = hasReadBy ? readBy![m.id] : m.read_by;
+    if (!iso && !readers?.length) return m;
+    return {
+      ...m,
+      recipient_read_at_iso: iso ?? null,
+      read_by: readers ?? [],
+    };
   });
 }
 

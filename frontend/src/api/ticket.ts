@@ -14,6 +14,11 @@ export type TicketMessageReplyPreview = {
   is_deleted?: boolean;
 };
 
+export type TicketMessageReadBy = {
+  label: string;
+  read_at_iso: string;
+};
+
 export type TicketMessage = {
   id: number;
   side: "client" | "support" | "engineer" | "partner" | "bot" | "me" | string;
@@ -21,6 +26,7 @@ export type TicketMessage = {
   created_at_iso?: string | null;
   has_read: boolean;
   recipient_read_at_iso?: string | null;
+  read_by?: TicketMessageReadBy[];
   reply_to_id?: number | null;
   is_edited?: boolean;
   updated_at_iso?: string | null;
@@ -171,8 +177,15 @@ export type TicketMessagesResult = {
   messages: TicketMessage[];
   chat_mode: string;
   read_receipts?: Record<string, string>;
+  read_by_receipts?: Record<string, TicketMessageReadBy[]>;
   has_older?: boolean;
   has_newer?: boolean;
+};
+
+export type TicketReadReceiptsResult = {
+  chat_mode: string;
+  read_receipts?: Record<string, string>;
+  read_by_receipts?: Record<string, TicketMessageReadBy[]>;
 };
 
 export type UploadTicketAttachmentResult = {
@@ -204,6 +217,11 @@ export async function fetchTicketMessages(
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages${buildMessagesQuery(opts)}`);
 }
 
+/** Поллинг галочек «прочитано» на исходящих сообщениях. */
+export async function fetchTicketReadReceipts(ticketId: number): Promise<TicketReadReceiptsResult> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages/reads`);
+}
+
 export async function uploadTicketAttachment(ticketId: number, file: File): Promise<UploadTicketAttachmentResult> {
   const fd = new FormData();
   fd.set("file", file);
@@ -226,6 +244,20 @@ export function normalizeReadReceipts(raw?: Record<string, string>): Record<numb
   for (const [k, v] of Object.entries(raw)) {
     const id = Number(k);
     if (Number.isFinite(id) && id > 0 && v) out[id] = v;
+  }
+  return out;
+}
+
+export function normalizeReadByReceipts(
+  raw?: Record<string, TicketMessageReadBy[]>,
+): Record<number, TicketMessageReadBy[]> {
+  if (!raw) return {};
+  const out: Record<number, TicketMessageReadBy[]> = {};
+  for (const [k, readers] of Object.entries(raw)) {
+    const id = Number(k);
+    if (!Number.isFinite(id) || id <= 0 || !readers?.length) continue;
+    const valid = readers.filter((r) => r?.label && r?.read_at_iso);
+    if (valid.length) out[id] = valid;
   }
   return out;
 }

@@ -18,7 +18,44 @@ export function preserveScrollOnPrepend(el: HTMLElement, prevHeight: number, pre
 }
 
 export function scrollChatToBottom(el: HTMLElement): void {
-  el.scrollTop = el.scrollHeight;
+  el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+}
+
+/**
+ * Удерживает скролл внизу при первой загрузке: картинки и шрифты меняют scrollHeight
+ * уже после первого scrollTop.
+ */
+export function watchChatScrollToBottom(el: HTMLElement, maxMs = 2500): () => void {
+  let active = true;
+  const snap = () => {
+    if (!active) return;
+    const last = el.querySelector("[data-msg-id]:last-of-type") as HTMLElement | null;
+    if (last) {
+      last.scrollIntoView({ block: "end", inline: "nearest" });
+    }
+    scrollChatToBottom(el);
+  };
+
+  snap();
+  requestAnimationFrame(() => requestAnimationFrame(snap));
+
+  const ro = new ResizeObserver(() => snap());
+  const feed = el.querySelector(".tk-chat-feed");
+  if (feed) ro.observe(feed);
+  ro.observe(el);
+
+  const timers = [0, 50, 150, 400, 800, 1500].map((ms) => window.setTimeout(snap, ms));
+  const stopTimer = window.setTimeout(() => {
+    active = false;
+    ro.disconnect();
+  }, maxMs);
+
+  return () => {
+    active = false;
+    ro.disconnect();
+    timers.forEach((id) => window.clearTimeout(id));
+    window.clearTimeout(stopTimer);
+  };
 }
 
 export function minLoadedMessageId(messages: { id: number }[]): number | null {

@@ -262,7 +262,6 @@ async def mail_rows_to_messages(
             staff_role=r.get("staff_role"),
             subscriber_name=subscriber_display_name,
         )
-        is_incoming_client = side == "client"
         edit_meta = svc._message_edit_meta(updated_at=r.get("updated_at"))
         messages.append(
             {
@@ -271,9 +270,7 @@ async def mail_rows_to_messages(
                 "text": (r.get("text_raw") or "").strip(),
                 "author_name": author_name,
                 "created_at_iso": svc._iso(dt) if isinstance(dt, datetime) else None,
-                "has_read": True
-                if is_bot or side == "me"
-                else mid in read_ids or not is_incoming_client,
+                "has_read": True if is_bot or side == "me" else mid in read_ids,
                 "reply_to_id": svc._parse_reply_to_id(r.get("relay_msg_id")),
                 **edit_meta,
                 "legacy_file_url": svc._media_url(legacy) if legacy else None,
@@ -557,7 +554,7 @@ async def tracker_rows_to_messages(
                 "text": (r.get("body") or "").strip(),
                 "author_name": author_name,
                 "created_at_iso": svc._iso(r.get("created_at")),
-                "has_read": is_own or mid in staff_read_ids or side != "client",
+                "has_read": is_own or mid in staff_read_ids,
                 "reply_to_id": svc._parse_reply_to_id(r.get("reply_to_id")),
                 **edit_meta,
                 "legacy_file_url": None,

@@ -1,0 +1,417 @@
+================================================================================
+  ОТПРАВКА ФАЙЛОВ И ФОТО В ЧАТЕ ТИКЕТА (/tickets/{ticket_id})
+  Почему браузер не зависает и всё работает быстро
+================================================================================
+
+Контекст: карточка тикета — frontend/src/workspace/TicketPage.tsx,
+API — app/api/v1/routers/helpdesk/tracker.py + ticket_service.py.
+
+React здесь НЕ является главной причиной скорости. Все ключевые приёмы
+переносятся на чистый JS + CSS один в один. Зависание в другом проекте
+обычно вызвано архитектурой (отправка файлов вместе с сообщением,
+base64-превью, параллельный залив гигабайтов, пересоздание XHR на каждый
+тик рендера), а не отсутствием React.
+
+
+--------------------------------------------------------------------------------
+1. ГЛАВНАЯ ИДЕЯ: ДВУХФАЗНАЯ ЗАГРУЗКА (PRE-UPLOAD + SEND TOKENS)
+--------------------------------------------------------------------------------
+
+Файлы НИКОГДА не отправляются вместе с текстом сообщения в одном тяжёлом
+запросе (если пользователь выбрал файлы через UI очереди).
+
+Фаза A — загрузка файла на сервер ДО отправки сообщения:
+  POST /api/v1/helpdesk/tracker/{ticket_id}/attachments/upload
+  Body: multipart/form-data, поле "file"
+  Ответ: { token, original_filename, file_ext, file_size_bytes, is_image }
+
+Фаза B — отправка сообщения (лёгкий запрос):
+  POST /api/v1/helpdesk/tracker/{ticket_id}/messages
+  Body: multipart/form-data
+    text          — HTML текста
+    upload_tokens — JSON-массив строк-токенов, например ["eyJ...", "eyJ..."]
+    reply_to_id   — опционально
+
+На сервере токены только ПОДТВЕРЖДАЮТ уже загруженные файлы: tmp-файл
+переименовывается в финальный путь (os.replace), в БД пишутся метаданные
+вложений. Повторной передачи байтов файла по сети нет.
+
+Почему это критично для UI:
+  - Пользователь видит прогресс загрузки каждого файла отдельно.
+  - Кнопка «Отправить» может быть нажата сразу — сообщение уйдёт, когда
+    очередь догрузит файлы (см. autoSend, п. 6).
+  - Запрос отправки сообщения весит килобайты (текст + JWT-токены), а не
+    десятки мегабайт. Браузер не блокируется на сериализации FormData с
+    файлами при submit.
+
+
+--------------------------------------------------------------------------------
+2. ПОЛНЫЙ АЛГОРИТМ НА КЛИЕНТЕ (ПОШАГОВО)
+--------------------------------------------------------------------------------
+
+2.1. Выбор файлов (3 входа)
+---------------------------
+  a) <input type="file" multiple accept="image/*,.pdf,.doc,...">
+  b) Drag-and-drop на блок очереди (.tk-upq)
+  c) Вставка из буфера (Ctrl+V) — RichEditor.tsx перехватывает paste,
+     берёт только image/* из clipboard, создаёт File с случайным именем,
+     вызывает enqueueFiles(files). В редактор НЕ вставляется base64-картинка.
+
+После выбора всегда вызывается enqueueFiles(list).
+
+
+2.2. enqueueFiles — подготовка очереди
+--------------------------------------
+Файл: TicketPage.tsx, функция enqueueFiles.
+
+  1) Array.from(list) — нормализация FileList в массив.
+
+  2) Для КАЖДОГО файла ПО ОЧЕРЕДИ (await в цикле, не Promise.all):
+       если image/* → compressImageToWebp(file)
+       иначе        → файл как есть
+
+     Сжатие (frontend/src/utils/imageCompress.ts):
+       - createImageBitmap(file) — декодирование вне синхронного цикла JS
+       - масштаб: max сторона 2200 px (scale = min(1, 2200/max(w,h)))
+       - canvas.drawImage → canvas.toBlob("image/webp", quality=0.85)
+       - на выходе новый File (*.webp), обычно в 5–15 раз меньше оригинала
+         с телефона (12 MP JPEG → ~200–800 KB webp)
+
+     Если сжатие не удалось (битый файл, нет canvas) — грузится оригинал.
+
+  3) В state uploads добавляются элементы:
+       id:         crypto.randomUUID()
+       file:       File (уже сжатый для картинок)
+       previewUrl: URL.createObjectURL(file) ТОЛЬКО для image/*
+       status:     "pending"
+       uploaded:   0
+       total:      file.size
+
+  ВАЖНО: превью через blob:-URL, НЕ через FileReader.readAsDataURL.
+  Base64 раздувает память (~+33%) и тормозит главный поток при больших фото.
+
+
+2.3. Очередь загрузки — один XHR, строго последовательно
+---------------------------------------------------------
+Файл: TicketPage.tsx, useEffect([uploads, ticketId]).
+
+  Guard в начале эффекта:
+    if (uploadingIdRef.current) return;
+  → если уже идёт загрузка, эффект НЕ запускает второй XHR.
+  Это защита от React re-render: без guard каждый setUploads(onprogress)
+  перезапускал бы эффект и мог бы abort-ить текущую загрузку.
+
+  Алгоритм:
+    1) next = uploads.find(u => u.status === "pending")
+    2) если нет — выход
+    3) status next → "uploading"
+    4) xhr = new XMLHttpRequest()  // НЕ fetch — нужен xhr.upload.onprogress
+    5) xhr.open("POST", ".../attachments/upload")
+    6) xhr.withCredentials = true
+    7) xhr.upload.onprogress → обновить uploaded/total только у этого id
+    8) xhr.onload → JSON.parse → сохранить token, status "done"
+    9) xhr.onerror / HTTP error → status "error"
+   10) FormData: fd.set("file", next.file); xhr.send(fd)
+   11) по завершении: uploadingXhrRef = null, uploadingIdRef = null
+       → эффект сработает снова и возьмёт следующий pending
+
+  Итого: N файлов = N последовательных запросов, в каждый момент времени
+  активен ровно один. Память и сокеты не забиваются параллельным заливом
+  10 фотографий по 15 МБ.
+
+
+2.4. Отправка сообщения submit()
+--------------------------------
+  1) Если uploadSummary.pending > 0 (есть pending или uploading):
+       autoSendRef.current = true
+       return  // не отправляем, ждём очередь
+
+  2) Когда все файлы status === "done":
+       uploadSummary.doneTokens — массив JWT-токенов
+       sendTicketMessage(ticketId, html, doneTokens, null, replyToId)
+
+  3) sendTicketMessage (frontend/src/api/ticket.ts):
+       FormData: text + upload_tokens (JSON.stringify)
+       fetch POST .../messages
+       Файлов в этом запросе НЕТ.
+
+  4) После успеха: setUploads([]), revokeObjectURL для превью при очистке.
+
+
+2.5. autoSend — отправка после догрузки
+---------------------------------------
+  useEffect([uploadSummary.pending]):
+    if (!autoSendRef.current) return
+    if (uploadSummary.pending > 0) return
+    autoSendRef.current = false
+    submit()
+
+  Сценарий: пользователь пишет текст, прикрепляет 3 фото, жмёт Enter пока
+  они ещё грузятся → сообщение автоматически уйдёт, когда pending станет 0.
+
+
+2.6. Отмена и смена тикета
+--------------------------
+  - Удаление файла из очереди: если status === "uploading" → xhr.abort()
+  - Смена ticketId / unmount: cleanup useEffect abort текущий XHR
+  - input.value = "" после выбора — можно выбрать тот же файл снова
+
+
+--------------------------------------------------------------------------------
+3. СЕРВЕР: ЗАГРУЗКА ВЛОЖЕНИЯ (ФАЗА A)
+--------------------------------------------------------------------------------
+
+Эндпоинт: POST /{ticket_id}/attachments/upload
+Код: tracker.py → ticket_service.save_attachment_temp()
+
+  1) Проверка расширения: jpg, jpeg, png, gif, webp, bmp, pdf, doc, docx,
+     xls, xlsx, csv (_ALLOWED_EXT).
+
+  2) contents = await file.read()  — один проход, лимит 15 МБ (_MAX_UPLOAD_BYTES).
+
+  3) Magic-byte проверка (_looks_like_allowed) — защита от подмены расширения.
+
+  4) Сохранение во ВРЕМЕННУЮ папку (не в БД, не в сообщение):
+       media/chat/{user_id|no_user}/{ticket_id}/tmp/{uuid}{ext}
+
+  5) JWT-токен (typ=ticket_upload, TTL 15 мин) с полями:
+       ticket_id, tmp_rel, orig, ext, size, folder, iat, exp
+
+  6) Ответ клиенту: token + метаданные + is_image.
+
+Запись в БД на этом этапе НЕ происходит — только диск + токен. Быстро.
+
+
+--------------------------------------------------------------------------------
+4. СЕРВЕР: ОТПРАВКА СООБЩЕНИЯ (ФАЗА B)
+--------------------------------------------------------------------------------
+
+Эндпоинт: POST /{ticket_id}/messages
+Код: tracker.py → send_ticket_message()
+
+  1) json.loads(upload_tokens) → список строк.
+
+  2) finalize_upload_tokens(tokens, ticket_id):
+       - jwt.decode, проверка ticket_id и typ
+       - os.replace(tmp → media/chat/{folder}/{ticket_id}/{name}_{ts}_{uniq}.ext)
+       - возврат метаданных { file_path, original_filename, ... }
+
+  3) Если вложений > 10 — разбивка на пакеты по 10 (отдельные сообщения в чате,
+     текст только в первом). Это ограничивает размер одной DB-транзакции.
+
+  4) send_tracker_reply / send_mail_reply — INSERT сообщения + INSERT вложений
+     в tracker_message_attachments / user_mail_attachments.
+
+Legacy-путь (не используется UI очереди): можно передать file напрямую в
+POST /messages — тогда файл снова грузится в save_attachment_temp. UI этого
+не делает.
+
+
+--------------------------------------------------------------------------------
+5. ЧТО ИМЕННО ДЕЛАЕТ UX «БЫСТРЫМ И ЧЁТКИМ»
+--------------------------------------------------------------------------------
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Приём                           │ Зачем                               │
+  ├─────────────────────────────────┼─────────────────────────────────────┤
+  │ Двухфазная загрузка             │ Submit не тащит мегабайты           │
+  │ WebP-сжатие до upload           │ Меньше байт по сети и на сервере    │
+  │ createImageBitmap + canvas      │ Декод не в синхронном JSON/string   │
+  │ Один XHR, очередь               │ Нет 10 параллельных upload          │
+  │ uploadingIdRef guard            │ Re-render не рвёт загрузку          │
+  │ xhr.upload.onprogress           │ UI обновляется без ожидания конца   │
+  │ blob: URL для превью            │ Нет base64 в памяти/DOM             │
+  │ loading="lazy" в ленте чата     │ Старые картинки не грузятся сразу   │
+  │ JWT-токен вместо файла в send   │ Лёгкий второй запрос                │
+  │ tmp → finalize (os.replace)     │ Сервер не копирует файл дважды      │
+  │ Лимит 15 МБ                     │ Предсказуемое потребление RAM       │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+
+--------------------------------------------------------------------------------
+6. ТИПИЧНЫЕ ОШИБКИ, ИЗ-ЗА КОТОРЫХ БРАУЗЕР «ЗАВИСАЕТ» (И ЧТО ДЕЛАТЬ ВМЕСТО)
+--------------------------------------------------------------------------------
+
+6.1. Один запрос «текст + все файлы»
+  Плохо:  FormData с 5×8MB, await fetch(...), UI ждёт целиком.
+  Хорошо: как здесь — сначала upload каждого файла, потом tokens в messages.
+
+6.2. FileReader.readAsDataURL для превью
+  Плохо:  строка base64 в state/DOM, GC не успевает, вкладка фризит.
+  Хорошо: URL.createObjectURL(file), revoke при удалении.
+
+6.3. Вставка картинки в contenteditable как <img src="data:...">
+  Плохо:  огромный HTML, sanitize, reflow редактора.
+  Хорошо: paste → отдельные File → очередь upload (RichEditor handlePaste).
+
+6.4. Promise.all(files.map(upload)) — 10 параллельных upload
+  Плохо:  исчерпание HTTP/1.1 соединений, пик RAM, main thread в onprogress×10.
+  Хорошо: очередь, один активный XHR.
+
+6.5. Пересоздание XHR в обработчике change без ref-guard
+  Плохо:  abort на каждый progress tick → бесконечные рестарты.
+  Хорошо: uploadingIdRef.current — «уже грузим, не трогай».
+
+6.6. Отправка оригиналов 4000×3000 JPEG с телефона
+  Плохо:  8–15 MB на файл, долгий upload даже с хорошей архитектурой.
+  Хорошо: resize max 2200px + webp q=0.85 до отправки.
+
+6.7. Синхронное сжатие всех файлов через один большой canvas без await
+  Плохо:  блокировка UI на секунды.
+  Хорошо: for (const f of arr) { await compressImageToWebp(f) } — по одному.
+
+6.8. fetch без progress для больших файлов
+  Плохо:  пользователь не видит процесс, кажется что «зависло».
+  Хорошо: XMLHttpRequest + xhr.upload.onprogress (в vanilla JS то же самое).
+
+
+--------------------------------------------------------------------------------
+7. КАК ПЕРЕНЕСТИ НА ЧИСТЫЙ JS (БЕЗ REACT)
+--------------------------------------------------------------------------------
+
+Минимальная структура данных (обычный объект/массив):
+
+  const uploads = [];  // { id, file, previewUrl, status, uploaded, total, token }
+  let uploadingId = null;
+  let uploadXhr = null;
+  let autoSend = false;
+
+  function renderUploadQueue() {
+    // обновить DOM списка .tk-upq__items — только diff по необходимости
+  }
+
+  async function enqueueFiles(fileList) {
+    for (const f of fileList) {
+      const file = f.type.startsWith("image/") ? await compressImageToWebp(f) : f;
+      uploads.push({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+        status: "pending",
+        uploaded: 0,
+        total: file.size,
+      });
+    }
+    renderUploadQueue();
+    pumpUploadQueue();
+  }
+
+  function pumpUploadQueue() {
+    if (uploadingId) return;
+    const next = uploads.find(u => u.status === "pending");
+    if (!next) {
+      if (autoSend) { autoSend = false; submitMessage(); }
+      return;
+    }
+    next.status = "uploading";
+    uploadingId = next.id;
+    const xhr = new XMLHttpRequest();
+    uploadXhr = xhr;
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      next.uploaded = e.loaded;
+      next.total = e.total;
+      renderUploadQueue();
+    };
+    xhr.onload = () => { /* parse token, next.status='done', uploadingId=null, pumpUploadQueue() */ };
+    xhr.onerror = () => { /* ... */ };
+    const fd = new FormData();
+    fd.set("file", next.file);
+    xhr.open("POST", `/api/v1/helpdesk/tracker/${ticketId}/attachments/upload`);
+    xhr.withCredentials = true;
+    xhr.send(fd);
+  }
+
+  async function submitMessage() {
+    const pending = uploads.some(u => u.status === "pending" || u.status === "uploading");
+    if (pending) { autoSend = true; return; }
+    const tokens = uploads.filter(u => u.status === "done" && u.token).map(u => u.token);
+    const fd = new FormData();
+    fd.set("text", getEditorHtml());
+    fd.set("upload_tokens", JSON.stringify(tokens));
+    await fetch(`/api/v1/helpdesk/tracker/${ticketId}/messages`, { method: "POST", body: fd, credentials: "include" });
+    // очистить uploads, revokeObjectURL
+  }
+
+React здесь только хранит uploads в useState и вызывает setUploads в onprogress.
+Логика очереди + XHR + refs идентична vanilla JS.
+
+
+--------------------------------------------------------------------------------
+8. СХЕМА ПОТОКА ДАННЫХ (КРАТКО)
+--------------------------------------------------------------------------------
+
+  [Пользователь выбирает файлы]
+           │
+           ▼
+  [compressImageToWebp для image/*]  ← уменьшение размера
+           │
+           ▼
+  [uploads[] status=pending, blob preview]
+           │
+           ▼
+  ┌─ pump: один XHR ─────────────────────────────────────┐
+  │  POST /attachments/upload  →  { token }            │
+  │  onprogress → % в UI                                 │
+  │  status=done, сохранить token                        │
+  └──────────────────────────┬───────────────────────────┘
+                             │ (следующий pending)
+                             ▼
+  [Пользователь жмёт Отправить]
+           │
+           ▼
+  pending>0? ──да──► autoSend=true, ждать
+       │
+       нет
+       ▼
+  POST /messages  { text, upload_tokens: ["jwt",...] }
+           │
+           ▼
+  [Сервер finalize_upload_tokens → os.replace → DB]
+           │
+           ▼
+  [Сообщение с вложениями в ленте чата]
+
+
+--------------------------------------------------------------------------------
+9. ФАЙЛЫ ДЛЯ ЧТЕНИЯ В РЕПОЗИТОРИИ
+--------------------------------------------------------------------------------
+
+  Frontend:
+    frontend/src/workspace/TicketPage.tsx     — очередь, XHR, submit, UI
+    frontend/src/utils/imageCompress.ts       — сжатие в WebP
+    frontend/src/components/RichEditor.tsx    — paste картинок из буфера
+    frontend/src/api/ticket.ts                — sendTicketMessage (только tokens)
+    frontend/src/utils/formatBytes.ts         — отображение размера
+
+  Backend:
+    app/api/v1/routers/helpdesk/tracker.py
+      POST /{ticket_id}/attachments/upload
+      POST /{ticket_id}/messages
+    app/api/v1/routers/helpdesk/ticket_service.py
+      save_attachment_temp()
+      finalize_upload_tokens()
+      _MAX_UPLOAD_BYTES = 15 MiB
+      _UPLOAD_TOKEN_TTL_SEC = 15 * 60
+
+
+--------------------------------------------------------------------------------
+10. ЧЕКЛИСТ ДЛЯ ДРУГОГО ПРОЕКТА (VANILLA JS)
+--------------------------------------------------------------------------------
+
+  [ ] Файлы грузятся отдельным эндпоинтом ДО отправки сообщения
+  [ ] Сообщение получает только токены/ID уже загруженных файлов
+  [ ] Изображения сжимаются/ресайзятся до upload (webp/jpeg, max ~2000px)
+  [ ] Превью через URL.createObjectURL, не base64
+  [ ] Очередь: 1 активный upload, не параллельный шторм
+  [ ] XHR + onprogress (или fetch с ReadableStream + ручной трекинг)
+  [ ] Guard «уже идёт загрузка» — не пересоздавать XHR при обновлении UI
+  [ ] autoSend: отложить submit пока pending > 0
+  [ ] Лимит размера файла на сервере и на клиенте
+  [ ] revokeObjectURL при удалении/отправке
+  [ ] В ленте сообщений: loading="lazy" на <img>
+
+Если выполнены пункты 1–6, браузер перестаёт «зависать» даже на слабых машинах.
+React vs vanilla на это почти не влияет.
+
+================================================================================

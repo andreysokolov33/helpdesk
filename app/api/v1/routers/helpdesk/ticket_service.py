@@ -1073,79 +1073,178 @@ async def _assert_reply_target(
         raise HTTPException(status_code=400, detail="Сообщение для ответа не найдено в этом тикете")
 
 
+def _reader_display_label(
+    person_type: str | None,
+    role: str | None,
+    staff_name: str | None,
+) -> str:
+    pt = (person_type or "").strip().lower()
+    if pt == "user":
+        return "Абонент"
+    role_l = (role or "").strip().lower()
+    if pt == "skystream":
+        if role_l == "engineer":
+            return "Инженер"
+        if role_l == "support":
+            return (staff_name or "").strip() or "КЦ"
+        name = (staff_name or "").strip()
+        if name:
+            return name
+        return "Сотрудник"
+    if pt in ("partner", "tech"):
+        return "Партнёр"
+    return (staff_name or "").strip() or pt or "—"
+
+
+def _reader_sort_key(person_type: str | None, role: str | None) -> int:
+    pt = (person_type or "").strip().lower()
+    role_l = (role or "").strip().lower()
+    if pt == "user":
+        return 0
+    if pt == "skystream" and role_l == "engineer":
+        return 1
+    if pt == "skystream" and role_l == "support":
+        return 2
+    return 3
+
+
+def _build_outbound_read_details(
+    rows: list[Any],
+    *,
+    legacy_read_time: dict[int, datetime] | None = None,
+) -> tuple[dict[int, str], dict[int, list[dict[str, str]]]]:
+    """Собирает min read time и до 5 читателей на исходящее сообщение."""
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for r in rows:
+        mid = int(r["msg_id"])
+        rt = r.get("read_time")
+        if not isinstance(rt, datetime):
+            continue
+        grouped.setdefault(mid, []).append(
+            {
+                "read_time": rt,
+                "person_type": r.get("person_type"),
+                "role": r.get("skystream_role"),
+                "staff_name": r.get("skystream_name"),
+            }
+        )
+
+    if legacy_read_time:
+        for mid, rt in legacy_read_time.items():
+            if mid not in grouped and isinstance(rt, datetime):
+                grouped[mid] = [
+                    {
+                        "read_time": rt,
+                        "person_type": "user",
+                        "role": None,
+                        "staff_name": None,
+                    }
+                ]
+
+    receipts: dict[int, str] = {}
+    read_by: dict[int, list[dict[str, str]]] = {}
+    for mid, readers in grouped.items():
+        readers.sort(
+            key=lambda x: (
+                _reader_sort_key(x.get("person_type"), x.get("role")),
+                x["read_time"],
+            )
+        )
+        earliest = readers[0]["read_time"]
+        receipts[mid] = _iso(earliest) or ""
+        read_by[mid] = [
+            {
+                "label": _reader_display_label(
+                    r.get("person_type"),
+                    r.get("role"),
+                    r.get("staff_name"),
+                ),
+                "read_at_iso": _iso(r["read_time"]) or "",
+            }
+            for r in readers[:5]
+            if isinstance(r.get("read_time"), datetime)
+        ]
+    return receipts, read_by
+
+
 async def load_mail_subscriber_read_receipts(
     db: AsyncSession,
     ticket_id: int,
-) -> dict[int, str]:
+) -> tuple[dict[int, str], dict[int, list[dict[str, str]]]]:
     """ЛК: прочтение исходящих оператором сообщений абонентом (user_mail_reads.person_type=user)."""
     rows = (
         await db.execute(
             text(
                 f"""
-                SELECT um.id AS msg_id,
-                    COALESCE(
-                        (
-                            SELECT MIN(r.read_time)
-                            FROM users.user_mail_reads r
-                            WHERE r.msg_id = um.id AND r.person_type = 'user'
-                        ),
-                        CASE WHEN um.read::text IN ('1', 't', 'true') THEN um.date_tz END
-                    ) AS read_time
+                SELECT um.id AS msg_id, r.read_time, r.person_type,
+                    NULL::text AS skystream_role,
+                    NULL::text AS skystream_name
+                FROM users.user_mail um
+                INNER JOIN users.user_mail_reads r ON r.msg_id = um.id
+                WHERE um.ticket_id = :ticket_id
+                  AND NOT ({_MAIL_IS_CLIENT})
+                  AND r.person_type = 'user'
+                UNION ALL
+                SELECT um.id AS msg_id, um.date_tz AS read_time, 'user' AS person_type,
+                    NULL::text AS skystream_role,
+                    NULL::text AS skystream_name
                 FROM users.user_mail um
                 WHERE um.ticket_id = :ticket_id
                   AND NOT ({_MAIL_IS_CLIENT})
+                  AND um.read::text IN ('1', 't', 'true')
+                  AND um.date_tz IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM users.user_mail_reads r2
+                      WHERE r2.msg_id = um.id AND r2.person_type = 'user'
+                  )
                 """
             ),
             {"ticket_id": ticket_id},
         )
     ).mappings().all()
-    out: dict[int, str] = {}
-    for r in rows:
-        rt = r.get("read_time")
-        if isinstance(rt, datetime):
-            out[int(r["msg_id"])] = _iso(rt) or ""
-    return out
+    return _build_outbound_read_details(rows)
 
 
-async def load_tracker_engineer_read_receipts(
+async def load_tracker_outbound_read_receipts(
     db: AsyncSession,
     ticket_id: int,
-) -> dict[int, str]:
-    """call_center и др.: прочтение исходящих skystream-сообщений инженером."""
+) -> tuple[dict[int, str], dict[int, list[dict[str, str]]]]:
+    """call_center и др.: прочтение исходящих skystream-сообщений (tracker_messages_reads)."""
     rows = (
         await db.execute(
             text(
                 """
-                SELECT tm.id AS msg_id, MIN(r.read_time) AS read_time
+                SELECT tm.id AS msg_id, r.read_time, r.person_type,
+                    su.role AS skystream_role,
+                    su.full_name AS skystream_name
                 FROM users.tracker_messages tm
                 INNER JOIN users.tracker_messages_reads r ON r.msg_id = tm.id
-                INNER JOIN users.skystream_users su
-                    ON su.id = r.user_id AND LOWER(COALESCE(su.role, '')) = 'engineer'
+                LEFT JOIN users.skystream_users su
+                    ON r.person_type = 'skystream' AND su.id = r.user_id
                 WHERE tm.ticket_id = :ticket_id
                   AND COALESCE(tm.person_type, 'skystream') = 'skystream'
-                GROUP BY tm.id
+                ORDER BY tm.id, r.read_time ASC
                 """
             ),
             {"ticket_id": ticket_id},
         )
     ).mappings().all()
-    out: dict[int, str] = {}
-    for r in rows:
-        rt = r.get("read_time")
-        if isinstance(rt, datetime):
-            out[int(r["msg_id"])] = _iso(rt) or ""
-    return out
+    return _build_outbound_read_details(rows)
 
 
-def _attach_recipient_read_at(
+def _attach_read_receipts(
     messages: list[dict[str, Any]],
     receipts: dict[int, str],
+    read_by: dict[int, list[dict[str, str]]],
 ) -> None:
     for m in messages:
         if m.get("side") in STAFF_OUTBOUND_SIDES:
-            m["recipient_read_at_iso"] = receipts.get(int(m["id"]))
+            mid = int(m["id"])
+            m["recipient_read_at_iso"] = receipts.get(mid)
+            m["read_by"] = read_by.get(mid, [])
         else:
             m["recipient_read_at_iso"] = None
+            m["read_by"] = []
 
 
 def _media_url(file_path: str | None) -> str | None:
@@ -2114,7 +2213,6 @@ async def load_mail_messages(
             staff_role=r.get("staff_role"),
             subscriber_name=subscriber_display_name,
         )
-        is_incoming_client = side == "client"
         edit_meta = _message_edit_meta(updated_at=r.get("updated_at"))
         messages.append(
             {
@@ -2123,7 +2221,7 @@ async def load_mail_messages(
                 "text": (r.get("text_raw") or "").strip(),
                 "author_name": author_name,
                 "created_at_iso": _iso(dt) if isinstance(dt, datetime) else None,
-                "has_read": True if is_bot or side == "me" else mid in read_ids or not is_incoming_client,
+                "has_read": True if is_bot or side == "me" else mid in read_ids,
                 "reply_to_id": _parse_reply_to_id(r.get("relay_msg_id")),
                 **edit_meta,
                 "legacy_file_url": _media_url(legacy) if legacy else None,
@@ -2224,7 +2322,7 @@ async def load_tracker_messages(
                 "text": (r.get("body") or "").strip(),
                 "author_name": author_name,
                 "created_at_iso": _iso(r.get("created_at")),
-                "has_read": is_own or mid in staff_read_ids or side != "client",
+                "has_read": is_own or mid in staff_read_ids,
                 "reply_to_id": _parse_reply_to_id(r.get("reply_to_id")),
                 **edit_meta,
                 "legacy_file_url": None,
@@ -2245,7 +2343,7 @@ async def list_ticket_messages(
     after_id: int | None = None,
     around_id: int | None = None,
     since_id: int = 0,
-) -> tuple[list[dict[str, Any]], str, dict[int, str], bool, bool]:
+) -> tuple[list[dict[str, Any]], str, dict[int, str], dict[int, list[dict[str, str]]], bool, bool]:
     from app.api.v1.routers.helpdesk import ticket_chat_pages as chat_pages
 
     detail = await load_ticket_detail(db, ticket_id, viewer_id)
@@ -2253,8 +2351,6 @@ async def list_ticket_messages(
     sub_display = detail.get("subscriber_display_name") or await fetch_subscriber_display_name(
         db, detail.get("user_id")
     )
-
-    is_poll = since_id > 0 and before_id is None and after_id is None and around_id is None
 
     if mode == "tracker":
         raw, has_older, has_newer = await chat_pages.load_tracker_messages_paged(
@@ -2269,15 +2365,20 @@ async def list_ticket_messages(
             around_id=around_id,
             since_id=since_id,
         )
-        if not is_poll:
-            unread = [
-                m["id"]
-                for m in raw
-                if m["side"] == "client" and not m.get("has_read") and m["id"] > 0
-            ]
-            if unread:
-                await mark_tracker_messages_read(db, ticket_id, viewer_id, unread)
-        receipts = await load_tracker_engineer_read_receipts(db, ticket_id)
+        unread = [
+            m["id"]
+            for m in raw
+            if m["side"] not in ("me", "bot")
+            and not m.get("has_read")
+            and m["id"] > 0
+        ]
+        if unread:
+            await mark_tracker_messages_read(db, ticket_id, viewer_id, unread)
+            unread_set = set(unread)
+            for m in raw:
+                if m["id"] in unread_set:
+                    m["has_read"] = True
+        receipts, read_by = await load_tracker_outbound_read_receipts(db, ticket_id)
     else:
         raw, has_older, has_newer = await chat_pages.load_mail_messages_paged(
             db,
@@ -2292,17 +2393,22 @@ async def list_ticket_messages(
             since_id=since_id,
             include_initial_body=detail.get("body"),
         )
-        if not is_poll:
-            unread = [
-                m["id"]
-                for m in raw
-                if m["side"] == "client" and not m.get("has_read") and m["id"] > 0
-            ]
-            if unread:
-                await mark_mail_messages_read(db, ticket_id, viewer_id, unread)
-        receipts = await load_mail_subscriber_read_receipts(db, ticket_id)
+        unread = [
+            m["id"]
+            for m in raw
+            if m["side"] not in ("me", "bot")
+            and not m.get("has_read")
+            and m["id"] > 0
+        ]
+        if unread:
+            await mark_mail_messages_read(db, ticket_id, viewer_id, unread)
+            unread_set = set(unread)
+            for m in raw:
+                if m["id"] in unread_set:
+                    m["has_read"] = True
+        receipts, read_by = await load_mail_subscriber_read_receipts(db, ticket_id)
 
-    _attach_recipient_read_at(raw, receipts)
+    _attach_read_receipts(raw, receipts, read_by)
     await attach_reply_previews(
         db,
         raw,
@@ -2310,7 +2416,20 @@ async def list_ticket_messages(
         viewer_id=viewer_id,
         subscriber_display_name=sub_display,
     )
-    return raw, mode, receipts, has_older, has_newer
+    return raw, mode, receipts, read_by, has_older, has_newer
+
+
+async def get_ticket_read_receipts(
+    db: AsyncSession,
+    ticket_id: int,
+    viewer_id: int,
+) -> tuple[str, dict[int, str], dict[int, list[dict[str, str]]]]:
+    """Поллинг галочек: прочтения исходящих сообщений без загрузки ленты."""
+    detail = await load_ticket_detail(db, ticket_id, viewer_id)
+    mode = detail["chat_mode"]
+    if mode == "tracker":
+        return mode, *await load_tracker_outbound_read_receipts(db, ticket_id)
+    return mode, *await load_mail_subscriber_read_receipts(db, ticket_id)
 
 
 async def mark_tracker_messages_read(
@@ -2473,6 +2592,7 @@ async def edit_ticket_message(
             "created_at_iso": _iso(row.get("date_tz")),
             "has_read": True,
             "recipient_read_at_iso": None,
+            "read_by": [],
             "reply_to_id": _parse_reply_to_id(row.get("relay_msg_id")),
             **_message_edit_meta(updated_at=row.get("updated_at")),
             "legacy_file_url": _media_url(row.get("legacy_file")),
@@ -2500,6 +2620,7 @@ async def edit_ticket_message(
             "created_at_iso": _iso(row.get("created_at")),
             "has_read": True,
             "recipient_read_at_iso": None,
+            "read_by": [],
             "reply_to_id": _parse_reply_to_id(row.get("reply_to_id")),
             **_message_edit_meta(
                 updated_at=row.get("updated_at"),
@@ -2691,6 +2812,7 @@ async def send_mail_reply(
         "created_at_iso": _iso(created if isinstance(created, datetime) else now),
         "has_read": True,
         "recipient_read_at_iso": None,
+        "read_by": [],
         "reply_to_id": reply_to_id,
         "is_edited": False,
         "legacy_file_url": None,
@@ -2797,6 +2919,7 @@ async def send_tracker_reply(
         "created_at_iso": _iso(now),
         "has_read": True,
         "recipient_read_at_iso": None,
+        "read_by": [],
         "reply_to_id": reply_to_id,
         "is_edited": False,
         "attachments": att_items,
