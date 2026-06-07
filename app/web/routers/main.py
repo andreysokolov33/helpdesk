@@ -3,13 +3,15 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from starlette.responses import Response
 
 from app.config import BASE_DIR
 
 router = APIRouter()
 
 _REACT_INDEX = BASE_DIR / "app" / "static" / "helpdesk" / "index.html"
+_FAVICON = BASE_DIR / "app" / "static" / "images" / "Logo_dark.svg"
 
 
 def _react_shell(title: str) -> HTMLResponse:
@@ -46,9 +48,16 @@ async def login_page():
     return _react_shell("Helpdesk — вход")
 
 
+@router.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    if _FAVICON.is_file():
+        return FileResponse(_FAVICON, media_type="image/svg+xml")
+    return Response(status_code=204)
+
+
 @router.get("/{full_path:path}", response_class=HTMLResponse)
 async def spa_catch_all(full_path: str, request: Request, _user: dict = Depends(get_current_user)):
-    """Клиентские маршруты React (например /chats, /stats) — та же оболочка SPA."""
+    """Клиентские маршруты React (например /tickets, /stats) — та же оболочка SPA."""
     if full_path.startswith("api/") or full_path.startswith("static/"):
         raise HTTPException(status_code=404, detail="Not Found")
     if full_path in ("health", "ready", "docs", "redoc", "openapi.json", "favicon.ico"):

@@ -77,7 +77,7 @@
   overflow-y: auto;
 }
 
-#tp-chats.tp.on {
+#tp-tickets.tp.on {
   display: flex;
   flex-direction: column;
 }

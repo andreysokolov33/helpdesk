@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import { ThemeProvider } from "@/theme/ThemeContext";
 import LoginPage from "@/pages/LoginPage";
 import DashboardShell from "@/workspace/DashboardShell";
@@ -10,6 +10,12 @@ import KbTab from "@/workspace/KbTab";
 import UserProfilePage from "@/workspace/UserProfilePage";
 import TicketPage from "@/workspace/TicketPage";
 
+function RedirectLegacyChatsRoute() {
+  const [params] = useSearchParams();
+  const id = params.get("id")?.trim();
+  return <Navigate to={id ? `/tickets/${encodeURIComponent(id)}` : "/tickets"} replace />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -19,11 +25,12 @@ export default function App() {
           <Route path="/" element={<DashboardShell />}>
             <Route index element={<HomeTab />} />
             <Route path="call" element={<CallTab />} />
-            <Route path="chats" element={<ChatsTab />} />
+            <Route path="tickets/:ticketId" element={<TicketPage />} />
+            <Route path="tickets" element={<ChatsTab />} />
+            <Route path="chats" element={<RedirectLegacyChatsRoute />} />
             <Route path="stats" element={<StatsTab />} />
             <Route path="kb" element={<KbTab />} />
             <Route path="users/:userId" element={<UserProfilePage />} />
-            <Route path="tickets/:ticketId" element={<TicketPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

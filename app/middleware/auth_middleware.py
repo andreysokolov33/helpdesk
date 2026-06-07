@@ -44,15 +44,19 @@ class AuthMiddleware:
         self.app = app
         self.login_path = login_path
         
-        # Настройки путей
+        # Настройки путей (публичные auth-эндпоинты — только login/logout; /me проходит middleware)
         self.excluded_prefixes = {
             "/health", "/ready", "/static", "/media",
-            "/login", "/api/auth", "/openapi.json", "/favicon.ico",
+            "/login", "/openapi.json", "/favicon.ico",
             "/call_events", "/get_number_info", "/history_file_completed",
             "/api/v1/feedback",
         }
+        self.excluded_exact_paths = {
+            "/api/auth/login",
+            "/api/auth/logout",
+        }
         self.cacheable_paths = {
-            "/api/v1/helpdesk/chats/unread_chats",
+            "/api/v1/helpdesk/tickets/unread_count",
             "/api/v1/helpdesk/tracker/sidebar-counts",
             "/api/v1/statistics/analyze",
             "/api/v1/statistics/analyze/closed",
@@ -83,7 +87,7 @@ class AuthMiddleware:
         headers = Headers(scope=scope)
 
         # 1. Быстрые исключения (White list)
-        if any(path.startswith(prefix) for prefix in self.excluded_prefixes):
+        if self._is_excluded_path(path):
             await self.app(scope, receive, send)
             return
 
@@ -164,6 +168,11 @@ class AuthMiddleware:
 
     # --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ---
 
+    def _is_excluded_path(self, path: str) -> bool:
+        if path in self.excluded_exact_paths:
+            return True
+        return any(path.startswith(prefix) for prefix in self.excluded_prefixes)
+
     def _is_cacheable_path(self, path: str) -> bool:
         """Возвращает True для путей с серверным кэшем (rate-limit не применяется)."""
         if path in self.cacheable_paths:
@@ -178,7 +187,7 @@ class AuthMiddleware:
         Для poll-путей ключ общий (per-ticket), не per-user,
         чтобы N операторов на одном тикете читали один кэш.
         """
-        if path == "/api/v1/helpdesk/chats/unread_chats":
+        if path == "/api/v1/helpdesk/tickets/unread_count":
             return f"unread_stats:{user_id}"
         m = _TICKET_POLL_RE.match(path)
         if m:

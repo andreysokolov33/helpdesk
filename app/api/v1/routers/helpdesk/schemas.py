@@ -44,6 +44,10 @@ class TrackerTicketListItem(BaseModel):
     rating_comment: Optional[str] = None
 
 
+class UnreadTicketsResponse(BaseModel):
+    unread_count: int = 0
+
+
 class TrackerTicketListStats(BaseModel):
     avg_rating: Optional[float] = None
     avg_rating_mine: Optional[float] = None

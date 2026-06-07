@@ -2,7 +2,8 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect, useId, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
 import { logoutRequest } from "@/api/auth";
-import { getBellUnreadCount, MOCK_NOTIFS, NAV_CHATS_TAB_UNREAD } from "@/data/mockCc";
+import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
+import { getBellUnreadCount, MOCK_NOTIFS } from "@/data/mockCc";
 import { useTheme } from "@/theme/ThemeContext";
 
 type TabDef = {
@@ -16,7 +17,7 @@ type TabDef = {
 const tabs: TabDef[] = [
   { to: "/", label: "Главная", end: true },
   { to: "/call", label: "Регистрация звонка", highlight: true },
-  { to: "/chats", label: "Чат", badge: NAV_CHATS_TAB_UNREAD },
+  { to: "/tickets", label: "Тикеты" },
   { to: "/stats", label: "Статистика" },
   { to: "/kb", label: "База знаний" },
 ];
@@ -84,6 +85,7 @@ function IconSunsetScene({ skyId, glowId }: { skyId: string; glowId: string }) {
 
 export default function DashboardShell() {
   const [notifOpen, setNotifOpen] = useState(false);
+  const [ticketsUnread, setTicketsUnread] = useState(0);
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -103,6 +105,35 @@ export default function DashboardShell() {
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [notifOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadUnread() {
+      try {
+        const count = await fetchUnreadTicketsCount();
+        if (!cancelled) setTicketsUnread(count);
+      } catch {
+        if (!cancelled) setTicketsUnread(0);
+      }
+    }
+
+    void loadUnread();
+    const timer = window.setInterval(loadUnread, 30_000);
+
+    function onVisible() {
+      if (document.visibilityState === "visible") void loadUnread();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", loadUnread);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", loadUnread);
+    };
+  }, [location.pathname]);
 
   async function performLogout() {
     await logoutRequest().catch(() => {});
@@ -156,7 +187,7 @@ export default function DashboardShell() {
                 <NavLink
                   key={n.id}
                   className="ndi"
-                  to={`/chats?id=${n.id}`}
+                  to={`/tickets/${n.id}`}
                   onClick={() => setNotifOpen(false)}
                 >
                   <span className="ndi-dot">●</span> {n.name} — {n.topic}
@@ -209,9 +240,14 @@ export default function DashboardShell() {
             ) : (
               <>
                 <span className="tab-label">{t.label}</span>
-                {typeof t.badge === "number" && t.badge > 0 ? (
-                  <span className="tab-badge">{t.badge > 99 ? "99+" : t.badge}</span>
-                ) : null}
+                {(() => {
+                  const badge = t.to === "/tickets" ? ticketsUnread : t.badge;
+                  return typeof badge === "number" && badge > 0 ? (
+                    <span className="tab-badge" aria-label={`Непрочитанных: ${badge}`}>
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  ) : null;
+                })()}
               </>
             )}
           </NavLink>

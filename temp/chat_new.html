@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Чат{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="/static/css/chat.css">
+<link rel="stylesheet" href="/static/css/chat_list.css">
+<link rel="stylesheet" href="/static/css/chat_messages.css">
+<link rel="stylesheet" href="/static/css/chat_info.css">
+<link rel="stylesheet" href="/static/css/chat_database.css">
+<link rel="stylesheet" href="/static/css/chat_tickets.css">
+{% endblock %}
+
+{% block content %}
+<div class="chat-layout">
+  <!-- Левая панель со списком чатов -->
+  <aside class="chat-sidebar">
+    <header class="chat-sidebar-header">
+      <h2>Диалоги</h2>
+      <div class="search-box">
+        <input type="text" id="chat-search" placeholder="Поиск по ФИО или ID..." autocomplete="off">
+        <span class="search-icon">🔍</span>
+      </div>
+      <label class="chat-unread-filter">
+        <input type="checkbox" id="chat-unread-only">
+        <span>Только непрочитанные</span>
+      </label>
+    </header>
+    <ul class="chat-list" id="chat-list">
+       <!-- Список чатов наполняется через JS -->
+    </ul>
+    <div id="load-more-chats" class="hidden">
+        <button id="load-more-chats-btn" class="load-more-chats-btn">Загрузить ещё</button>
+        <button id="load-more-compact-btn" class="load-more-compact-btn hidden" title="Загрузить ещё">↓</button>
+    </div>
+  </aside>
+  <div class="chat-resize-handle" id="chat-resize-handle" title="Изменить ширину панели"></div>
+  <!-- Правая панель: окно переписки -->
+  <section class="chat-main">
+    <header class="chat-header" id="chat-header">
+      <p class="placeholder">Выберите чат слева</p>
+    </header>
+    
+    <div class="chat-messages-wrap">
+      <div class="chat-messages" id="chat-messages-container">
+        <div id="chat-load-more-sentinel" class="chat-load-more-sentinel" aria-hidden="true"></div>
+        <div id="chat-messages"></div>
+        <div id="chat-load-newer-sentinel" class="chat-load-newer-sentinel hidden" aria-hidden="true"></div>
+      </div>
+      <button type="button" id="chat-scroll-to-bottom-btn" class="chat-scroll-to-bottom-btn hidden" title="В самый низ чата">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </button>
+    </div>
+    <!-- Контекстное меню сообщения (ПКМ) -->
+    <div id="messageContextMenu" class="message-context-menu hidden" role="menu">
+      <button type="button" class="ctx-item ctx-reply" data-action="reply"><span class="ctx-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10L4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></span>Ответить</button>
+      <button type="button" class="ctx-item ctx-copy hidden" data-action="copy"><span class="ctx-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>Копировать сообщение</button>
+      <button type="button" class="ctx-item ctx-edit hidden" data-action="edit"><span class="ctx-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>Редактировать</button>
+      <button type="button" class="ctx-item ctx-delete hidden" data-action="delete" title="Удалить"><span class="ctx-icon ctx-icon-delete" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>Удалить</button>
+    </div>
+
+    <!-- Поле ввода -->
+    <footer class="chat-input-area hidden">
+      <div id="chat-reply-strip" class="chat-reply-strip hidden">
+        <span id="chat-reply-author"></span>
+        <span id="chat-reply-text"></span>
+        <button type="button" id="chat-reply-close" class="chat-reply-close" title="Отменить ответ">×</button>
+      </div>
+      <form id="chat-form">
+        <div class="chat-reply-toolbar">
+          <div class="chat-heading-wrap">
+            <button type="button" class="chat-toolbar-btn" id="chat-heading-btn" title="Заголовок">H</button>
+            <div class="chat-heading-dropdown hidden" id="chat-heading-dropdown">
+              <button type="button" class="chat-heading-opt" data-block="h1">H1</button>
+              <button type="button" class="chat-heading-opt" data-block="h2">H2</button>
+              <button type="button" class="chat-heading-opt" data-block="h3">H3</button>
+              <button type="button" class="chat-heading-opt" data-block="h4">H4</button>
+              <button type="button" class="chat-heading-opt" data-block="h5">H5</button>
+              <button type="button" class="chat-heading-opt" data-block="h6">H6</button>
+              <button type="button" class="chat-heading-opt" data-block="p">Обычный</button>
+            </div>
+          </div>
+          <button type="button" class="chat-toolbar-btn" data-cmd="bold" title="Жирный"><b>B</b></button>
+          <button type="button" class="chat-toolbar-btn" data-cmd="italic" title="Курсив"><i>I</i></button>
+          <button type="button" class="chat-toolbar-btn" data-cmd="underline" title="Подчёркнутый"><u>U</u></button>
+          <button type="button" class="chat-toolbar-btn" id="chat-link-btn" title="Вставить ссылку">🔗</button>
+          <div class="chat-color-wrap">
+            <button type="button" class="chat-toolbar-btn" id="chat-color-btn" title="Цвет текста и заливки">A</button>
+            <div class="chat-color-dropdown hidden" id="chat-color-dropdown">
+              <div class="chat-color-section-title">Цвет заливки</div>
+              <div class="chat-color-list chat-color-list-bg">
+                <button type="button" class="chat-color-opt" data-class="msg-bg-blue" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-navy" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-teal" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-green" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-slate" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-purple" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-burgundy" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-red" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-orange" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-olive" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-amber" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-bg-yellow" title=""></button>
+              </div>
+              <div class="chat-color-section-title">Цвет текста</div>
+              <div class="chat-color-list chat-color-list-text">
+                <button type="button" class="chat-color-opt" data-class="msg-color-blue" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-navy" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-teal" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-green" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-slate" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-purple" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-burgundy" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-red" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-orange" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-olive" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-amber" title=""></button>
+                <button type="button" class="chat-color-opt" data-class="msg-color-yellow" title=""></button>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="chat-toolbar-btn" data-cmd="insertUnorderedList" title="Маркированный список">≡</button>
+          <button type="button" class="chat-toolbar-btn" data-cmd="insertOrderedList" title="Нумерованный список">1.</button>
+        </div>
+        <div class="input-group">
+          <div id="chat-input" class="chat-input-editor" contenteditable="true" data-placeholder="Напишите сообщение..." role="textbox" aria-multiline="true"></div>
+          <label class="file-attach" title="Прикрепить файлы: PDF, Excel, CSV, Word, изображения (до 15 МБ каждый)">
+            <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
+            <input type="file" id="chat-file" multiple accept=".pdf,.xlsx,.xls,.doc,.docx,.docm,.csv,image/*" hidden>
+          </label>
+          <button type="button" id="cancel-edit" class="hidden">✕</button>
+          <button type="submit" class="send-btn">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </div>
+        <div id="file-preview" class="file-preview hidden">
+          <div id="file-preview-grid" class="file-preview-grid"></div>
+          <button type="button" id="remove-all-files" class="file-preview-clear-btn" title="Убрать все">Очистить</button>
+        </div>
+        <div id="upload-progress-wrap" class="upload-progress-wrap hidden">
+          <div class="upload-progress-bar"><div class="upload-progress-fill"></div></div>
+          <div class="upload-progress-text">Файлов <span id="upload-files-n">0</span> из <span id="upload-files-total">0</span> • <span id="upload-mb-n">0</span> МБ из <span id="upload-mb-total">0</span> МБ<span id="upload-speed" class="upload-speed"></span></div>
+        </div>
+      </form>
+      <div id="chat-link-modal-backdrop" class="chat-link-modal-backdrop hidden">
+        <div class="chat-link-modal">
+          <h3>Вставить ссылку</h3>
+          <label for="chat-link-url">URL</label>
+          <input type="text" id="chat-link-url" placeholder="https://">
+          <label for="chat-link-text">Текст ссылки</label>
+          <input type="text" id="chat-link-text" placeholder="ссылка">
+          <div class="chat-link-modal-actions">
+            <button type="button" class="chat-link-modal-cancel" id="chat-link-modal-cancel">Отмена</button>
+            <button type="button" class="chat-link-modal-submit" id="chat-link-modal-submit">Вставить</button>
+          </div>
+        </div>
+      </div>
+      
+    </footer>
+     
+  </section>
+
+  <!-- Боковая панель с информацией об абоненте -->
+  <aside class="user-info-panel" id="user-info-panel">
+    <div class="user-info-header">
+      <button class="close-info-btn" id="close-info-btn">✕</button>
+    </div>
+    <div class="user-info-content" id="user-info-content">
+      <div class="loader">Загрузка...</div>
+    </div>
+  </aside>
+
+  <!-- Модальное окно для подтверждения удаления -->
+  <div class="delete-modal hidden">
+    <div class="delete-modal-content">
+      <p>Вы уверены, что хотите удалить это сообщение?</p>
+      <div class="delete-modal-buttons">
+        <button class="delete-confirm-btn">Да</button>
+        <button class="delete-cancel-btn">Нет</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+    
+<!-- Модальное окно галереи -->
+<div id="gallery-modal" class="gallery-modal">
+  <span class="gallery-close">&times;</span>
+  <img class="gallery-content" id="gallery-img">
+  <a class="gallery-prev">&#10094;</a>
+  <a class="gallery-next">&#10095;</a>
+  <div class="gallery-counter" id="gallery-counter"></div>
+</div>
+
+  
+{% endblock %}
+
+{% block body_extra %}
+<script>
+    window.PRIVILEGED = {{ priv | tojson }};
+    window.CURRENT_USER_ID = {{ user_id | tojson }};
+</script>
+<!-- Порядок загрузки критичен -->
+<script src="/static/js/chat_sanitize.js"></script>
+<script src="/static/js/chat_core.js"></script>
+<script src="/static/js/chat_resize.js"></script>
+<script src="/static/js/chat_list.js"></script>
+<script src="/static/js/chat_messages.js"></script>
+<script src="/static/js/chat_info.js"></script>
+<script src="/static/js/chat_tickets.js"></script>
+<script src="/static/js/chat_database.js"></script>
+{% endblock %}

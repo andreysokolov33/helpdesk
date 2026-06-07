@@ -75,7 +75,7 @@ TRACKER_OPERATIONAL_WAIT_STATUSES = (
 # Обратная совместимость (waiting_client — коммуникационный, не операционный)
 TRACKER_WAITING_OPERATOR_STATUSES = TRACKER_OPERATIONAL_WAIT_STATUSES + ('waiting_client',)
 
-# Коммуникационный слой в колонке «Статус» списка /chats (не workflow-status в БД):
+# Коммуникационный слой в колонке «Статус» списка /tickets (не workflow-status в БД):
 # — waiting_client → awaiting_subscriber («Ждём абонента»), если нет непрочитанного от абонента;
 # — любой другой из TRACKER_OPEN_STATUSES → needs_reply («Нужен ответ»);
 # — TRACKER_CLOSED_STATUSES в открытом списке не показываются (вкладка closed — своя выборка).
@@ -87,7 +87,7 @@ COMMUNICATION_STATE_LABELS = {
 TRACKER_CLOSED_STATUSES = (
     'resolved', 'closed', 'cancelled', 'deferred', 'not_resolved')
 
-# Список тикетов helpdesk (/chats): только эти источники (users.tracker_tickets.source)
+# Список тикетов helpdesk (/tickets): только эти источники (users.tracker_tickets.source)
 TRACKER_HELPDESK_LIST_SOURCES = ('lk', 'call_center', 'abs')
 
 # Вкладка «Закрытые» в блоке инцидентов на профиле абонента (без «отложен»)

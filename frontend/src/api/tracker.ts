@@ -64,7 +64,7 @@ export type TicketStatusColumn =
   | { kind: "workflow"; status: string; label: string };
 
 /**
- * Колонка «Статус» в /chats:
+ * Колонка «Статус» в /tickets:
  * — незакрытые: waiting_client без непрочитанного → «Ждём абонента», иначе «Нужен ответ»;
  * — закрытые (вкладка closed): workflow-подпись из status_label.
  */

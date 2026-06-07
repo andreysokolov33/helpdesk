@@ -40,7 +40,7 @@ export default function HomeTab() {
                 type="button"
                 key={t.id}
                 className="ug"
-                onClick={() => navigate(`/chats?id=${t.id}`)}
+                onClick={() => navigate(`/tickets/${t.id}`)}
               >
                 <div
                   style={{
@@ -100,7 +100,7 @@ export default function HomeTab() {
                 type="button"
                 key={t.id}
                 className="tl"
-                onClick={() => navigate(`/chats?id=${t.id}`)}
+                onClick={() => navigate(`/tickets/${t.id}`)}
               >
                 <div className="tln">#{t.id}</div>
                 <div
@@ -148,7 +148,7 @@ export default function HomeTab() {
                   </td>
                   <td style={{ color: "var(--i3)" }}>{r.date}</td>
                   <td>
-                    <button type="button" className="lb" onClick={() => navigate(`/chats`)}>
+                    <button type="button" className="lb" onClick={() => navigate("/tickets")}>
                       Написать
                     </button>
                   </td>

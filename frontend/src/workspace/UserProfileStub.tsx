@@ -12,7 +12,7 @@ export default function UserProfileStub() {
           <p style={{ fontSize: 13, color: "var(--i2)", lineHeight: 1.6 }}>
             Раздел в разработке. Путь: <code>/users/{userId}</code>
           </p>
-          <Link to="/chats" style={{ fontSize: 13, fontWeight: 700, color: "var(--red)" }}>
+          <Link to="/tickets" style={{ fontSize: 13, fontWeight: 700, color: "var(--red)" }}>
             ← К тикетам
           </Link>
         </div>

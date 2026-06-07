@@ -1264,8 +1264,8 @@ export default function TicketPage() {
       <div className="tp on">
         <div className="pg">
           <div className="ch-list-err">{error || "Тикет не найден"}</div>
-          <Link to="/chats" className="tk-back-link">
-            ← К чатам
+          <Link to="/tickets" className="tk-back-link">
+            ← К тикетам
           </Link>
         </div>
       </div>
@@ -1318,7 +1318,7 @@ export default function TicketPage() {
     <div className="tp on" id="tp-ticket" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div className="tk-ticket-shell">
         <div className="tbar">
-          <button type="button" className="tbk" onClick={() => navigate("/chats")}>
+          <button type="button" className="tbk" onClick={() => navigate("/tickets")}>
             ← Назад
           </button>
           <div style={{ width: 1, height: 16, background: "var(--ln)" }} />

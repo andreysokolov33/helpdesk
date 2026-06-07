@@ -16,11 +16,11 @@ import {
   ratingToneClass,
 } from "@/utils/ticketFormat";
 import {
-  CHATS_LIST_PER_PAGE_OPTIONS,
-  loadChatsPerPage,
-  saveChatsPerPage,
-  type ChatsListPerPage,
-} from "@/utils/chatsListPrefs";
+  TICKETS_LIST_PER_PAGE_OPTIONS,
+  loadTicketsPerPage,
+  saveTicketsPerPage,
+  type TicketsListPerPage,
+} from "@/utils/ticketsListPrefs";
 import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT, type TicketRow } from "@/data/mockCc";
 
 type ChatMsg = { id: string; side: "cl" | "ag" | "note"; text: string; time: string };
@@ -111,7 +111,7 @@ export default function ChatsTab() {
   const [listTotal, setListTotal] = useState(0);
   const [listStats, setListStats] = useState<TrackerTicketListStats | null>(null);
   const [listPage, setListPage] = useState(1);
-  const [perPage, setPerPage] = useState<ChatsListPerPage>(20);
+  const [perPage, setPerPage] = useState<TicketsListPerPage>(20);
   const [listPrefsReady, setListPrefsReady] = useState(false);
   const viewerIdRef = useRef<number | null>(null);
   const [listLoading, setListLoading] = useState(false);
@@ -154,7 +154,7 @@ export default function ChatsTab() {
       .then((me) => {
         if (cancelled) return;
         viewerIdRef.current = me.user_id;
-        setPerPage(loadChatsPerPage(me.user_id));
+        setPerPage(loadTicketsPerPage(me.user_id));
         setListPrefsReady(true);
       })
       .catch(() => {
@@ -195,11 +195,11 @@ export default function ChatsTab() {
     };
   }, [listMode, listPrefsReady, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo]);
 
-  function handlePerPageChange(next: ChatsListPerPage) {
+  function handlePerPageChange(next: TicketsListPerPage) {
     setPerPage(next);
     setListPage(1);
     const uid = viewerIdRef.current;
-    if (uid != null) saveChatsPerPage(uid, next);
+    if (uid != null) saveTicketsPerPage(uid, next);
   }
 
   function setClosedMode(nextClosed: boolean) {
@@ -227,7 +227,7 @@ export default function ChatsTab() {
   }
 
   function back() {
-    navigate("/chats", { replace: true, state: {} });
+    navigate("/tickets", { replace: true, state: {} });
     setListMode(true);
   }
 
@@ -399,10 +399,10 @@ export default function ChatsTab() {
                   className="ch-per-select"
                   value={perPage}
                   onChange={(e) => {
-                    handlePerPageChange(Number(e.target.value) as ChatsListPerPage);
+                    handlePerPageChange(Number(e.target.value) as TicketsListPerPage);
                   }}
                 >
-                  {CHATS_LIST_PER_PAGE_OPTIONS.map((n) => (
+                  {TICKETS_LIST_PER_PAGE_OPTIONS.map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
@@ -541,7 +541,7 @@ export default function ChatsTab() {
   const stClass = ticket.status === "new" ? "tn" : ticket.status === "wait" ? "tw" : "tk";
 
   return (
-    <div className="tp on" id="tp-chats" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div className="tp on" id="tp-tickets" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", position: "relative" }}>
         <div className="tbar">
           <button type="button" className="tbk" onClick={back}>

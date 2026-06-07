@@ -1,0 +1,1589 @@
+/**
+ * CHAT MESSAGES: Основное окно переписки (Очищенная версия)
+ */
+
+/* --- 1. ЛАЙАУТ КОНТЕЙНЕРА --- */
+.chat-messages-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+#chat-messages-container {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 20px;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+}
+
+#chat-messages {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 8px;
+}
+
+.empty-chat {
+    text-align: center;
+    color: var(--muted);
+    margin-top: 50px;
+    font-size: 14px;
+}
+
+/* Сентинел автоподгрузки при скролле вверх */
+.chat-load-more-sentinel {
+    min-height: 24px;
+    flex-shrink: 0;
+    padding: 8px 0;
+}
+.chat-load-more-sentinel.loading {
+    min-height: 48px;
+}
+.chat-load-more-sentinel.loading::after {
+    content: '';
+    display: block;
+    width: 24px;
+    height: 24px;
+    margin: 0 auto;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: load-spinner 0.8s linear infinite;
+}
+@keyframes load-spinner { to { transform: rotate(360deg); } }
+.chat-load-more-sentinel.done {
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Сентинел подгрузки новых сообщений вниз (режим ответа) */
+.chat-load-newer-sentinel {
+    min-height: 24px;
+    flex-shrink: 0;
+    padding: 8px 0;
+}
+.chat-load-newer-sentinel.hidden { display: none !important; }
+.chat-load-newer-sentinel.loading { min-height: 48px; }
+
+/* Кнопка «В самый низ чата» — фиксирована справа внизу области сообщений (вне скролла) */
+.chat-scroll-to-bottom-btn {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    cursor: pointer;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: opacity 0.2s, transform 0.2s, filter 0.2s;
+}
+.chat-scroll-to-bottom-btn:hover {
+    background: var(--panel-2);
+    filter: brightness(1.12);
+    transform: scale(1.05);
+}
+.chat-scroll-to-bottom-btn.has-new-below:hover { border-color: var(--accent); }
+.chat-scroll-to-bottom-btn.hidden { display: none !important; }
+
+/* Блок «Ответ на сообщение» в карточке */
+.message-reply-to {
+    margin-bottom: 6px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--panel-3);
+    border-left: 3px solid var(--accent);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted);
+}
+.message-reply-to:hover { background: var(--panel-2); color: var(--text); }
+.message-reply-to .reply-to-author { font-weight: 600; color: var(--text); }
+.message-reply-to .reply-to-text { margin-left: 4px; }
+.message-reply-to--deleted {
+    cursor: default;
+    pointer-events: none;
+    border-left-color: var(--muted);
+    opacity: 0.85;
+}
+.message-reply-to--deleted:hover { background: var(--panel-3); color: var(--muted); }
+
+/* Контекстное меню сообщения (ПКМ) */
+.message-context-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 180px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    padding: 6px 0;
+}
+.message-context-menu.hidden { display: none !important; }
+.message-context-menu .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+    text-align: left;
+}
+.message-context-menu .ctx-item:hover { background: var(--panel-3); }
+.message-context-menu .ctx-item.hidden { display: none !important; }
+.message-context-menu .ctx-icon { flex-shrink: 0; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
+.message-context-menu .ctx-icon svg { width: 100%; height: 100%; stroke-linecap: round; stroke-linejoin: round; }
+.message-context-menu .ctx-icon-delete { color: #c62828; }
+
+/* Полоска ответа на сообщение */
+.chat-reply-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+}
+.chat-reply-strip.hidden { display: none !important; }
+.chat-reply-strip #chat-reply-author { font-weight: 600; color: var(--text); }
+.chat-reply-close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0 4px;
+}
+.chat-reply-close:hover { color: var(--text); }
+
+/* Подсветка сообщения по ссылке (плавное появление и затухание) */
+.message.message-highlight .message-bubble {
+    animation: messageHighlightBubble 1.8s ease-out;
+}
+@keyframes messageHighlightBubble {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--accent-rgb, 33, 150, 243), 0.35);
+        background: transparent;
+    }
+    8% {
+        box-shadow: 0 0 0 4px rgba(var(--accent-rgb, 33, 150, 243), 0.25);
+        background: rgba(var(--accent-rgb, 33, 150, 243), 0.08);
+    }
+    35%, 65% {
+        box-shadow: 0 0 0 3px rgba(var(--accent-rgb, 33, 150, 243), 0.2);
+        background: rgba(var(--accent-rgb, 33, 150, 243), 0.06);
+    }
+    100% {
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        background: transparent;
+    }
+}
+
+/* --- 2. СТИЛИ СООБЩЕНИЙ (СТОРОНЫ) --- */
+.message {
+    display: flex;
+    flex-direction: column;
+    max-width: 92%;
+    width: fit-content;
+    position: relative;
+    animation: msgIn 0.3s ease-out;
+}
+
+/* Абонент (СЛЕВА) */
+.message.other {
+    align-self: flex-start !important;
+    margin-right: auto;
+}
+
+/* Поддержка / Вы (СПРАВА) */
+.message.you {
+    align-self: flex-end !important;
+    margin-left: auto;
+}
+
+/* --- 3. ПУЗЫРИ (BUBBLES) --- */
+.message-bubble {
+    position: relative;
+    padding: 10px 14px;
+    border-radius: 18px;
+    min-width: 120px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    border: 1px solid var(--border);
+}
+
+.message.other .message-bubble {
+    background: var(--panel);
+    color: var(--text);
+    border-bottom-left-radius: 4px;
+}
+
+.message.you .message-bubble {
+    background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+    color: var(--text);
+    border-bottom-right-radius: 4px;
+    border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Выделение ВАШИХ сообщений (собственный цвет) */
+.message.you.own .message-bubble {
+    background: color-mix(in srgb, var(--accent) 25%, var(--panel));
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* --- 4. ЭЛЕМЕНТЫ ВНУТРИ СООБЩЕНИЯ --- */
+.message .text {
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.message-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    /* margin-top: 4px; */
+    font-size: 10px;
+    color: var(--muted);
+    opacity: 0.8;
+}
+
+.whose-message { font-weight: 700; }
+
+/* Галочки прочтения (только у своих сообщений) */
+.message-read-receipt {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+    cursor: help;
+    vertical-align: middle;
+}
+.message-read-receipt .message-read-receipt-icon {
+    color: var(--muted);
+}
+.message-read-receipt .message-read-receipt-icon.second {
+    margin-left: -8px;
+}
+.message-read-receipt.read .message-read-receipt-icon {
+    color: var(--accent);
+}
+.message-read-receipt:hover .message-read-receipt-icon {
+    color: var(--accent);
+}
+
+/* Попап «Кто прочитал» при наведении на галочки */
+.message-reads-popover {
+    position: fixed;
+    z-index: 1000;
+    min-width: 200px;
+    max-width: 260px;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    font-size: 13px;
+    pointer-events: auto;
+}
+.message-reads-popover.hidden {
+    display: none !important;
+}
+.message-reads-popover-empty {
+    color: var(--muted);
+    font-size: 12px;
+}
+.message-reads-popover-summary {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+}
+.message-reads-popover-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+}
+.message-reads-popover-row .name { font-weight: 500; }
+.message-reads-popover-row .read-time { color: var(--muted); font-size: 11px; }
+
+/* --- 5. КОНТЕКСТНОЕ МЕНЮ (ТРИ ТОЧКИ) --- */
+.menu-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s;
+    z-index: 10;
+}
+
+.message:hover .menu-btn { opacity: 1; }
+.menu-btn:hover { color: var(--accent); }
+
+.message-menu {
+    position: absolute;
+    right: 6px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    z-index: 100;
+    display: none;
+    min-width: 130px;
+    overflow: hidden;
+}
+
+.message-menu button {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    text-align: left;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.message-menu button:hover { background: var(--bg-accent); }
+.message-menu button.danger { color: var(--danger); }
+
+/* --- 6. МЕДИА И ОШИБКИ --- */
+.media-wrapper { margin-top: 8px; position: relative; }
+
+/* Компактная сетка картинок: ширина под количество, без пустого места */
+.message-images-grid {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 6px;
+    width: fit-content;
+    max-width: 100%;
+}
+/* 1 картинка */
+.message-images-grid:has(.message-image-cell:nth-child(1):last-child) {
+    grid-template-columns: 1fr;
+    max-width: 220px;
+}
+/* 2 картинки — в ряд */
+.message-images-grid:has(.message-image-cell:nth-child(2):last-child) {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 200px;
+}
+/* 3 картинки — в ряд */
+.message-images-grid:has(.message-image-cell:nth-child(3):last-child) {
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 240px;
+}
+/* 4 картинки — 2×2 */
+.message-images-grid:has(.message-image-cell:nth-child(4):last-child) {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 200px;
+}
+/* 5 картинок — как в Telegram: 2 сверху, 3 снизу; масштаб и обрезка по ячейке */
+.message-images-grid:has(.message-image-cell:nth-child(5):last-child) {
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: 1fr 1fr;
+    width: 240px;
+    max-width: 100%;
+    aspect-ratio: 3 / 2;
+}
+.message-images-grid:has(.message-image-cell:nth-child(5):last-child) .message-image-cell:nth-child(1) {
+    grid-column: span 3;
+    grid-row: 1;
+}
+.message-images-grid:has(.message-image-cell:nth-child(5):last-child) .message-image-cell:nth-child(2) {
+    grid-column: span 3;
+    grid-row: 1;
+}
+.message-images-grid:has(.message-image-cell:nth-child(5):last-child) .message-image-cell:nth-child(3) {
+    grid-column: span 2;
+    grid-row: 2;
+}
+.message-images-grid:has(.message-image-cell:nth-child(5):last-child) .message-image-cell:nth-child(4) {
+    grid-column: span 2;
+    grid-row: 2;
+}
+.message-images-grid:has(.message-image-cell:nth-child(5):last-child) .message-image-cell:nth-child(5) {
+    grid-column: span 2;
+    grid-row: 2;
+}
+.message-images-grid:has(.message-image-cell:nth-child(5):last-child) .message-image-cell {
+    aspect-ratio: auto;
+    min-height: 0;
+}
+/* 6 картинок — 3×2 */
+.message-images-grid:has(.message-image-cell:nth-child(6):last-child) {
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 240px;
+}
+/* 7+ — авто-сетка с ограничением */
+.message-images-grid:has(.message-image-cell:nth-child(n+7)) {
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    max-width: 260px;
+}
+.message-image-cell {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--panel-2);
+    aspect-ratio: 1;
+    cursor: pointer;
+    min-width: 0;
+    min-height: 80px;
+}
+.message-image-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: pointer;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+}
+.message-image-thumb.image-loaded {
+    opacity: 1;
+}
+.message-image:not(.message-image-thumb) {
+    max-width: 100%;
+    max-height: 280px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: block;
+}
+/* Вложения-файлы: друг под другом, слева бейдж типа (цвет по расширению), название + размер (как в тикетах) */
+.message-file-links {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    margin-bottom: 6px;
+}
+
+.message-file-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12px;
+    color: inherit;
+    text-decoration: none;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    max-width: 100%;
+    min-width: 0;
+    transition: opacity 0.2s;
+}
+
+.message-file-link:hover {
+    opacity: 0.9;
+}
+
+.message-file-link:hover .file-link-name {
+    text-decoration: underline;
+}
+
+.message-file-link .file-link-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+}
+
+.message-file-link .file-link-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: inherit;
+    display: block;
+    width: 100%;
+}
+
+.message-file-link .file-size-mb {
+    font-size: 10px;
+    opacity: 0.75;
+}
+
+/* Бейдж расширения — цвет по типу файла (как в тикетах) */
+.message-file-link .file-type-badge {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border: 1px solid;
+    background: transparent;
+}
+
+.message.you .message-file-link .file-type-badge {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.file-type-pdf { border-color: #dc3545; color: #dc3545; }
+.file-type-doc { border-color: #3498db; color: #3498db; }
+.file-type-xlsx { border-color: #198754; color: #198754; }
+.file-type-csv { border-color: #0891b2; color: #0891b2; }
+.file-type-txt { border-color: #6c757d; color: #6c757d; }
+.file-type-css { border-color: #264de4; color: #264de4; }
+.file-type-html { border-color: #e34f26; color: #e34f26; }
+.file-type-xml { border-color: #ea580c; color: #ea580c; }
+.file-type-json { border-color: #6c757d; color: #6c757d; }
+.file-type-zip { border-color: #7c3aed; color: #7c3aed; }
+.file-type-default { border-color: currentColor; color: inherit; opacity: 0.8; }
+.message-text {
+    margin-top: 2px;
+    word-break: break-word;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.message-text p { margin: 0 0 0.5em; }
+.message-text p:last-child { margin-bottom: 0; }
+.message-text strong, .message-text b { font-weight: 600; }
+.message-text em, .message-text i { font-style: italic; }
+.message-text u { text-decoration: underline; }
+.message-text ul, .message-text ol { margin: 0.4em 0 0.5em 1.2em; padding: 0; }
+.message-text li { margin: 0.2em 0; }
+.message-text a { color: var(--accent); text-decoration: none; }
+.message-text a:hover { text-decoration: underline; }
+.message-text h1 { font-size: 1.5em; font-weight: 700; margin: 0.4em 0 0.2em; line-height: 1.2; }
+.message-text h2 { font-size: 1.3em; font-weight: 700; margin: 0.35em 0 0.2em; line-height: 1.25; }
+.message-text h3 { font-size: 1.15em; font-weight: 600; margin: 0.3em 0 0.15em; line-height: 1.3; }
+.message-text h4 { font-size: 1.05em; font-weight: 600; margin: 0.25em 0 0.15em; line-height: 1.35; }
+.message-text h5 { font-size: 1em; font-weight: 600; margin: 0.2em 0 0.1em; }
+.message-text h6 { font-size: 0.9em; font-weight: 600; margin: 0.2em 0 0.1em; color: var(--muted); }
+.message-text br { display: block; content: ""; margin-top: 0.25em; }
+.message-text .msg-color-red { color: #dc2626; }
+.message-text .msg-color-blue { color: #3498db; }
+.message-text .msg-color-navy { color: #2563eb; }
+.message-text .msg-color-teal { color: #0d9488; }
+.message-text .msg-color-green { color: #16a34a; }
+.message-text .msg-color-slate { color: #64748b; }
+.message-text .msg-color-orange { color: #ea580c; }
+.message-text .msg-color-purple { color: #7c3aed; }
+.message-text .msg-color-burgundy { color: #991b1b; }
+.message-text .msg-color-olive { color: #65a30d; }
+.message-text .msg-color-amber { color: #d97706; }
+.message-text .msg-color-yellow { color: #ca8a04; }
+.message-text .msg-bg-blue { background-color: rgba(52, 152, 219, 0.25); }
+.message-text .msg-bg-navy { background-color: rgba(37, 99, 235, 0.25); }
+.message-text .msg-bg-teal { background-color: rgba(13, 148, 136, 0.25); }
+.message-text .msg-bg-green { background-color: rgba(22, 163, 74, 0.25); }
+.message-text .msg-bg-slate { background-color: rgba(100, 116, 139, 0.25); }
+.message-text .msg-bg-purple { background-color: rgba(124, 58, 237, 0.25); }
+.message-text .msg-bg-burgundy { background-color: rgba(153, 27, 27, 0.25); }
+.message-text .msg-bg-red { background-color: rgba(220, 38, 38, 0.25); }
+.message-text .msg-bg-orange { background-color: rgba(234, 88, 12, 0.25); }
+.message-text .msg-bg-olive { background-color: rgba(101, 163, 13, 0.25); }
+.message-text .msg-bg-amber { background-color: rgba(217, 119, 6, 0.25); }
+.message-text .msg-bg-yellow { background-color: rgba(202, 138, 4, 0.25); }
+/* .message-bubble .message-meta { margin-top: 6px; } */
+
+.message-image {
+    border-radius: 12px;
+    cursor: pointer;
+    display: block;
+}
+
+/* Ячейка с неудавшейся загрузкой — без квадрата, компактная подпись */
+.message-image-cell.image-load-failed {
+    aspect-ratio: auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+}
+
+.img-disappeared {
+    margin-top: 0;
+    padding: 8px 14px;
+    background: var(--panel-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    font-style: normal;
+    text-align: center;
+}
+
+.message-image-cell.image-load-failed .img-disappeared {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Вложения: файлы (иконка + цвет по типу, как в тикетах партнёра) */
+.message-attachments {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.message-attachment-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 13px;
+    max-width: 240px;
+    transition: border-color 0.2s, background 0.2s;
+}
+.message-attachment-file:hover {
+    border-color: var(--accent);
+    background: var(--bg-accent);
+}
+.message-attachment-file .file-icon-box {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.message-attachment-file .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.message.you .message-attachment-file .file-icon-box { color: #2e7d32; border-color: #2e7d32; background: rgba(46, 125, 50, 0.1); }
+.message.you .message-attachment-file[data-ext="pdf"] .file-icon-box { color: #c62828; border-color: #c62828; background: rgba(198, 40, 40, 0.1); }
+.message.you .message-attachment-file[data-ext="xlsx"] .file-icon-box,
+.message.you .message-attachment-file[data-ext="xls"] .file-icon-box { color: #2e7d32; border-color: #2e7d32; background: rgba(46, 125, 50, 0.1); }
+.message.you .message-attachment-file[data-ext="doc"] .file-icon-box,
+.message.you .message-attachment-file[data-ext="docx"] .file-icon-box { color: #1565c0; border-color: #1565c0; background: rgba(21, 101, 192, 0.1); }
+.message.other .message-attachment-file .file-icon-box { color: var(--muted); border-color: var(--border); background: var(--panel); }
+.message.other .message-attachment-file[data-ext="pdf"] .file-icon-box { color: #c62828; border-color: #c62828; background: rgba(198, 40, 40, 0.08); }
+.message.other .message-attachment-file[data-ext="xlsx"] .file-icon-box,
+.message.other .message-attachment-file[data-ext="xls"] .file-icon-box { color: #2e7d32; border-color: #2e7d32; background: rgba(46, 125, 50, 0.08); }
+.message.other .message-attachment-file[data-ext="doc"] .file-icon-box,
+.message.other .message-attachment-file[data-ext="docx"] .file-icon-box { color: #1565c0; border-color: #1565c0; background: rgba(21, 101, 192, 0.08); }
+
+/* Прогресс загрузки файлов */
+.upload-progress-wrap {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.upload-progress-wrap.hidden { display: none !important; }
+.upload-progress-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+.upload-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.2s;
+}
+.upload-progress-text {
+    font-size: 12px;
+    color: var(--muted);
+}
+.upload-speed {
+    margin-left: 6px;
+}
+.upload-speed:not(:empty)::before {
+    content: " • ";
+}
+
+/* Модальное окно вставки ссылки */
+.chat-link-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.chat-link-modal-backdrop.hidden { display: none; }
+.chat-link-modal {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    min-width: 320px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+.chat-link-modal h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.chat-link-modal label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.chat-link-modal input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+.chat-link-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.chat-link-modal-actions button { padding: 8px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+.chat-link-modal-actions .chat-link-modal-submit { background: var(--accent); color: #fff; border: none; }
+.chat-link-modal-actions .chat-link-modal-cancel { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+
+.chat-color-wrap { position: relative; }
+.chat-heading-wrap { position: relative; }
+.chat-heading-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 50;
+    padding: 4px 0;
+    min-width: 90px;
+}
+.chat-heading-dropdown.hidden { display: none; }
+.chat-heading-dropdown.open-up {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 4px;
+}
+.chat-heading-opt {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    text-align: left;
+    border: none;
+    background: none;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.chat-heading-opt:hover { background: var(--panel-3); }
+
+.helpdesk-heading-wrap { position: relative; }
+.helpdesk-heading-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 50;
+    padding: 4px 0;
+    min-width: 90px;
+}
+.helpdesk-heading-dropdown.hidden { display: none; }
+.helpdesk-heading-dropdown.open-up {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 4px;
+}
+.helpdesk-heading-opt {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    text-align: left;
+    border: none;
+    background: none;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.helpdesk-heading-opt:hover { background: var(--panel-3); }
+
+/* --- 7. ОБЛАСТЬ ВВОДА (INPUT AREA) --- */
+.chat-input-area {
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border);
+}
+
+.chat-reply-toolbar {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 8px;
+}
+.chat-toolbar-btn {
+    width: 32px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+.chat-toolbar-btn:hover {
+    background: var(--panel-2);
+    color: var(--text);
+}
+.chat-color-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 180px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 50;
+    padding: 10px 12px;
+}
+.chat-color-dropdown.open-up {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 4px;
+}
+.chat-color-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+.chat-color-list {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    margin-bottom: 10px;
+}
+.chat-color-list:last-of-type { margin-bottom: 0; }
+.chat-color-dropdown.hidden { display: none; }
+.chat-color-opt {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0;
+    display: block;
+}
+.chat-color-opt:hover { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.chat-color-opt[data-class="msg-color-blue"],
+.chat-color-opt[data-class="msg-bg-blue"] { background-color: #3498db; }
+.chat-color-opt[data-class="msg-color-navy"],
+.chat-color-opt[data-class="msg-bg-navy"] { background-color: #2563eb; }
+.chat-color-opt[data-class="msg-color-teal"],
+.chat-color-opt[data-class="msg-bg-teal"] { background-color: #0d9488; }
+.chat-color-opt[data-class="msg-color-green"],
+.chat-color-opt[data-class="msg-bg-green"] { background-color: #16a34a; }
+.chat-color-opt[data-class="msg-color-slate"],
+.chat-color-opt[data-class="msg-bg-slate"] { background-color: #64748b; }
+.chat-color-opt[data-class="msg-color-purple"],
+.chat-color-opt[data-class="msg-bg-purple"] { background-color: #7c3aed; }
+.chat-color-opt[data-class="msg-color-burgundy"],
+.chat-color-opt[data-class="msg-bg-burgundy"] { background-color: #991b1b; }
+.chat-color-opt[data-class="msg-color-red"],
+.chat-color-opt[data-class="msg-bg-red"] { background-color: #dc2626; }
+.chat-color-opt[data-class="msg-color-orange"],
+.chat-color-opt[data-class="msg-bg-orange"] { background-color: #ea580c; }
+.chat-color-opt[data-class="msg-color-olive"],
+.chat-color-opt[data-class="msg-bg-olive"] { background-color: #65a30d; }
+.chat-color-opt[data-class="msg-color-amber"],
+.chat-color-opt[data-class="msg-bg-amber"] { background-color: #d97706; }
+.chat-color-opt[data-class="msg-color-yellow"],
+.chat-color-opt[data-class="msg-bg-yellow"] { background-color: #ca8a04; }
+
+.input-group {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    background: var(--panel-2);
+    border-radius: 24px;
+    padding: 4px 4px 4px 14px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+}
+
+.input-group:focus-within {
+    background: var(--bg-primary);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+#chat-input.chat-input-editor {
+    flex: 1;
+    min-height: 24px;
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 14px;
+    line-height: 1.5;
+}
+#chat-input.chat-input-editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted);
+}
+/* Форматирование видно прямо в поле ввода */
+#chat-input.chat-input-editor strong,
+#chat-input.chat-input-editor b { font-weight: 600; }
+#chat-input.chat-input-editor em,
+#chat-input.chat-input-editor i { font-style: italic; }
+#chat-input.chat-input-editor u { text-decoration: underline; }
+#chat-input.chat-input-editor a { color: var(--accent); text-decoration: none; }
+#chat-input.chat-input-editor a:hover { text-decoration: underline; }
+#chat-input.chat-input-editor h1 { font-size: 1.5em; font-weight: 700; }
+#chat-input.chat-input-editor h2 { font-size: 1.3em; font-weight: 700; }
+#chat-input.chat-input-editor h3 { font-size: 1.15em; font-weight: 600; }
+#chat-input.chat-input-editor h4 { font-size: 1.05em; font-weight: 600; }
+#chat-input.chat-input-editor h5 { font-size: 1em; font-weight: 600; }
+#chat-input.chat-input-editor h6 { font-size: 0.9em; font-weight: 600; color: var(--muted); }
+#chat-input.chat-input-editor .msg-color-red { color: #dc2626; }
+#chat-input.chat-input-editor .msg-color-blue { color: #3498db; }
+#chat-input.chat-input-editor .msg-color-navy { color: #2563eb; }
+#chat-input.chat-input-editor .msg-color-teal { color: #0d9488; }
+#chat-input.chat-input-editor .msg-color-green { color: #16a34a; }
+#chat-input.chat-input-editor .msg-color-slate { color: #64748b; }
+#chat-input.chat-input-editor .msg-color-orange { color: #ea580c; }
+#chat-input.chat-input-editor .msg-color-purple { color: #7c3aed; }
+#chat-input.chat-input-editor .msg-color-burgundy { color: #991b1b; }
+#chat-input.chat-input-editor .msg-color-olive { color: #65a30d; }
+#chat-input.chat-input-editor .msg-color-amber { color: #d97706; }
+#chat-input.chat-input-editor .msg-color-yellow { color: #ca8a04; }
+#chat-input.chat-input-editor .msg-bg-blue { background-color: rgba(52, 152, 219, 0.25); }
+#chat-input.chat-input-editor .msg-bg-navy { background-color: rgba(37, 99, 235, 0.25); }
+#chat-input.chat-input-editor .msg-bg-teal { background-color: rgba(13, 148, 136, 0.25); }
+#chat-input.chat-input-editor .msg-bg-green { background-color: rgba(22, 163, 74, 0.25); }
+#chat-input.chat-input-editor .msg-bg-slate { background-color: rgba(100, 116, 139, 0.25); }
+#chat-input.chat-input-editor .msg-bg-purple { background-color: rgba(124, 58, 237, 0.25); }
+#chat-input.chat-input-editor .msg-bg-burgundy { background-color: rgba(153, 27, 27, 0.25); }
+#chat-input.chat-input-editor .msg-bg-red { background-color: rgba(220, 38, 38, 0.25); }
+#chat-input.chat-input-editor .msg-bg-orange { background-color: rgba(234, 88, 12, 0.25); }
+#chat-input.chat-input-editor .msg-bg-olive { background-color: rgba(101, 163, 13, 0.25); }
+#chat-input.chat-input-editor .msg-bg-amber { background-color: rgba(217, 119, 6, 0.25); }
+#chat-input.chat-input-editor .msg-bg-yellow { background-color: rgba(202, 138, 4, 0.25); }
+#chat-input {
+    flex: 1;
+    background: transparent !important;
+    border: none !important;
+    color: var(--text);
+    resize: none;
+    padding: 8px 0;
+    font-size: 14px;
+    max-height: 150px;
+    outline: none;
+}
+
+/* Кнопка отправки (Стрелочка) */
+.send-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 50% !important;
+    cursor: pointer;
+    transition: transform 0.2s, background-color 0.2s;
+    flex-shrink: 0;
+}
+
+.send-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.1);
+}
+.send-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+    transform: translateX(1px); 
+}
+
+/* --- 8. ГАЛЕРЕЯ (MODAL) --- */
+.gallery-modal {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(5px);
+}
+.gallery-modal.show { display: flex; }
+.gallery-content { max-width: 90vw; max-height: 85vh; object-fit: contain; }
+.gallery-close { position: absolute; top: 20px; right: 30px; color: #fff; font-size: 40px; cursor: pointer; }
+.gallery-prev, .gallery-next {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #fff;
+    font-size: 50px;
+    padding: 20px;
+    cursor: pointer;
+}
+.gallery-prev { left: 10px; }
+.gallery-next { right: 10px; }
+.gallery-counter { position: absolute; bottom: 20px; color: #fff; font-size: 14px; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 20px; }
+
+/* --- 9. РЕЖИМ ТИКЕТА И АНИМАЦИИ --- */
+.ticket-checkbox-wrapper {
+    position: absolute;
+    left: -35px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+}
+.message.ticket-offset { margin-left: 40px !important; }
+
+@keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.delete-modal {
+    display: none;
+}
+.delete-modal.visible {
+    display: flex !important;
+}
+
+.message-menu.open-up {
+    transform-origin: bottom right;
+    animation: menuInUp 0.2s ease-out;
+}
+
+@keyframes menuInUp {
+    from { opacity: 0; transform: translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.message-menu:not(.open-up) {
+    transform-origin: top right;
+    animation: menuInDown 0.2s ease-out;
+}
+
+@keyframes menuInDown {
+    from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* --- КНОПКА ОТМЕНЫ РЕДАКТИРОВАНИЯ (Крестик) --- */
+#cancel-edit {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    font-size: 18px;
+    line-height: 1;
+}
+
+#cancel-edit:hover {
+    background: var(--bg-accent);
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+#cancel-edit:not(.hidden) {
+    display: flex !important;
+    animation: fadeInScale 0.2s ease-out;
+}
+
+@keyframes fadeInScale {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* --- ПРЕДПРОСМОТР ПРИКРЕПЛЕННЫХ ФАЙЛОВ (как в Zendesk: 1 файл в строку) --- */
+.file-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-top: 10px;
+    max-width: 100%;
+    animation: fadeIn 0.2s ease-out;
+}
+.file-preview.hidden { display: none !important; }
+.file-preview-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.file-preview-tile {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    width: 100%;
+    box-sizing: border-box;
+}
+.file-preview-tile-img {
+    flex-shrink: 0;
+}
+.file-preview-tile-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    display: block;
+    flex-shrink: 0;
+}
+.file-preview-tile-thumb-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted, #888);
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.message-attachments-uploading {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.message-attachments-uploading-label {
+    font-size: 13px;
+    color: var(--text-muted, #888);
+}
+
+.file-preview-tile-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s;
+}
+.file-preview-tile-thumb:hover img {
+    transform: scale(1.05);
+}
+/* Иконка формата документа (слева) */
+.file-preview-tile-icon {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #fff;
+}
+.file-preview-tile-icon--doc,
+.file-preview-tile-icon--docx,
+.file-preview-tile-icon--docm {
+    background: linear-gradient(135deg, #2b579a 0%, #1e3a6e 100%);
+}
+.file-preview-tile-icon--pdf {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+}
+.file-preview-tile-icon--xls,
+.file-preview-tile-icon--xlsx {
+    background: linear-gradient(135deg, #27ae60 0%, #1e8449 100%);
+}
+.file-preview-tile-icon--csv {
+    background: linear-gradient(135deg, #7f8c8d 0%, #5d6d7e 100%);
+}
+.file-preview-tile-icon--default {
+    background: var(--bg-accent);
+    color: var(--text);
+}
+/* Блок: название + размер + крестик */
+.file-preview-tile-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.file-preview-tile-info .file-preview-tile-name {
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
+.file-preview-tile-info .file-preview-tile-size {
+    font-size: 12px;
+    color: var(--muted);
+    flex-shrink: 0;
+}
+.file-preview-tile-remove {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    background: var(--panel-3);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.file-preview-tile-remove:hover {
+    background: var(--danger);
+    color: white;
+    border-color: var(--danger);
+}
+.file-preview-clear-btn {
+    font-size: 12px;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+.file-preview-clear-btn:hover {
+    color: var(--text);
+    background: var(--bg-accent);
+}
+
+.file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+}
+
+.file-name {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+}
+
+.file-size {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+/* Кнопка назад в шапке чата */
+.back-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    color: var(--text);
+    cursor: pointer;
+    margin-right: 12px;
+    flex-shrink: 0;
+    transition: all 0.2s;
+}
+
+.back-btn:hover {
+    background: var(--bg-accent);
+    color: var(--accent);
+}
+
+.back-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+@media (max-width: 768px) {
+    .back-btn {
+        display: flex;
+    }
+}
+
+/* Кнопка информации */
+.info-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.info-btn:hover {
+    background: var(--bg-accent);
+    color: var(--accent);
+}
+
+@media (max-width: 768px) {
+    .info-btn { display: none; }
+}
+
+/* Датированные разделители */
+.date-divider {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    margin: 24px 0 16px;
+    position: relative;
+    z-index: 1;
+}
+
+/* Чекбоксы тикетов */
+.ticket-checkbox-wrapper input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+.ticket-checkbox-wrapper .checkmark {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    height: 22px;
+    width: 22px;
+    background-color: var(--panel);
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ticket-checkbox-wrapper:hover .checkmark {
+    border-color: var(--accent);
+}
+
+.ticket-checkbox-wrapper input[type="checkbox"]:checked + .checkmark {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+.ticket-checkbox-wrapper .checkmark::after {
+    content: "";
+    display: none;
+    width: 8px;
+    height: 4px;
+    border: 2px solid #fff;
+    border-top: none;
+    border-right: none;
+    transform: rotate(-45deg);
+}
+
+.ticket-checkbox-wrapper input[type="checkbox"]:checked + .checkmark::after {
+    display: block;
+}
+
+.ticket-checkbox-wrapper input[type="checkbox"]:focus + .checkmark {
+    box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* Приглушение акцента в чате */
+.chat-layout {
+    --accent: color-mix(in srgb, var(--accent-color) 70%, transparent);
+}
+
+/* Смягчение текста на светлых темах */
+html[data-theme="noctis"] .chat-header-info,
+html[data-theme="light"] .chat-header-info,
+html:not([data-theme]) .chat-header-info {
+    color: #444;
+}
+
+html[data-theme="noctis"] .chat-header-link,
+html[data-theme="light"] .chat-header-link,
+html:not([data-theme]) .chat-header-link {
+    color: #444 !important;
+    text-decoration: none !important;
+}
+
+/* Кнопки в шапке чата */
+.extra-chat-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.extra-chat-buttons .extra-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    padding: 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text) !important; /* ← ключевое */
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.extra-chat-buttons .extra-btn:hover {
+    background: var(--bg-accent);
+}
+
+.extra-chat-buttons .extra-btn svg {
+    width: 34px;
+    height: 34px;
+    display: block;
+    fill: currentColor !important; /* ← обязательно */
+}
+
+.extra-chat-buttons .extra-btn:not(:empty):not(.ticket-cancel-btn) {
+    font-size: 13px;
+    font-weight: 600;
+    /* min-width: 60px; */
+}
+
+.extra-chat-buttons .ticket-cancel-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+html[data-theme="noctis"] .extra-chat-buttons .extra-btn,
+html[data-theme="light"] .extra-chat-buttons .extra-btn,
+html:not([data-theme]) .extra-chat-buttons .extra-btn {
+    color: var(--text) !important;
+}
+/* Гарантируем, что кнопки в шапке чата используют цвет темы */
+.extra-chat-buttons .extra-btn,
+#ticket-toggle-btn {
+    color: var(--text) !important;
+}
+
+/* Иконки внутри кнопок */
+.extra-chat-buttons .extra-btn svg,
+.extra-chat-buttons .extra-btn svg * {
+    fill: var(--text) !important;
+}
+/* Крупные иконки в кнопках шапки чата */
+.extra-chat-buttons .extra-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    padding: 6px 4px; /* ← уменьшили горизонтальные отступы */
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text) !important;
+    transition: background-color 0.2s;
+}
+
+.extra-chat-buttons .extra-btn .extra-btn-icon {
+    width: 28px;   /* ← увеличено с 20px */
+    height: 28px;  /* ← увеличено с 20px */
+    display: block;
+}
+/* Непрочитанное: border контейнера сообщения (потом снимается при mark read) */
+.message-unread-marker {
+    display: none;
+}
+
+.message.unread {
+    border: 2px solid var(--accent);
+    border-radius: 18px;
+}
+.message.unread.other { border-bottom-left-radius: 4px; }
+.message.unread.you { border-bottom-right-radius: 4px; }
+
+/* Кнопка «вниз»: подсветка, когда пришло новое сообщение, а пользователь не внизу */
+.chat-scroll-to-bottom-btn.has-new-below {
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.kb-btn.hidden {
+    display: none !important;
+}

@@ -475,7 +475,7 @@ def _mail_client_filter(alias: str = "um") -> str:
 
 
 def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
-    """Список /chats: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
+    """Список /tickets: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
     operational_in = _enum_status_sql(TRACKER_OPERATIONAL_WAIT_STATUSES)
     mail_client = _mail_client_filter("um")
     staff = _STAFF_READ_IN_SQL
@@ -788,6 +788,25 @@ async def fetch_tickets_has_unread(
         )
     ).scalars().all()
     return {int(x) for x in rows}
+
+
+async def count_open_unread_tickets(db: AsyncSession) -> int:
+    """Открытые тикеты helpdesk с непрочитанными сообщениями абонента."""
+    filter_sql = _tracker_list_status_sources_sql(closed=False)
+    unread = ticket_has_unread_sql("tt")
+    row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS cnt
+                FROM users.tracker_tickets tt
+                WHERE {filter_sql}
+                  AND ({unread})
+                """
+            ),
+        )
+    ).mappings().first()
+    return int(row["cnt"] if row else 0)
 
 
 def _moscow_ts() -> int:
