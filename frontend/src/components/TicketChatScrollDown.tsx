@@ -2,9 +2,17 @@ type Props = {
   visible: boolean;
   pendingCount: number;
   onClick: () => void;
+  className?: string;
+  badgeClassName?: string;
 };
 
-export default function TicketChatScrollDown({ visible, pendingCount, onClick }: Props) {
+export default function TicketChatScrollDown({
+  visible,
+  pendingCount,
+  onClick,
+  className = "tk-scroll-down",
+  badgeClassName = "tk-scroll-down__badge",
+}: Props) {
   if (!visible) return null;
 
   const label =
@@ -17,7 +25,7 @@ export default function TicketChatScrollDown({ visible, pendingCount, onClick }:
   return (
     <button
       type="button"
-      className="tk-scroll-down"
+      className={className}
       onClick={onClick}
       title={label}
       aria-label={label}
@@ -32,7 +40,7 @@ export default function TicketChatScrollDown({ visible, pendingCount, onClick }:
         />
       </svg>
       {pendingCount > 0 ? (
-        <span className="tk-scroll-down__badge" aria-hidden>
+        <span className={badgeClassName} aria-hidden>
           {pendingCount > 99 ? "99+" : pendingCount}
         </span>
       ) : null}

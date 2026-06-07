@@ -40,7 +40,7 @@ export function watchChatScrollToBottom(el: HTMLElement, maxMs = 2500): () => vo
   requestAnimationFrame(() => requestAnimationFrame(snap));
 
   const ro = new ResizeObserver(() => snap());
-  const feed = el.querySelector(".tk-chat-feed");
+  const feed = el.querySelector(".tk-chat-feed, .cs-feed");
   if (feed) ro.observe(feed);
   ro.observe(el);
 

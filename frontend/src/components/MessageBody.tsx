@@ -5,6 +5,11 @@ type MessageBodyProps = {
   className?: string;
 };
 
+function htmlModifierClass(base: string): string {
+  if (base === "tk-intro__text") return "tk-msg-text--html";
+  return `${base}--html`;
+}
+
 export default function MessageBody({ text, className = "tk-msg-text" }: MessageBodyProps) {
   const normalized = normalizeMessageContent(text);
   if (!normalized) return null;
@@ -12,7 +17,7 @@ export default function MessageBody({ text, className = "tk-msg-text" }: Message
   if (messageLooksLikeHtml(normalized)) {
     return (
       <div
-        className={`${className} tk-msg-text--html`}
+        className={`${className} ${htmlModifierClass(className)}`}
         dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(normalized) }}
       />
     );

@@ -5,6 +5,7 @@ import DashboardShell from "@/workspace/DashboardShell";
 import HomeTab from "@/workspace/HomeTab";
 import CallTab from "@/workspace/CallTab";
 import ChatsTab from "@/workspace/ChatsTab";
+import ChatSectionPage from "@/workspace/ChatSectionPage";
 import StatsTab from "@/workspace/StatsTab";
 import KbTab from "@/workspace/KbTab";
 import UserProfilePage from "@/workspace/UserProfilePage";
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="call" element={<CallTab />} />
             <Route path="tickets/:ticketId" element={<TicketPage />} />
             <Route path="tickets" element={<ChatsTab />} />
+            <Route path="chat" element={<ChatSectionPage />} />
             <Route path="chats" element={<RedirectLegacyChatsRoute />} />
             <Route path="stats" element={<StatsTab />} />
             <Route path="kb" element={<KbTab />} />

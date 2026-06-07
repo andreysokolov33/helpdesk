@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
 import { logoutRequest } from "@/api/auth";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
+import { fetchChatUnread } from "@/api/chat";
 import { getBellUnreadCount, MOCK_NOTIFS } from "@/data/mockCc";
 import { useTheme } from "@/theme/ThemeContext";
 
@@ -18,6 +19,7 @@ const tabs: TabDef[] = [
   { to: "/", label: "Главная", end: true },
   { to: "/call", label: "Регистрация звонка", highlight: true },
   { to: "/tickets", label: "Тикеты" },
+  { to: "/chat", label: "Чат" },
   { to: "/stats", label: "Статистика" },
   { to: "/kb", label: "База знаний" },
 ];
@@ -86,6 +88,7 @@ function IconSunsetScene({ skyId, glowId }: { skyId: string; glowId: string }) {
 export default function DashboardShell() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [ticketsUnread, setTicketsUnread] = useState(0);
+  const [chatUnread, setChatUnread] = useState(0);
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -132,6 +135,35 @@ export default function DashboardShell() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", loadUnread);
+    };
+  }, [location.pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadChatUnread() {
+      try {
+        const stats = await fetchChatUnread();
+        if (!cancelled) setChatUnread(stats.opened_chats ?? 0);
+      } catch {
+        if (!cancelled) setChatUnread(0);
+      }
+    }
+
+    void loadChatUnread();
+    const timer = window.setInterval(loadChatUnread, 10_000);
+
+    function onVisible() {
+      if (document.visibilityState === "visible") void loadChatUnread();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", loadChatUnread);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", loadChatUnread);
     };
   }, [location.pathname]);
 
@@ -241,7 +273,8 @@ export default function DashboardShell() {
               <>
                 <span className="tab-label">{t.label}</span>
                 {(() => {
-                  const badge = t.to === "/tickets" ? ticketsUnread : t.badge;
+                  const badge =
+                    t.to === "/tickets" ? ticketsUnread : t.to === "/chat" ? chatUnread : t.badge;
                   return typeof badge === "number" && badge > 0 ? (
                     <span className="tab-badge" aria-label={`Непрочитанных: ${badge}`}>
                       {badge > 99 ? "99+" : badge}
