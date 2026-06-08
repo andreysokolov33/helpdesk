@@ -318,88 +318,186 @@ class TicketCategory(Base):
 
 
 class TrackerTickets(Base):
+    """Тикеты техподдержки (users.tracker_tickets).
+
+    Исполнители:
+      assigned_to — оператор КС (регистрация, 1-я линия); может быть NULL в общей очереди.
+      engineer_id — инженер при эскалации; может быть NULL, пока только КС.
+      На уровне данных оба NULL допустимы; заполнены оба одновременно — нет.
+
+    Очередь v2: queue_line, action_by, chat_turn, action_since.
+    Legacy (другие проекты): status, support_line и др.
+    """
     __tablename__ = 'tracker_tickets'
     __table_args__ = (
         CheckConstraint('length(title) > 0', name='tracker_title_check'),
         CheckConstraint(
-            'support_line = ANY (ARRAY[1, 2])', name='tracker_support_line_check'),
+            text('support_line = ANY (ARRAY[1, 2, 3, 4])'),
+            name='tracker_support_line_check',
+        ),
         CheckConstraint(
-            "object_type IN ('user', 'station', 'other')", name='tracker_tickets_object_type_check'),
+            "object_type IN ('user', 'station', 'other')",
+            name='tracker_tickets_object_type_check',
+        ),
+        ForeignKeyConstraint(
+            ['engineer_id'], ['users.skystream_users.id'],
+            name='fk_tracker_tickets_engineer', ondelete='SET NULL',
+        ),
+        ForeignKeyConstraint(
+            ['assigned_to'], ['users.skystream_users.id'],
+            name='tracker_assigned_to_fkey', ondelete='SET NULL',
+        ),
+        ForeignKeyConstraint(
+            ['closed_by'], ['users.skystream_users.id'],
+            name='tracker_closed_by_fkey', ondelete='SET NULL',
+        ),
+        ForeignKeyConstraint(
+            ['locked_by'], ['users.skystream_users.id'],
+            name='tracker_tickets_locked_by_fkey', ondelete='SET NULL',
+        ),
         PrimaryKeyConstraint('id', name='tracker_pkey'),
         Index('idx_tracker_author', 'author'),
+        Index('idx_tracker_category', 'category_id'),
+        Index('idx_tracker_complexity', 'complexity'),
         Index('idx_tracker_date_of_close', 'date_of_close'),
         Index('idx_tracker_date_of_create', 'date_of_create'),
+        Index('idx_tracker_sla_deadline', 'sla_deadline'),
+        Index('idx_tracker_source', 'source'),
         Index('idx_tracker_status', 'status'),
         Index('idx_tracker_subscriber_id', 'user_id'),
         Index('idx_tracker_support_line', 'support_line'),
-        Index('idx_tracker_category', 'category_id'),
-        Index('idx_tracker_sla_deadline', 'sla_deadline'),
-        {'schema': 'users'}
+        Index('idx_tracker_tickets_action_by', 'action_by'),
+        Index('idx_tracker_tickets_chat_turn', 'chat_turn'),
+        Index('idx_tracker_tickets_object_type', 'object_type'),
+        Index('idx_tracker_tickets_queue_line', 'queue_line'),
+        Index(
+            'idx_tracker_tickets_open_queue',
+            'action_by', 'queue_line', 'action_since',
+            postgresql_where=text(
+                "status IN ('pending', 'open', 'in_progress', 'waiting_client', "
+                "'waiting_technician', 'waiting_parts', 'waiting_logistics', "
+                "'cc_handover', 'waiting_cs', 'no_technician')"
+            ),
+        ),
+        Index(
+            'idx_tracker_tickets_helpdesk_open',
+            'support_line', 'assigned_to', 'date_of_create',
+            postgresql_where=text(
+                "status IN ('pending', 'open', 'in_progress', 'waiting_client', "
+                "'waiting_technician', 'no_technician', 'waiting_parts', "
+                "'waiting_logistics', 'cc_handover', 'waiting_cs') "
+                "AND source IN ('lk', 'call_center', 'abs')"
+            ),
+        ),
+        Index('idx_tickets_field_tech', 'field_technician_id'),
+        Index(
+            'idx_tickets_sla_paused', 'sla_paused_at',
+            postgresql_where=text('sla_paused_at IS NOT NULL'),
+        ),
+        Index(
+            'idx_tracker_locked_until', 'locked_until',
+            postgresql_where=text('locked_until IS NOT NULL'),
+        ),
+        {'schema': 'users'},
     )
 
     id: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=False), primary_key=True)
+        BigInteger, Identity(always=False, start=200), primary_key=True,
+    )
     author: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     support_line: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    date_of_create: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text('now()'),
+    )
+    date_of_close: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    assigned_to: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True,
+        comment='Оператор КС (skystream_users.id). NULL — в общей очереди КС.',
+    )
+    closed_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    station_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    hotspot_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    vno: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, server_default=text('1'))
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'call_center'"),
+    )
+    complexity: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default=text("'L1'"),
+    )
+    locked_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    locked_until: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_deadline: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_paused_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_pause_reason: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    field_technician_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(
         Enum(
             'pending', 'open', 'in_progress',
-            'waiting_client', 'waiting_technician', 'waiting_parts', 'no_technician', 'waiting_logistics', 'cc_handover',
-            'waiting_cs',
+            'waiting_client', 'waiting_technician', 'waiting_parts', 'no_technician',
+            'waiting_logistics', 'cc_handover', 'waiting_cs',
             'resolved', 'closed', 'cancelled', 'deferred', 'not_resolved',
-            name='tracker_status',
-            schema='users',
-            create_type=False
+            name='tracker_status', schema='users', create_type=False,
         ),
         nullable=False,
-        server_default=text("'pending'::users.tracker_status")
-    )
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    date_of_create: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text('now()')
+        server_default=text("'pending'::users.tracker_status"),
     )
     priority: Mapped[Optional[str]] = mapped_column(
         Enum(
             'low', 'middle', 'high', 'critical',
-            name='tracker_priority',
-            schema='users',
-            create_type=False
+            name='tracker_priority', schema='users', create_type=False,
         ),
-        nullable=True
+        nullable=True,
     )
-    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    date_of_close: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    person_type: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, server_default=text("'user'::character varying"),
+    )
+    first_response_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_client_message_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    object_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'user'"),
+    )
+    auto_close: Mapped[Optional[bool]] = mapped_column(
+        Boolean, nullable=True, server_default=text('false'),
+    )
+    caller_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    engineer_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True,
+        comment='Инженер (skystream_users.id) при эскалации. NULL — инженер не подключён.',
+    )
+    queue_line: Mapped[str] = mapped_column(
+        ENUM('cs', 'engineers', 'partner', name='tracker_queue_line', schema='users', create_type=False),
+        nullable=False,
+        server_default=text("'cs'::users.tracker_queue_line"),
+    )
+    action_by: Mapped[str] = mapped_column(
+        ENUM(
+            'cs', 'engineers', 'partner', 'subscriber', 'external',
+            name='tracker_action_by', schema='users', create_type=False,
+        ),
+        nullable=False,
+        server_default=text("'cs'::users.tracker_action_by"),
+    )
+    chat_turn: Mapped[str] = mapped_column(
+        ENUM('staff', 'subscriber', name='tracker_chat_turn', schema='users', create_type=False),
+        nullable=False,
+        server_default=text("'staff'::users.tracker_chat_turn"),
+    )
+    action_since: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # Relationships
     mail_associations: Mapped[list['TrackerTicketMailLinks']] = relationship(
         'TrackerTicketMailLinks',
         back_populates='ticket',
-        cascade='all, delete-orphan'
+        cascade='all, delete-orphan',
     )
     tracker_ticket_line_history: Mapped[list['TrackerTicketLineHistory']] = relationship(
         'TrackerTicketLineHistory',
-        back_populates='ticket'
+        back_populates='ticket',
     )
-    assigned_to: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    closed_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    station_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    hotspot_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    vno: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    sla_deadline: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    sla_paused_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    sla_pause_reason: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    source: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, server_default=text("'call_center'"))
-    complexity: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, server_default=text("'L1'"))
-    person_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, server_default=text('user::character varying'))
-    caller_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    object_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'user'"))
-    first_response_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_client_message_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # Property для удобного доступа к связанным письмам
     @property
     def user_mails(self) -> list['UserMail']:

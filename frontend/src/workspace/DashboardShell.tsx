@@ -265,10 +265,7 @@ export default function DashboardShell() {
             className={({ isActive }) => `tab${isActive ? " on" : ""}`}
           >
             {t.highlight ? (
-              <span className="tab-highlight">
-                <span className="tab-highlight-accent">Регистрация</span>
-                <span className="tab-highlight-rest"> звонка</span>
-              </span>
+              <span className="tab-highlight-accent">Регистрация звонка</span>
             ) : (
               <>
                 <span className="tab-label">{t.label}</span>

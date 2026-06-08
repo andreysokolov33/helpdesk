@@ -75,10 +75,10 @@ TRACKER_OPERATIONAL_WAIT_STATUSES = (
 # Обратная совместимость (waiting_client — коммуникационный, не операционный)
 TRACKER_WAITING_OPERATOR_STATUSES = TRACKER_OPERATIONAL_WAIT_STATUSES + ('waiting_client',)
 
-# Коммуникационный слой в колонке «Статус» списка /tickets (не workflow-status в БД):
-# — waiting_client → awaiting_subscriber («Ждём абонента»), если нет непрочитанного от абонента;
-# — любой другой из TRACKER_OPEN_STATUSES → needs_reply («Нужен ответ»);
-# — TRACKER_CLOSED_STATUSES в открытом списке не показываются (вкладка closed — своя выборка).
+# Коммуникационный слой в колонке «Статус» списка /tickets (v2: chat_turn / action_by):
+# — chat_turn=staff и action_by ∈ {cs, engineers, partner} → needs_reply;
+# — chat_turn=subscriber → awaiting_subscriber (кроме in_progress на КС — workflow «В работе»);
+# — list_highlight=ops → workflow-подпись (handoff на КС).
 COMMUNICATION_STATE_LABELS = {
     'needs_reply': 'Нужен ответ',
     'awaiting_subscriber': 'Ждём абонента',
@@ -87,8 +87,48 @@ COMMUNICATION_STATE_LABELS = {
 TRACKER_CLOSED_STATUSES = (
     'resolved', 'closed', 'cancelled', 'deferred', 'not_resolved')
 
+# ---------------------------------------------------------------------------
+# Очередь тикетов v2 (колонки queue_line, action_by, chat_turn, action_since)
+# Legacy status / support_line не трогаем — другие проекты.
+#
+# Исполнители на tracker_tickets (не путать):
+#   assigned_to  — оператор КС (регистрация, 1-я линия)
+#   engineer_id  — инженер при эскалации
+#   Оба NULL допустимы (общая очередь); оба заполнены одновременно — нет.
+# ---------------------------------------------------------------------------
+
+TRACKER_QUEUE_LINE_DISPLAY = {
+    'cs': 'КС',
+    'engineers': 'Инженеры',
+    'partner': 'Партнёр',
+}
+
+TRACKER_ACTION_BY_DISPLAY = {
+    'cs': 'КС',
+    'engineers': 'Инженеры',
+    'partner': 'Партнёр',
+    'subscriber': 'Абонент',
+    'external': 'Внешняя сторона',
+}
+
+TRACKER_CHAT_TURN_DISPLAY = {
+    'staff': 'Нужен ответ staff',
+    'subscriber': 'Ждём абонента',
+}
+
 # Список тикетов helpdesk (/tickets): только эти источники (users.tracker_tickets.source)
 TRACKER_HELPDESK_LIST_SOURCES = ('lk', 'call_center', 'abs')
+
+# Внутренний чат staff↔staff (без абонента в цепочке v2)
+TRACKER_INTERNAL_STAFF_CHAT_SOURCES = ('call_center', 'abs')
+
+
+def is_subscriber_chat_source(source: str | None) -> bool:
+    return (source or '').strip() == 'lk'
+
+
+def is_internal_staff_chat_source(source: str | None) -> bool:
+    return (source or '').strip() in TRACKER_INTERNAL_STAFF_CHAT_SOURCES
 
 # Вкладка «Закрытые» в блоке инцидентов на профиле абонента (без «отложен»)
 PROFILE_INCIDENT_CLOSED_STATUSES = (

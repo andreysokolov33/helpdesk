@@ -33,16 +33,24 @@ from app.api.v1.routers.helpdesk.schemas import (
     HelpdeskMacroItem,
     HelpdeskMacrosResponse,
     TrackerTicketListItem,
+    TrackerTicketListDigestResponse,
     TrackerTicketListResponse,
     TrackerTicketListStats,
 )
 from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
 from app.core.ticket_message_validation import html_to_plain_text, validate_ticket_message_text
+from app.core.ticket_queue_state import (
+    communication_state_from_v2,
+    list_highlight_for_viewer,
+    on_register_call_cs,
+    support_line_to_queue_line,
+)
 from app.constants import (
     COMMUNICATION_STATE_LABELS,
     PRIORITY_DICT,
     SOURCE_DISPLAY,
     STATUS_DISPLAY,
+    TRACKER_QUEUE_LINE_DISPLAY,
 )
 from app.database import get_db
 from app.models.users import TrackerTicketLineHistory, TrackerTickets
@@ -153,7 +161,7 @@ async def list_tracker_tickets(
     ),
 ) -> TrackerTicketListResponse:
     """
-    Список тикетов `users.tracker_tickets` с пагинацией и QoS-сортировкой для 1-й линии.
+    Список тикетов `users.tracker_tickets` с пагинацией и tier-сортировкой (персонально по viewer_id).
     По умолчанию только незакрытые (`closed=false`), источники lk / call_center / abs.
     """
     viewer_skystream_id = int(user["user_id"])
@@ -200,22 +208,47 @@ async def list_tracker_tickets(
         assignee_name = m.get("assignee_name")
         assignee_role = m.get("assignee_role")
         has_unread = bool(m.get("calc_has_unread"))
-        comm_state = m.get("communication_state")
-        comm_label = (
-            COMMUNICATION_STATE_LABELS.get(comm_state) if comm_state else None
-        )
+        queue_line = str(m.get("queue_line") or support_line_to_queue_line(int(m.get("support_line") or 1)))
+        action_by = str(m.get("action_by") or "cs")
+        chat_turn = str(m.get("chat_turn") or "staff")
+        st = str(m["status"])
+        src = m.get("source")
 
-        assigned_id = int(m["assigned_to"]) if m.get("assigned_to") is not None else None
-        assignee_is_viewer = bool(assigned_id is not None and assigned_id == viewer_skystream_id)
+        queue_snap = {
+            "queue_line": queue_line,
+            "action_by": action_by,
+            "chat_turn": chat_turn,
+            "action_since": m.get("action_since"),
+        }
+        highlight = list_highlight_for_viewer(
+            queue_snap,
+            viewer_role=str(user.get("role") or "support"),
+            has_unread=has_unread,
+            workflow_status=st,
+            source=str(src or "call_center"),
+        )
+        comm_state = communication_state_from_v2(
+            chat_turn, action_by, source=str(src or "call_center"),
+        )
+        if comm_state is None and highlight == "ops":
+            comm_label = STATUS_DISPLAY.get(st, st)
+        else:
+            comm_label = (
+                COMMUNICATION_STATE_LABELS.get(comm_state) if comm_state else None
+            )
+
+        if queue_line == "engineers":
+            owner_id = int(m["engineer_id"]) if m.get("engineer_id") is not None else None
+        else:
+            owner_id = int(m["assigned_to"]) if m.get("assigned_to") is not None else None
+        assignee_is_viewer = bool(owner_id is not None and owner_id == viewer_skystream_id)
 
         if cat_name and cat_parent:
             category_label = f"{cat_parent} / {cat_name}"
         else:
             category_label = cat_name or cat_parent
 
-        st = str(m["status"])
         pr = str(m["priority"]) if m.get("priority") is not None else None
-        src = m.get("source")
 
         sub_name, profile_uid, sub_ij = _subscriber_list_fields(
             str(m["object_type"]),
@@ -238,7 +271,14 @@ async def list_tracker_tickets(
                 priority=pr,
                 priority_label=PRIORITY_DICT.get(pr, pr) if pr else None,
                 support_line=int(m["support_line"]),
-                support_line_label=_support_line_label(int(m["support_line"])),
+                support_line_label=TRACKER_QUEUE_LINE_DISPLAY.get(
+                    queue_line, _support_line_label(int(m["support_line"])),
+                ),
+                queue_line=queue_line,
+                action_by=action_by,
+                chat_turn=chat_turn,
+                action_since=m.get("action_since"),
+                list_highlight=highlight,
                 source=src,
                 source_label=SOURCE_DISPLAY.get(src or "call_center", src or "call_center"),
                 category_label=category_label,
@@ -275,6 +315,39 @@ async def list_tracker_tickets(
         items=items,
         stats=stats,
     )
+
+
+@router.get("/list/digest", response_model=TrackerTicketListDigestResponse)
+async def list_tracker_tickets_digest(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    closed: bool = Query(False),
+    subscriber_q: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    digest: Optional[str] = Query(
+        None,
+        description="Отпечаток с прошлого поллинга; при совпадении changed=false",
+    ),
+) -> TrackerTicketListDigestResponse:
+    """
+    Лёгкий поллинг списка /tickets: без join абонентов и категорий.
+    При changed=false клиент не вызывает GET /list.
+    """
+    data = await ticket_svc.fetch_tracker_list_digest(
+        db,
+        viewer_id=int(user["user_id"]),
+        closed=closed,
+        page=page,
+        per_page=per_page,
+        subscriber_q=subscriber_q,
+        date_from=date_from,
+        date_to=date_to,
+        client_digest=(digest or "").strip() or None,
+    )
+    return TrackerTicketListDigestResponse(**data)
 
 
 _CALL_PLACEHOLDER_TITLE = "Звонок"
@@ -318,10 +391,12 @@ async def register_call(
 
     now = datetime.now(timezone.utc)
     author_id = int(user["user_id"])
+    queue_snap = on_register_call_cs(at=now)
 
     ticket = TrackerTickets(
         author=author_id,
         assigned_to=author_id,
+        engineer_id=None,
         user_id=ticket_user_id,
         support_line=1,
         status="in_progress",
@@ -337,6 +412,10 @@ async def register_call(
         hotspot_id=hotspot_id,
         vno=1,
         updated_at=now,
+        queue_line=queue_snap["queue_line"],
+        action_by=queue_snap["action_by"],
+        chat_turn=queue_snap["chat_turn"],
+        action_since=queue_snap["action_since"],
     )
     db.add(ticket)
     await db.flush()

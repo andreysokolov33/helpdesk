@@ -18,6 +18,12 @@ class TrackerTicketListItem(BaseModel):
     priority_label: Optional[str] = None
     support_line: int
     support_line_label: str
+    queue_line: str = "cs"
+    action_by: str = "cs"
+    chat_turn: str = "staff"
+    action_since: Optional[datetime] = None
+    list_highlight: str = "none"
+    """chat — нужен ответ в переписке; ops — операционное действие КС; none."""
     source: Optional[str] = None
     source_label: str
     category_label: Optional[str] = None
@@ -59,6 +65,13 @@ class TrackerTicketListResponse(BaseModel):
     per_page: int = Field(ge=1, le=100)
     items: list[TrackerTicketListItem]
     stats: Optional[TrackerTicketListStats] = None
+
+
+class TrackerTicketListDigestResponse(BaseModel):
+    """Лёгкий поллинг списка: changed=false — полный /list не нужен."""
+    changed: bool = True
+    digest: str
+    total: int = 0
 
 
 class DeskSearchSubscriberHit(BaseModel):
@@ -188,6 +201,10 @@ class TicketDetailResponse(BaseModel):
     priority_label: str | None = None
     support_line: int
     support_line_label: str
+    queue_line: str = "cs"
+    action_by: str = "cs"
+    chat_turn: str = "subscriber"
+    action_since_iso: str | None = None
     source: str
     source_label: str
     category_label: str | None = None

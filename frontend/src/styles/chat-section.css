@@ -851,6 +851,14 @@
   margin-left: auto;
 }
 
+#cs-page .cs-file-chip__thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
 #cs-page .cs-crow {
   display: flex;
   align-items: flex-end;

@@ -56,6 +56,12 @@ function minId(list: ChatMessage[]): number | null {
   return list.reduce((m, x) => (x.msg_id < m ? x.msg_id : m), list[0].msg_id);
 }
 
+function isAllowedChatImage(file: File): boolean {
+  if (file.type && file.type.startsWith("image/")) return true;
+  const ext = (file.name || "").split(".").pop()?.toLowerCase();
+  return ext === "jpg" || ext === "jpeg" || ext === "png" || ext === "gif" || ext === "webp" || ext === "bmp";
+}
+
 function plainPreview(text: string): string {
   const t = (text || "").replace(/<[^>]+>/g, " ");
   const doc = t
@@ -91,6 +97,7 @@ export default function ChatSectionPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -115,6 +122,29 @@ export default function ChatSectionPage() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    if (!file) {
+      setFilePreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setFilePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  function clearAttachedFile() {
+    setFile(null);
+  }
+
+  function attachImage(next: File) {
+    if (!isAllowedChatImage(next)) {
+      window.alert("Можно прикрепить только изображение (JPG, PNG, GIF, WebP, BMP).");
+      return;
+    }
+    setInput("");
+    setFile(next);
+  }
 
   // ── Список чатов: первичная загрузка ───────────────────────────────────────
   const loadChats = useCallback(async () => {
@@ -451,13 +481,17 @@ export default function ChatSectionPage() {
     }
 
     if (!text && !file) return;
+    if (text && file) {
+      window.alert("Отправьте текст или изображение, но не оба одновременно.");
+      return;
+    }
     setSending(true);
     try {
       const wasAtBottom = atBottomRef.current;
       const created = await sendChatMessage(activeId, text, file, replyTo?.msg_id ?? null);
       setMessages((prev) => mergeChatMessages(prev, [created]));
       setInput("");
-      setFile(null);
+      clearAttachedFile();
       setReplyTo(null);
       if (wasAtBottom) {
         atBottomRef.current = true;
@@ -739,18 +773,20 @@ export default function ChatSectionPage() {
                   </div>
                 ) : null}
                 {file && !editing ? (
-                  <div className="cs-file-chip">
-                    <FileBadge filename={file.name} ext={resolveFileExt(file.name)} />
+                  <div className="cs-file-chip cs-file-chip--img">
+                    {filePreviewUrl ? (
+                      <img src={filePreviewUrl} alt="" className="cs-file-chip__thumb" />
+                    ) : null}
                     <span className="cs-file-chip__name">{truncateFilename(file.name)}</span>
                     <span className="cs-file-chip__meta">{formatBytes(file.size)}</span>
-                    <button type="button" className="cs-file-chip__rm" onClick={() => setFile(null)}>
+                    <button type="button" className="cs-file-chip__rm" onClick={clearAttachedFile}>
                       ×
                     </button>
                   </div>
                 ) : null}
                 <div className="cs-crow">
                   {!editing ? (
-                    <label className="cs-attach" title="Прикрепить файл">
+                    <label className="cs-attach" title="Прикрепить изображение">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
                         <path
                           d="M14 8l-4.2 4.2a3 3 0 104.2 4.2l5-5a4 4 0 00-5.7-5.7l-5.8 5.8"
@@ -762,10 +798,10 @@ export default function ChatSectionPage() {
                       <input
                         type="file"
                         hidden
-                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
+                        accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/*"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
-                          if (f) setFile(f);
+                          if (f) attachImage(f);
                           e.currentTarget.value = "";
                         }}
                       />
@@ -775,11 +811,19 @@ export default function ChatSectionPage() {
                     className="cs-input"
                     rows={1}
                     placeholder={
-                      editing ? "Изменить сообщение… Ctrl + Enter — сохранить" : "Сообщение абоненту… Ctrl + Enter — отправить"
+                      editing
+                        ? "Изменить сообщение… Ctrl + Enter — сохранить"
+                        : file
+                          ? "Текст недоступен при прикреплённом изображении"
+                          : "Сообщение абоненту… Ctrl + Enter — отправить"
                     }
                     value={input}
-                    disabled={sending}
-                    onChange={(e) => setInput(e.target.value)}
+                    disabled={sending || Boolean(file && !editing)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (next.trim() && file) clearAttachedFile();
+                      setInput(next);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Escape" && editing) {
                         e.preventDefault();
@@ -796,7 +840,7 @@ export default function ChatSectionPage() {
                   <button
                     type="button"
                     className="cs-send"
-                    disabled={sending || (editing ? !input.trim() : !input.trim() && !file)}
+                    disabled={sending || (editing ? !input.trim() : (!input.trim() && !file) || (Boolean(input.trim()) && Boolean(file)))}
                     onClick={() => void handleSend()}
                     title={editing ? "Сохранить" : "Отправить"}
                   >

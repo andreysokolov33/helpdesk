@@ -16,8 +16,8 @@ import {
   isLkTicketSource,
   priorityBadgeClass,
   sourceBadgeClass,
-  ticketSupportLineBadgeClass,
-  ticketSupportLineShortLabel,
+  queueLineBadgeClass,
+  queueLineShortLabel,
 } from "@/utils/ticketLabels";
 import {
   fetchTicketDetail,
@@ -1101,6 +1101,7 @@ export default function TicketPage() {
         setUploads([]);
       } else {
         const created = await sendTicketMessage(ticketId, html, uploadSummary.doneTokens, null, replyTo?.id ?? null);
+        void fetchTicketDetail(ticketId).then(setDetail).catch(() => {});
         flushSync(() => {
           if (created.length) {
             setMessages((prev) =>
@@ -1343,21 +1344,20 @@ export default function TicketPage() {
               </svg>
               {checkLoading ? "Проверяю…" : "Проверка"}
             </button>
-            {detail.is_open ? (
-              detail.support_line === 1 ? (
-                <button type="button" className="tb3" onClick={() => openClassify("esc")}>
-                  Инженерам
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="tb3"
-                  disabled={takeBackLoading}
-                  onClick={() => void handleTakeBackToKs()}
-                >
-                  {takeBackLoading ? "Возврат…" : "Взять в работу"}
-                </button>
-              )
+            {detail.is_open && detail.queue_line === "cs" ? (
+              <button type="button" className="tb3" onClick={() => openClassify("esc")}>
+                Инженерам
+              </button>
+            ) : null}
+            {detail.is_open && detail.queue_line === "engineers" ? (
+              <button
+                type="button"
+                className="tb3"
+                disabled={takeBackLoading}
+                onClick={() => void handleTakeBackToKs()}
+              >
+                {takeBackLoading ? "Возврат…" : "Взять в работу"}
+              </button>
             ) : null}
             {detail.is_open ? (
               <button type="button" className="tb3 cls" onClick={() => openClassify("close")}>
@@ -2030,9 +2030,9 @@ export default function TicketPage() {
                   <span className="kvk">Линия</span>
                   <span className="kvv">
                     <span
-                      className={`ch-line ch-line--${ticketSupportLineBadgeClass(detail.support_line)}`}
+                      className={`ch-line ch-line--${queueLineBadgeClass(detail.queue_line)}`}
                     >
-                      {ticketSupportLineShortLabel(detail.support_line)}
+                      {queueLineShortLabel(detail.queue_line, detail.support_line)}
                     </span>
                   </span>
                 </div>

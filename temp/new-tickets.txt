@@ -1,0 +1,464 @@
+================================================================================
+МОДЕЛЬ ОЧЕРЕДИ ТИКЕТОВ v2 — СПРАВКА ДЛЯ САЙТА ИНЖЕНЕРОВ
+Проект-источник логики: helpdesk (FastAPI)
+Таблица: users.tracker_tickets
+Файлы реализации: app/core/ticket_queue_state.py,
+                   app/api/v1/routers/helpdesk/ticket_service.py,
+                   app/constants.py
+================================================================================
+
+Документ описывает, как инженер должен видеть тикеты в списке и карточке,
+как определяется «нужен ответ», и какие поля в БД менять при действиях
+в чате. Legacy-поля (status, support_line) сохраняются для совместимости
+с другими системами, но очередь и «мяч» в чате задаются v2-колонками.
+
+
+================================================================================
+1. ЗАЧЕМ НОВАЯ МОДЕЛЬ
+================================================================================
+
+Раньше смешивались:
+  • workflow-статус (in_progress, waiting_client, waiting_parts…);
+  • линия ТП (support_line 1/2/3);
+  • «есть непрочитанное»;
+  • «ждём ответ абонента / ждём ответ staff».
+
+v2 разделяет:
+  A) Организационную линию тикета     → queue_line
+  B) У кого сейчас «мяч» (действие)   → action_by
+  C) Чей ход в публичном чате         → chat_turn
+  D) С какого момента ждём (сортировка) → action_since
+
+Legacy status по-прежнему нужен для SLA, закрытия, пауз «ждём запчасти» и т.п.,
+но колонка «Нужен ответ» в списке для инженера строится из v2, а не из status.
+
+
+================================================================================
+2. КОЛОНКИ v2 НА users.tracker_tickets
+================================================================================
+
+┌─────────────────┬──────────────────────────────────────────────────────────┐
+│ Колонка         │ Значения и смысл                                         │
+├─────────────────┼──────────────────────────────────────────────────────────┤
+│ queue_line      │ cs | engineers | partner                                 │
+│                 │ На какой линии ТП числится тикет (организация).          │
+│                 │ Для инженера важно: engineers = тикет на их линии.       │
+├─────────────────┼──────────────────────────────────────────────────────────┤
+│ action_by       │ cs | engineers | partner | subscriber | external         │
+│                 │ Кто должен совершить следующее содержательное действие   │
+│                 │ в рамках очереди (не путать с исполнителем-человеком).   │
+├─────────────────┼──────────────────────────────────────────────────────────┤
+│ chat_turn       │ staff | subscriber                                       │
+│                 │ staff     = в чате ждём ответ staff (КС/инженер/партнёр) │
+│                 │ subscriber = в чате мяч у абонента / нет ожидания staff  │
+├─────────────────┼──────────────────────────────────────────────────────────┤
+│ action_since    │ timestamptz — с какого момента текущее состояние v2      │
+│                 │ (сортировка «кто дольше ждёт»).                          │
+└─────────────────┴──────────────────────────────────────────────────────────┘
+
+Связанные legacy / исполнительские поля (не v2, но нужны инженеру):
+
+  support_line     1=КС, 2=инженеры, 3=partner — дублирует queue_line для старых API
+  assigned_to      skystream_users.id оператора КС (1-я линия)
+  engineer_id      skystream_users.id инженера (при назначении на человека)
+  status           workflow (in_progress, waiting_client, closed…)
+  source           lk | call_center | abs | … — тип обращения и тип чата
+  last_client_message_at — SLA ЛК: когда абонент последний раз писал
+
+Правило исполнителей: assigned_to и engineer_id оба NULL допустимы (общая
+очередь). Оба заполнены одновременно — нет.
+
+
+================================================================================
+3. ДВА РЕЖИМА ЧАТА (по полю source)
+================================================================================
+
+3.1. source = 'lk' (личный кабинет абонента)
+────────────────────────────────────────────
+  • Публичный чат: абонент ↔ staff (КС или инженеры).
+  • Сообщения в user_mail (+ связи tracker_ticket_mail_links).
+  • В цепочке v2 участвует subscriber.
+
+  Абонент написал:
+    chat_turn      = 'staff'
+    action_by      = queue_line текущей линии
+                     (на линии инженеров → 'engineers')
+    action_since   = NOW()
+    last_client_message_at = NOW()  (рекомендуется)
+    status         → 'in_progress' (если был waiting_client)
+
+  Staff (инженер) ответил абоненту:
+    chat_turn      = 'subscriber'
+    action_by      = 'subscriber'
+    action_since   = NOW()
+    status         → 'waiting_client' (если не ops-пауза: waiting_parts,
+                     waiting_cs, cc_handover…)
+
+3.2. source IN ('call_center', 'abs') — внутренний чат staff↔staff
+──────────────────────────────────────────────────────────────────
+  • В чате только КС и инженеры (tracker_messages).
+  • Абонент в v2 НЕ участвует (нет action_by=subscriber после ответа).
+  • Сообщение КС  → мяч у инженеров.
+  • Сообщение инженера → мяч у КС.
+
+  Инженер написал:
+    chat_turn      = 'staff'
+    action_by      = 'cs'
+    action_since   = NOW()
+    status         — НЕ менять на waiting_client
+
+  КС написал (тикет на линии инженеров):
+    chat_turn      = 'staff'
+    action_by      = 'engineers'
+    action_since   = NOW()
+
+
+================================================================================
+4. ЧТО ВИДИТ ИНЖЕНЕР В СПИСКЕ ТИКЕТОВ
+================================================================================
+
+4.1. Какие тикеты попадают в очередь инженера
+─────────────────────────────────────────────
+  Основной фильтр: queue_line = 'engineers' (legacy support_line = 2).
+
+  Типичные сценарии:
+    • КС передал тикет инженерам (эскалация).
+    • Тикет из ЛК, эскалированный на 2-ю линию.
+    • Тикет ABS / call_center с внутренней перепиской на линии инженеров.
+
+4.2. Колонка «Статус» (коммуникационный слой)
+─────────────────────────────────────────────
+  Вычисляется из v2 (не подменяйте одним только status):
+
+    chat_turn = 'staff' AND action_by = 'engineers'
+        → подпись «Нужен ответ» (needs_reply)
+        → это главный сигнал для инженера: в чате ждут ответ staff,
+          и ответить должны инженеры (на своей линии).
+
+    chat_turn = 'staff' AND action_by = 'cs'
+        → для инженера НЕ «Нужен ответ» (мяч у КС).
+        → показывать workflow-status (in_progress, waiting_client…).
+
+    chat_turn = 'subscriber' AND source = 'lk'
+        → «Ждём абонента» (awaiting_subscriber).
+
+    chat_turn = 'subscriber' AND source IN ('call_center','abs')
+        → для внутреннего чата это «покой» (нет ожидания staff в чате),
+          показывать workflow-status («В работе»), НЕ «Ждём абонента».
+
+    action_by = 'external'
+        → workflow-status (waiting_parts, waiting_logistics…).
+
+  Псевдокод для UI инженера:
+
+    function statusColumn(ticket):
+      if ticket.status in CLOSED: return workflowLabel(ticket.status)
+      if ticket.action_by == 'external': return workflowLabel(ticket.status)
+      if ticket.chat_turn == 'staff' and ticket.action_by == 'engineers':
+          return 'Нужен ответ'
+      if ticket.source == 'lk' and ticket.chat_turn == 'subscriber':
+          return 'Ждём абонента'
+      return workflowLabel(ticket.status)
+
+4.3. Подсветка «требует внимания» (list_highlight)
+──────────────────────────────────────────────────
+  Для viewer_role = 'engineer':
+
+    list_highlight = 'chat', если:
+      chat_turn = 'staff' AND action_by = 'engineers'
+      (независимо от has_unread)
+
+    list_highlight = 'chat', если:
+      has_unread = true AND queue_line = 'engineers'
+      (есть непрочитанные входящие на линии инженеров)
+
+    list_highlight = 'none' — иначе.
+
+  Важно различать:
+    • «Нужен ответ» (chat_turn=staff) — мяч в чате у staff, надо ответить.
+    • Красная точка / жирная строка — только has_unread (прочитал сообщение,
+      но не ответил → «Нужен ответ» остаётся, точка может пропасть).
+
+4.4. Непрочитанные (has_unread)
+───────────────────────────────
+  Считается по таблицам прочтений, v2 при прочтении НЕ меняется.
+
+  source = 'lk':
+    непрочитанные входящие от абонента в user_mail
+    (нет строки в user_mail_reads для person_type IN ('skystream','call_centre'))
+
+  source <> 'lk':
+    непрочитанные входящие в tracker_messages
+    (person_type = 'user', нет tracker_messages_reads для staff)
+
+  INSERT в *_reads при открытии ленты / mark read:
+    • только фиксация прочтения;
+    • chat_turn, action_by, action_since — НЕ трогать.
+
+4.5. Колонка «Исполнитель» (вид с сайта инженеров — зеркально helpdesk)
+────────────────────────────────────────────────────────────────────────
+  На helpdesk для КС: «Вы» / имя support / «Инженер» / «Не назначен».
+  На сайте инженеров рекомендуется симметрично:
+    • engineer_id = текущий пользователь → «Вы»
+    • engineer_id = другой инженер → «Инженер» (без ФИО для чужих линий)
+    • engineer_id IS NULL, queue_line = engineers → «Инженер» (общая очередь)
+    • queue_line = cs → «КС» или имя support (если показываете имена коллег КС)
+
+4.6. Сортировка открытых тикетов (приоритет для инженера)
+──────────────────────────────────────────────────────────
+  1. queue_line = cs ниже engineers (инженерные выше)
+  2. chat_turn = staff выше subscriber
+  3. has_unread выше прочитанных
+  4. engineer_id = :viewer_id (мои) выше чужих
+  5. приоритет critical → high → middle → low
+  6. action_since ASC для chat_turn=staff (дольше ждут — выше)
+
+
+================================================================================
+5. АЛГОРИТМ: КОГДА ТИКЕТ «ТРЕБУЕТ ОТВЕТА» ИНЖЕНЕРА
+================================================================================
+
+Условие «инженер должен ответить в чате» (жёсткое):
+
+  queue_line = 'engineers'
+  AND chat_turn = 'staff'
+  AND action_by = 'engineers'
+  AND status NOT IN (closed, resolved, cancelled, …)
+
+Дополнительные сигналы (мягкие, UI):
+
+  has_unread = true на линии engineers — есть новое сообщение, которое
+  инженер ещё не открывал; после прочтения has_unread=false, но условие
+  выше может оставаться true до отправки ответа.
+
+Для source = 'lk' на линии инженеров:
+  • Абонент написал → action_by='engineers', chat_turn='staff' → нужен ответ.
+  • Инженер ответил → action_by='subscriber', chat_turn='subscriber' → ждём абонента.
+
+Для source IN ('call_center','abs') на линии инженеров:
+  • КС написал в tracker_messages → action_by='engineers', chat_turn='staff'.
+  • Инженер ответил → action_by='cs', chat_turn='staff' (мяч у КС, инженеру
+    отвечать не нужно, «Нужен ответ» пропадает с линии инженеров).
+
+
+================================================================================
+6. ИЗМЕНЕНИЯ В БД ПРИ ОТПРАВКЕ СООБЩЕНИЯ ИНЖЕНЕРОМ
+================================================================================
+
+Общий шаблон UPDATE (после INSERT сообщения в чат):
+
+  UPDATE users.tracker_tickets
+  SET
+    queue_line    = :queue_line,      -- обычно не меняется при ответе
+    action_by     = :action_by,
+    chat_turn     = :chat_turn,
+    action_since  = :now,
+    updated_at    = :now,
+    support_line  = :support_line,    -- sync: engineers→2, cs→1, partner→3
+    status        = :status           -- опционально, см. ниже
+  WHERE id = :ticket_id;
+
+6.1. Инженер ответил в тикете source = 'lk'
+──────────────────────────────────────────
+  После INSERT в user_mail (answer=1, person_type='skystream', …):
+
+    queue_line   = 'engineers'          -- без изменений, если уже на линии
+    action_by    = 'subscriber'
+    chat_turn    = 'subscriber'
+    action_since = NOW()
+    support_line = 2
+
+    status = 'waiting_client'
+      ТОЛЬКО если текущий status не ops-пауза:
+      waiting_technician, waiting_parts, waiting_logistics, waiting_cs,
+      cc_handover, deferred, closed…
+
+  Смысл: мяч перешёл к абоненту; инженеры ждут его следующего сообщения.
+
+  Пример строки ДО / ПОСЛЕ:
+    ДО:  queue_line=engineers, action_by=engineers, chat_turn=staff, status=in_progress
+    ПОСЛЕ: queue_line=engineers, action_by=subscriber, chat_turn=subscriber, status=waiting_client
+
+6.2. Инженер ответил в тикете source IN ('call_center','abs')
+─────────────────────────────────────────────────────────────
+  После INSERT в tracker_messages (person_type='skystream', author_id=инженер):
+
+    queue_line   = 'engineers'          -- без изменений
+    action_by    = 'cs'
+    chat_turn    = 'staff'
+    action_since = NOW()
+    support_line = 2
+    status       — НЕ менять (остаётся in_progress и т.д.)
+
+  Смысл: мяч передан КС; у инженеров «Нужен ответ» снимается, у КС появляется.
+
+  Пример:
+    ДО:  queue_line=engineers, action_by=engineers, chat_turn=staff
+    ПОСЛЕ: queue_line=engineers, action_by=cs, chat_turn=staff
+
+6.3. Абонент написал (source = 'lk') — для полноты / webhook ЛК
+────────────────────────────────────────────────────────────────
+  После INSERT user_mail от абонента (answer=0 / person_type='user'):
+
+    queue_line   = текущая (engineers если тикет на инженерах)
+    action_by    = 'engineers'        -- если queue_line=engineers
+    chat_turn    = 'staff'
+    action_since = NOW()
+    last_client_message_at = NOW()
+    status       = 'in_progress' (если был waiting_client)
+
+  Пример:
+    ДО:  action_by=subscriber, chat_turn=subscriber, status=waiting_client
+    ПОСЛЕ: action_by=engineers, chat_turn=staff, status=in_progress
+
+6.4. КС написал инженерам (source call_center/abs) — входящее для инженера
+──────────────────────────────────────────────────────────────────────────
+  После INSERT tracker_messages от support:
+
+    queue_line   = 'engineers'
+    action_by    = 'engineers'
+    chat_turn    = 'staff'
+    action_since = NOW()
+
+6.5. Прочтение сообщений инженером (mark read)
+──────────────────────────────────────────────
+  Только INSERT в user_mail_reads / tracker_messages_reads.
+  Поля queue_line, action_by, chat_turn, action_since, status — НЕ менять.
+
+
+================================================================================
+7. ПЕРЕХОДЫ ОЧЕРЕДИ (ОПЕРАЦИИ ИНЖЕНЕРА)
+================================================================================
+
+7.1. Эскалация с КС на инженеров (делает КС, инженер видит результат)
+──────────────────────────────────────────────────────────────────────
+  on_escalate_to_engineers(chat_turn=текущий):
+
+    queue_line   = 'engineers'
+    action_by    = 'engineers'
+    chat_turn    = сохраняется (если абонент ждал ответа — остаётся 'staff')
+    action_since = NOW()
+    support_line = 2
+    assigned_to  = NULL
+    engineer_id  = NULL или назначенный инженер (по вашей логике round-robin)
+    status       = 'in_progress'
+
+7.2. «Взять в работу» / возврат на КС (если на сайте инженеров есть аналог)
+────────────────────────────────────────────────────────────────────────────
+  on_return_to_cs(chat_turn=текущий):
+
+    queue_line   = 'cs'
+    action_by    = 'cs'
+    chat_turn    = сохраняется
+    action_since = NOW()
+    support_line = 1
+    assigned_to  = id оператора КС
+    engineer_id  = не обязательно обнулять (legacy)
+
+7.3. Ждём запчасти / external
+────────────────────────────
+  on_external_wait(queue_line):
+
+    action_by    = 'external'
+    chat_turn    = 'subscriber'
+    action_since = NOW()
+    status       = waiting_parts | waiting_logistics | …
+
+  «Нужен ответ» в чате для инженера снимается; workflow показывает паузу.
+
+7.4. Закрытие тикета
+────────────────────
+  v2 можно не менять; status = 'closed', date_of_close = NOW().
+
+
+================================================================================
+8. РЕАЛИЗАЦИЯ НА САЙТЕ ИНЖЕНЕРОВ — ЧЕКЛИСТ
+================================================================================
+
+[ ] Читать queue_line, action_by, chat_turn, action_since из tracker_tickets.
+[ ] «Нужен ответ» для инженера: chat_turn='staff' AND action_by='engineers'.
+[ ] has_unread считать отдельно; прочтение не снимает «Нужен ответ».
+[ ] При отправке сообщения инженером вызывать переход v2 (раздел 6).
+[ ] source='lk' → user_mail; иначе → tracker_messages.
+[ ] source='lk' после ответа инженера → action_by='subscriber', chat_turn='subscriber'.
+[ ] source call_center/abs после ответа инженера → action_by='cs', chat_turn='staff'.
+[ ] Не ставить waiting_client для call_center/abs при ответе инженера.
+[ ] Синхронизировать support_line с queue_line при UPDATE v2.
+[ ] Сортировка: staff+engineers+unread выше остальных.
+
+
+================================================================================
+9. ТАБЛИЦА ПЕРЕХОДОВ v2 (ТОЛЬКО ПОЛЯ ОЧЕРЕДИ) — ШПАРГАЛКА
+================================================================================
+
+Событие                          │ action_by   │ chat_turn   │ Кто видит «Нужен ответ»
+─────────────────────────────────┼─────────────┼─────────────┼──────────────────────────
+ЛК: абонент написал (eng. line)   │ engineers   │ staff       │ инженеры (+ КС на ЛК)
+ЛК: инженер ответил              │ subscriber  │ subscriber  │ никто (ждём абонента)
+ЛК: абонент ответил снова        │ engineers   │ staff       │ инженеры
+ABS/CC: КС написал               │ engineers   │ staff       │ инженеры
+ABS/CC: инженер ответил          │ cs          │ staff       │ КС (не инженеры)
+ABS/CC: КС ответил               │ engineers   │ staff       │ инженеры
+Эскалация на инженеров           │ engineers   │ staff/sub*  │ инженеры если staff
+Возврат на КС                    │ cs          │ сохран.*    │ КС если staff
+External / запчасти              │ external    │ subscriber  │ workflow-пауза
+Регистрация звонка (покой)       │ cs          │ subscriber  │ никто
+
+* chat_turn сохраняется при эскалации/возврате, если уже был staff.
+
+
+================================================================================
+10. ПРИМЕР SQL — ОТВЕТ ИНЖЕНЕРА В ЛК-ТИКЕТЕ
+================================================================================
+
+-- 1) Сообщение
+INSERT INTO users.user_mail (..., answer=1, person_type='skystream', ticket_id=:id, ...);
+
+-- 2) Очередь v2
+UPDATE users.tracker_tickets
+SET
+  action_by    = 'subscriber'::users.tracker_action_by,
+  chat_turn    = 'subscriber'::users.tracker_chat_turn,
+  action_since = NOW(),
+  updated_at   = NOW(),
+  status       = CASE
+                   WHEN status IN ('waiting_technician','waiting_parts',
+                                   'waiting_logistics','waiting_cs',
+                                   'deferred','cc_handover')
+                   THEN status
+                   ELSE 'waiting_client'::users.tracker_status
+                 END
+WHERE id = :ticket_id;
+
+
+================================================================================
+11. ПРИМЕР SQL — ОТВЕТ ИНЖЕНЕРА В ABS/CALL_CENTER
+================================================================================
+
+INSERT INTO users.tracker_messages
+  (ticket_id, author_id, body, person_type, created_at, ...)
+VALUES
+  (:ticket_id, :engineer_id, :text, 'skystream', NOW(), ...);
+
+UPDATE users.tracker_tickets
+SET
+  action_by    = 'cs'::users.tracker_action_by,
+  chat_turn    = 'staff'::users.tracker_chat_turn,
+  action_since = NOW(),
+  updated_at   = NOW()
+  -- status не меняем
+WHERE id = :ticket_id;
+
+
+================================================================================
+12. ENUM-ТИПЫ PostgreSQL (для CAST в UPDATE)
+================================================================================
+
+  users.tracker_queue_line   : 'cs', 'engineers', 'partner'
+  users.tracker_action_by    : 'cs', 'engineers', 'partner', 'subscriber', 'external'
+  users.tracker_chat_turn    : 'staff', 'subscriber'
+  users.tracker_status       : pending, open, in_progress, waiting_client, …
+
+================================================================================
+Конец документа
+================================================================================

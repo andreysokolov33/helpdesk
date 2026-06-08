@@ -18,6 +18,22 @@ export function categoryBadgeClass(
   return CATEGORY_THEMES[Math.abs(h) % CATEGORY_THEMES.length];
 }
 
+export function queueLineBadgeClass(line: string): "1" | "2" | "3" | "o" {
+  if (line === "cs") return "1";
+  if (line === "engineers") return "2";
+  if (line === "partner") return "3";
+  return "o";
+}
+
+export function queueLineShortLabel(line: string, legacySupportLine?: number): string {
+  if (line === "cs") return "КС";
+  if (line === "engineers") return "Инженеры";
+  if (line === "partner") return "Партнёр";
+  if (legacySupportLine === 2) return "Инженеры";
+  if (legacySupportLine === 3) return "Партнёр";
+  return "КС";
+}
+
 export function supportLineBadgeClass(line: number): "1" | "2" | "3" | "o" {
   if (line === 1 || line === 2 || line === 3) return String(line) as "1" | "2" | "3";
   return "o";

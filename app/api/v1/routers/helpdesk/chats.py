@@ -50,11 +50,7 @@ MAX_ATTACHMENT_SIZE_BYTES = 15 * 1024 * 1024  # 15 МБ на файл
 _UNREAD_CACHE_TTL = 10  # сек
 _SUBSCRIBER_ID_THRESHOLD = 1020  # id > 1020 — сообщение от абонента (см. ТЗ §7)
 
-ALLOWED_ATTACHMENT_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
-    ".pdf", ".xlsx", ".xls", ".doc", ".docx", ".docm", ".csv",
-}
-_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 
 # Сигнатуры начала файла (magic bytes) — защита от подмены расширения.
 _MAGIC_SIGNATURES = [
@@ -83,27 +79,13 @@ def _operator(user: Dict[str, Any]) -> Dict[str, Any]:
     return {"user_id": int(user["user_id"]), "role": user.get("role")}
 
 
-def _check_file_magic(contents: bytes, ext: str) -> bool:
-    """Содержимое соответствует расширению по началу файла."""
+def _check_image_magic(contents: bytes, ext: str) -> bool:
+    """Содержимое соответствует расширению изображения по magic bytes."""
     if len(contents) < 12:
         return False
     ext = ext.lower()
-    if ext == ".csv":
-        sample = contents[:2048]
-        if b"\x00" in sample:
-            return False
-        printable = sum(
-            1 for b in sample
-            if b in (9, 10, 13, 32) or 32 <= b < 127 or b >= 0xC0
-        )
-        return not (len(sample) and printable / len(sample) < 0.7)
     if ext == ".webp":
         return contents.startswith(b"RIFF") and contents[8:12] == b"WEBP"
-    if ext in (".docx", ".docm", ".xlsx", ".xls", ".doc") and contents.startswith(
-        (b"PK\x03\x04", b"\xd0\xcf\x11\xe0")
-    ):
-        # ZIP (OOXML) или OLE (старый Office) — структуру проверять не обязательно для чата
-        return True
     for magic, exts in _MAGIC_SIGNATURES:
         if ext in exts and contents.startswith(magic):
             return True
@@ -111,7 +93,7 @@ def _check_file_magic(contents: bytes, ext: str) -> bool:
 
 
 def _is_image_ext(ext: Optional[str]) -> bool:
-    return bool(ext) and ext.lower() in _IMAGE_EXTENSIONS
+    return bool(ext) and ext.lower() in ALLOWED_IMAGE_EXTENSIONS
 
 
 _SCRIPT_RE = re.compile(r"<\s*(script|style|iframe|object|embed)[^>]*>.*?<\s*/\s*\1\s*>", re.I | re.S)
@@ -153,18 +135,38 @@ def _iso(value: Any) -> Optional[str]:
         return None
 
 
-def _persist_chat_file(contents: bytes, original_filename: str, chat_id: int) -> tuple[str, str, int]:
-    """Сохранить файл в {MEDIA_DIR}/chat/{chat_id}/… → (media_url, ext, size)."""
+def _persist_chat_image(contents: bytes, original_filename: str) -> tuple[str, str, int]:
+    """Сохранить изображение в {MEDIA_DIR}/{hex16}.{ext} → (media_url, ext, size)."""
     ext = (Path(original_filename).suffix or "").lower()
-    safe_name = f"{uuid.uuid4().hex}{ext}"
-    rel_dir = Path("chat") / str(chat_id)
-    abs_dir = Path(settings.MEDIA_DIR) / rel_dir
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        ext = ".jpg"
+    safe_name = f"{uuid.uuid4().hex[:16]}{ext}"
+    abs_dir = Path(settings.MEDIA_DIR)
     abs_dir.mkdir(parents=True, exist_ok=True)
     abs_path = abs_dir / safe_name
     with open(abs_path, "wb") as f:
         f.write(contents)
-    media_url = "/media/" + str(rel_dir / safe_name).replace(os.sep, "/")
+    media_url = f"/media/{safe_name}"
     return media_url, ext, len(contents)
+
+
+def _merge_legacy_file_attachment(msg: dict) -> None:
+    """Добавить legacy-путь из file_new в attachments для отображения."""
+    fp = msg.get("file_path")
+    if not fp:
+        return
+    attachments = msg.setdefault("attachments", [])
+    if any(a.get("file_path") == fp for a in attachments):
+        return
+    ext = Path(fp).suffix
+    attachments.append({
+        "id": 0,
+        "file_path": fp,
+        "original_filename": Path(fp).name,
+        "file_ext": ext or None,
+        "file_size_bytes": None,
+        "is_image": _is_image_ext(ext),
+    })
 
 
 def _disk_path_from_media_url(media_url: str) -> Optional[str]:
@@ -481,6 +483,7 @@ async def get_users_messages(
     att = await _attachments_for(db, [m["msg_id"] for m in messages])
     for m in messages:
         m["attachments"] = att.get(m["msg_id"], [])
+        _merge_legacy_file_attachment(m)
     return messages
 
 
@@ -689,30 +692,39 @@ async def create_message(
 ):
     operator = _operator(user)
     has_file = file is not None and bool(file.filename)
-    if not html_to_plain_text(text_field) and not has_file:
+    has_text = bool(html_to_plain_text(text_field))
+    if has_text and has_file:
         raise HTTPException(
             status_code=400,
-            detail="Нельзя отправить пустое сообщение. Добавьте текст или файл.",
+            detail="Отправьте текст или изображение, но не оба одновременно.",
+        )
+    if not has_text and not has_file:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя отправить пустое сообщение. Добавьте текст или изображение.",
         )
 
-    clean_text = _sanitize_html(text_field)
+    clean_text = _sanitize_html(text_field) if has_text else ""
     relay = None
     if reply_to_id and str(reply_to_id).strip().isdigit():
         relay = str(int(reply_to_id))
 
-    # Файл читаем и валидируем ДО вставки сообщения
-    file_bytes = None
-    file_orig = None
+    file_new_path = ""
+    real_file = None
     if has_file:
         file_bytes = await file.read()
-        file_orig = file.filename or "file"
+        file_orig = file.filename or "image"
+        if file.content_type and not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Разрешены только изображения")
         if len(file_bytes) > MAX_ATTACHMENT_SIZE_BYTES:
-            raise HTTPException(status_code=400, detail="Файл больше 15 МБ")
+            raise HTTPException(status_code=400, detail="Изображение больше 15 МБ")
         ext = (Path(file_orig).suffix or "").lower()
-        if ext not in ALLOWED_ATTACHMENT_EXTENSIONS:
-            raise HTTPException(status_code=400, detail="Недопустимый тип файла")
-        if not _check_file_magic(file_bytes, ext):
-            raise HTTPException(status_code=400, detail="Содержимое файла не соответствует типу")
+        if ext not in ALLOWED_IMAGE_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="Разрешены только изображения (JPG, PNG, GIF, WebP, BMP)")
+        if not _check_image_magic(file_bytes, ext):
+            raise HTTPException(status_code=400, detail="Содержимое файла не соответствует типу изображения")
+        file_new_path, _, _ = _persist_chat_image(file_bytes, file_orig)
+        real_file = file_orig
 
     msg = UserMail(
         text_=clean_text,
@@ -722,7 +734,8 @@ async def create_message(
         answer=1,
         new=0,
         date=int(datetime.now(timezone.utc).timestamp()),
-        file_new="",
+        file_new=file_new_path,
+        real_file=real_file,
         ip_address=_client_ip(request),
         user_id=operator["user_id"],
         person_type="skystream",
@@ -734,24 +747,15 @@ async def create_message(
     msg_id = msg.id
 
     attachments: List[dict] = []
-    if file_bytes is not None:
-        media_url, ext, size = _persist_chat_file(file_bytes, file_orig, chat_id)
-        att = UserMailAttachment(
-            msg_id=msg_id,
-            file_path=media_url,
-            original_filename=file_orig,
-            file_ext=ext or None,
-            file_size_bytes=size,
-        )
-        db.add(att)
-        await db.flush()
+    if file_new_path:
+        ext = Path(file_new_path).suffix
         attachments.append({
-            "id": att.id,
-            "file_path": media_url,
-            "original_filename": file_orig,
+            "id": 0,
+            "file_path": file_new_path,
+            "original_filename": real_file or Path(file_new_path).name,
             "file_ext": ext or None,
-            "file_size_bytes": size,
-            "is_image": _is_image_ext(ext),
+            "file_size_bytes": None,
+            "is_image": True,
         })
 
     await db.commit()
@@ -760,7 +764,7 @@ async def create_message(
         "msg_id": msg_id,
         "date_iso": datetime.now(timezone.utc).isoformat(),
         "text": clean_text,
-        "file_path": None,
+        "file_path": file_new_path or None,
         "answer": True,
         "whose_message": "Вы",
         "author_kind": (
@@ -850,7 +854,15 @@ async def delete_message(
     msg = row.scalar_one_or_none()
     if not msg:
         raise HTTPException(status_code=404, detail="Сообщение не найдено")
-    # Удаляем файлы вложений с диска
+    legacy_path = (msg.file_new or "").strip()
+    if legacy_path and legacy_path not in ("0", ""):
+        disk = _disk_path_from_media_url(legacy_path)
+        if disk and os.path.isfile(disk):
+            try:
+                os.unlink(disk)
+            except OSError:
+                logger.warning("delete_message: не удалось удалить файл %s", disk)
+    # Удаляем файлы вложений с диска (legacy user_mail_attachments)
     att_rows = await db.execute(
         select(UserMailAttachment).where(UserMailAttachment.msg_id == msg_id)
     )

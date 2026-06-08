@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchAuthMe } from "@/api/auth";
 import DatePickerField from "@/components/DatePickerField";
 import {
   fetchOpenTrackerTickets,
+  fetchTrackerListDigest,
+  ticketListAssigneePill,
+  ticketListNeedsAttention,
   ticketListStatusColumn,
   type TrackerTicketListItem,
   type TrackerTicketListStats,
@@ -15,6 +18,7 @@ import {
   formatWorkDurationSince,
   ratingToneClass,
 } from "@/utils/ticketFormat";
+import { queueLineBadgeClass, queueLineShortLabel } from "@/utils/ticketLabels";
 import {
   TICKETS_LIST_PER_PAGE_OPTIONS,
   loadTicketsPerPage,
@@ -24,6 +28,10 @@ import {
 import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT, type TicketRow } from "@/data/mockCc";
 
 type ChatMsg = { id: string; side: "cl" | "ag" | "note"; text: string; time: string };
+
+/** Базовый интервал поллинга + джиттер, чтобы 20 операторов не били в БД синхронно. */
+const TICKETS_LIST_POLL_MS = 12_000;
+const TICKETS_LIST_POLL_JITTER_MS = 6_000;
 
 const initialMsgs: ChatMsg[] = [
   { id: "1", side: "cl", text: "Здравствуйте! Где посмотреть детализацию?", time: "14:03" },
@@ -115,8 +123,12 @@ export default function ChatsTab() {
   const [listPrefsReady, setListPrefsReady] = useState(false);
   const viewerIdRef = useRef<number | null>(null);
   const [listLoading, setListLoading] = useState(false);
+  const [listPolling, setListPolling] = useState(false);
   const [listError, setListError] = useState("");
   const [nowPulse, setNowPulse] = useState(() => Date.now());
+  const listLoadGenRef = useRef(0);
+  const listDigestRef = useRef<string | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
 
   const closedMode = params.get("closed") === "true";
   const dateFrom = params.get("date_from") ?? "";
@@ -165,12 +177,17 @@ export default function ChatsTab() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!listMode || !listPrefsReady) return;
-    let cancelled = false;
-    (async () => {
-      setListLoading(true);
-      setListError("");
+  const loadTicketsList = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!listPrefsReady) return;
+      const silent = opts?.silent === true;
+      const gen = ++listLoadGenRef.current;
+      if (!silent) {
+        setListLoading(true);
+        setListError("");
+      } else {
+        setListPolling(true);
+      }
       try {
         const data = await fetchOpenTrackerTickets({
           page: listPage,
@@ -180,20 +197,108 @@ export default function ChatsTab() {
           date_from: closedMode && dateFrom ? dateFrom : undefined,
           date_to: closedMode && dateTo ? dateTo : undefined,
         });
-        if (cancelled) return;
+        if (gen !== listLoadGenRef.current) return;
         setListRows(data.items);
         setListTotal(data.total);
         setListStats(data.stats);
+        const totalPages = Math.max(1, Math.ceil(data.total / perPage));
+        if (listPage > totalPages) {
+          setListPage(totalPages);
+        }
+        try {
+          const dig = await fetchTrackerListDigest({
+            page: listPage,
+            per_page: perPage,
+            closed: closedMode,
+            subscriber_q: subscriberQ || undefined,
+            date_from: closedMode && dateFrom ? dateFrom : undefined,
+            date_to: closedMode && dateTo ? dateTo : undefined,
+          });
+          if (gen === listLoadGenRef.current) {
+            listDigestRef.current = dig.digest;
+          }
+        } catch {
+          /* digest для следующего поллинга необязателен */
+        }
       } catch (e) {
-        if (!cancelled) setListError(e instanceof Error ? e.message : "Ошибка загрузки");
+        if (gen !== listLoadGenRef.current) return;
+        if (!silent) {
+          setListError(e instanceof Error ? e.message : "Ошибка загрузки");
+        }
       } finally {
-        if (!cancelled) setListLoading(false);
+        if (gen !== listLoadGenRef.current) return;
+        if (!silent) setListLoading(false);
+        else setListPolling(false);
       }
-    })();
-    return () => {
-      cancelled = true;
+    },
+    [listPrefsReady, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo],
+  );
+
+  useEffect(() => {
+    listDigestRef.current = null;
+  }, [listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (!listMode || !listPrefsReady) return;
+    void loadTicketsList();
+  }, [listMode, listPrefsReady, loadTicketsList]);
+
+  const pollTicketsList = useCallback(async () => {
+    if (!listPrefsReady || document.visibilityState === "hidden") return;
+    setListPolling(true);
+    try {
+      const dig = await fetchTrackerListDigest({
+        page: listPage,
+        per_page: perPage,
+        closed: closedMode,
+        subscriber_q: subscriberQ || undefined,
+        date_from: closedMode && dateFrom ? dateFrom : undefined,
+        date_to: closedMode && dateTo ? dateTo : undefined,
+        digest: listDigestRef.current ?? undefined,
+      });
+      listDigestRef.current = dig.digest;
+      if (dig.changed) {
+        await loadTicketsList({ silent: true });
+      } else {
+        setListTotal((prev) => (prev !== dig.total ? dig.total : prev));
+      }
+    } catch {
+      await loadTicketsList({ silent: true });
+    } finally {
+      setListPolling(false);
+    }
+  }, [
+    listPrefsReady,
+    listPage,
+    perPage,
+    closedMode,
+    subscriberQ,
+    dateFrom,
+    dateTo,
+    loadTicketsList,
+  ]);
+
+  useEffect(() => {
+    if (!listMode || !listPrefsReady) return;
+
+    const schedule = () => {
+      const jitter = Math.floor(Math.random() * TICKETS_LIST_POLL_JITTER_MS);
+      pollTimerRef.current = window.setTimeout(() => {
+        void pollTicketsList().finally(schedule);
+      }, TICKETS_LIST_POLL_MS + jitter);
     };
-  }, [listMode, listPrefsReady, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo]);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void pollTicketsList();
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      if (pollTimerRef.current != null) window.clearTimeout(pollTimerRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [listMode, listPrefsReady, pollTicketsList]);
 
   function handlePerPageChange(next: TicketsListPerPage) {
     setPerPage(next);
@@ -283,7 +388,9 @@ export default function ChatsTab() {
               </span>
             ) : null}
             <span className="ch-row-id">#{row.id}</span>
-            {!closedMode && row.has_unread ? <span className="ch-unread-dot" title="Нужен ответ" /> : null}
+            {!closedMode && ticketListNeedsAttention(row) ? (
+              <span className="ch-unread-dot" title="Нужен ответ" />
+            ) : null}
             <span className="ch-row-title" title={row.title}>
               {row.title}
             </span>
@@ -309,6 +416,8 @@ export default function ChatsTab() {
 
     function renderRow(row: TrackerTicketListItem) {
       const statusCol = ticketListStatusColumn(row);
+      const assigneePill = ticketListAssigneePill(row);
+      const needsAttention = !closedMode && ticketListNeedsAttention(row);
       const workEnd = closedMode ? row.date_of_close || row.updated_at : null;
       const workDuration = closedMode
         ? formatWorkDurationBetween(row.date_of_create, workEnd, nowPulse)
@@ -317,7 +426,7 @@ export default function ChatsTab() {
       return (
         <div
           key={row.id}
-          className={`ch-row${!closedMode && row.has_unread ? " ch-row--unread" : ""}${closedMode ? " ch-row--closed" : ""}`}
+          className={`ch-row${needsAttention ? " ch-row--unread" : ""}${closedMode ? " ch-row--closed" : ""}`}
           role="button"
           tabIndex={0}
           onClick={() => openChatFromApi(row)}
@@ -329,6 +438,14 @@ export default function ChatsTab() {
           }}
         >
           {renderTicketCell(row)}
+          {!closedMode ? (
+            <span
+              className={`ch-priority ch-priority--${row.priority ?? "middle"}`}
+              title={row.priority_label ?? "Средний"}
+            >
+              {row.priority_label ?? "Средний"}
+            </span>
+          ) : null}
           <div className="ch-status-cell">
             {statusCol.kind === "comm" ? (
               <span className={`ch-comm ch-comm--${statusCol.state}`} title={statusCol.label}>
@@ -342,26 +459,22 @@ export default function ChatsTab() {
           </div>
           {!closedMode ? (
             <>
+              <div className="ch-exec-cell">
+                <span
+                  className={`ch-assignee-pill ch-assignee-pill--${assigneePill.variant}`}
+                  title={assigneePill.title ?? assigneePill.label}
+                >
+                  {assigneePill.label}
+                </span>
+              </div>
               <span
-                className={`ch-priority ch-priority--${row.priority ?? "middle"}`}
-                title={row.priority_label ?? "Средний"}
+                className={`ch-line ch-line--${queueLineBadgeClass(row.queue_line ?? "cs")}`}
+                title={row.support_line_label}
               >
-                {row.priority_label ?? "Средний"}
+                {queueLineShortLabel(row.queue_line ?? "cs", row.support_line)}
               </span>
               <span className="ch-muted ch-mono">{formatTicketUpdatedLocal(row.date_of_create)}</span>
               <span className="ch-muted ch-mono">{workDuration}</span>
-              <div className="ch-exec-cell">
-                <span
-                  className={`ch-line ch-line--${
-                    row.support_line === 1 || row.support_line === 2 || row.support_line === 3
-                      ? row.support_line
-                      : "o"
-                  }`}
-                >
-                  {row.support_line_label}
-                </span>
-                {row.assignee_is_viewer ? <span className="ch-you-pill">Вы</span> : null}
-              </div>
               <span className="ch-muted ch-time ch-mono">
                 {formatTicketUpdatedLocal(row.updated_at || row.date_of_create)}
               </span>
@@ -390,7 +503,12 @@ export default function ChatsTab() {
         <div className="pg">
           <div className="ch-list-head">
             <div>
-              <div className="ch-list-title">{closedMode ? "Закрытые тикеты" : "Тикеты"}</div>
+              <div className="ch-list-title">
+              {closedMode ? "Закрытые тикеты" : "Тикеты"}
+              {listPolling ? (
+                <span className="ch-list-poll" title="Обновление списка…" aria-hidden />
+              ) : null}
+            </div>
             </div>
             <div className="ch-list-toolbar">
               <label className="ch-per-label">
@@ -482,9 +600,9 @@ export default function ChatsTab() {
           <div className={tableClass}>
             <div className={`ch-list-meta-row ch-list-thead${closedMode ? " ch-list-thead--closed" : ""}`}>
               <span>Тикет</span>
-              <span>Статус</span>
               {closedMode ? (
                 <>
+                  <span>Статус</span>
                   <span>Открыт</span>
                   <span>В работе</span>
                   <span>Оценка</span>
@@ -493,9 +611,11 @@ export default function ChatsTab() {
               ) : (
                 <>
                   <span>Приоритет</span>
+                  <span>Статус</span>
+                  <span>Исполнитель</span>
+                  <span>Линия</span>
                   <span>Открыт</span>
                   <span>В работе</span>
-                  <span>Исполнитель</span>
                   <span>Обновлён</span>
                 </>
               )}

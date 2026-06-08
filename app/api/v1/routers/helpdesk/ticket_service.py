@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -22,6 +24,8 @@ from app.constants import (
     TRACKER_OPEN_STATUSES,
     COMMUNICATION_STATE_LABELS,
     TRACKER_OPERATIONAL_WAIT_STATUSES,
+    is_internal_staff_chat_source,
+    is_subscriber_chat_source,
 )
 from app.models.users import TrackerTickets
 from app.models.users import (
@@ -32,6 +36,21 @@ from app.models.users import (
     UserMailAttachment,
 )
 from app.api.v1.routers.helpdesk import user_profile_service as profile_svc
+from app.database import redis_client
+from app.core.ticket_queue_state import (
+    StaffParty,
+    TicketQueueSnapshot,
+    TrackerChatTurn,
+    TrackerQueueLine,
+    on_escalate_to_engineers,
+    on_internal_staff_message,
+    on_register_call_cs,
+    on_return_to_cs,
+    on_staff_public_reply,
+    on_subscriber_public_message,
+    queue_line_to_legacy_support_line,
+    support_line_to_queue_line,
+)
 
 STAFF_READ_PERSON_TYPES = ("skystream", "call_centre")
 STAFF_OUTBOUND_SIDES = frozenset({"me", "support", "engineer"})
@@ -42,6 +61,320 @@ _MAIL_IS_CLIENT = """
 """
 _TICKET_TBL = "users.tracker_tickets"
 _STAFF_READ_IN_SQL = ", ".join(f"'{t}'" for t in STAFF_READ_PERSON_TYPES)
+
+
+def _coerce_queue_line(row: dict[str, Any]) -> TrackerQueueLine:
+    raw = row.get("queue_line")
+    if raw in ("cs", "engineers", "partner"):
+        return raw
+    return support_line_to_queue_line(int(row.get("support_line") or 1))
+
+
+def _coerce_chat_turn(row: dict[str, Any]) -> TrackerChatTurn:
+    raw = row.get("chat_turn")
+    if raw in ("staff", "subscriber"):
+        return raw  # type: ignore[return-value]
+    return "subscriber"
+
+
+def _staff_party_from_role(
+    operator_role: str | None,
+    *,
+    queue_line: TrackerQueueLine,
+) -> StaffParty:
+    role = (operator_role or "").strip().lower()
+    if role == "engineer":
+        return "engineers"
+    if role == "support":
+        return "cs"
+    return "engineers" if queue_line == "engineers" else "cs"
+
+
+async def _load_ticket_queue_row(db: AsyncSession, ticket_id: int) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT support_line,
+                       COALESCE(source, 'call_center') AS source,
+                       status::text AS status,
+                       queue_line::text AS queue_line,
+                       action_by::text AS action_by,
+                       chat_turn::text AS chat_turn,
+                       action_since
+                FROM users.tracker_tickets
+                WHERE id = :id
+                """
+            ),
+            {"id": ticket_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+    return dict(row)
+
+
+async def _fetch_last_public_message_meta(
+    db: AsyncSession,
+    ticket_id: int,
+    *,
+    source: str | None,
+) -> tuple[bool, datetime] | None:
+    """Последнее публичное сообщение: (от абонента, время)."""
+    mode = chat_mode_for_source(source)
+    if mode == "mail":
+        row = (
+            await db.execute(
+                text(
+                    """
+                    WITH msgs AS (
+                        SELECT COALESCE(um.date_tz, to_timestamp(um.date)) AS ts,
+                               (
+                                   COALESCE(um.answer, 0) = 0
+                                   OR lower(COALESCE(um.person_type, '')) = 'user'
+                               ) AS from_subscriber
+                        FROM users.user_mail um
+                        WHERE um.ticket_id = :tid
+                        UNION ALL
+                        SELECT COALESCE(um.date_tz, to_timestamp(um.date)),
+                               (
+                                   COALESCE(um.answer, 0) = 0
+                                   OR lower(COALESCE(um.person_type, '')) = 'user'
+                               )
+                        FROM users.tracker_ticket_mail_links l
+                        JOIN users.user_mail um ON um.id = l.user_mail_id
+                        WHERE l.ticket_id = :tid
+                    )
+                    SELECT from_subscriber, ts
+                    FROM msgs
+                    WHERE ts IS NOT NULL
+                    ORDER BY ts DESC
+                    LIMIT 1
+                    """
+                ),
+                {"tid": ticket_id},
+            )
+        ).mappings().first()
+    else:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT lower(COALESCE(tm.person_type, 'skystream')) AS pt,
+                           tm.created_at AS ts
+                    FROM users.tracker_messages tm
+                    WHERE tm.ticket_id = :tid
+                    ORDER BY tm.created_at DESC, tm.id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"tid": ticket_id},
+            )
+        ).mappings().first()
+        if row and row.get("ts") is not None:
+            return bool(row["pt"] == "user"), _coerce_utc(row["ts"])
+        return None
+    if not row or row.get("ts") is None:
+        return None
+    return bool(row["from_subscriber"]), _coerce_utc(row["ts"])
+
+
+async def _fetch_last_internal_staff_message_meta(
+    db: AsyncSession,
+    ticket_id: int,
+    *,
+    queue_line: TrackerQueueLine,
+) -> tuple[StaffParty, datetime] | None:
+    """Последнее staff-сообщение tracker_messages (call_center / abs)."""
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT tm.created_at AS ts,
+                       lower(COALESCE(su.role, '')) AS author_role
+                FROM users.tracker_messages tm
+                LEFT JOIN users.skystream_users su ON su.id = tm.author_id
+                WHERE tm.ticket_id = :tid
+                  AND lower(COALESCE(tm.person_type, 'skystream')) <> 'user'
+                ORDER BY tm.created_at DESC, tm.id DESC
+                LIMIT 1
+                """
+            ),
+            {"tid": ticket_id},
+        )
+    ).mappings().first()
+    if not row or row.get("ts") is None:
+        return None
+    party = _staff_party_from_role(str(row.get("author_role") or ""), queue_line=queue_line)
+    return party, _coerce_utc(row["ts"])
+
+
+def _staff_reply_workflow_status(current_status: str | None) -> str | None:
+    """SLA «ожидание клиента» не затирает операционные паузы (запчасти, handoff КС)."""
+    st = (current_status or "").strip()
+    if st in TRACKER_OPERATIONAL_WAIT_STATUSES or st == "cc_handover":
+        return None
+    if st in TRACKER_CLOSED_STATUSES:
+        return None
+    return "waiting_client"
+
+
+def _subscriber_reply_workflow_status(current_status: str | None) -> str | None:
+    st = (current_status or "").strip()
+    if st in TRACKER_CLOSED_STATUSES:
+        return None
+    if st in TRACKER_OPERATIONAL_WAIT_STATUSES or st == "cc_handover":
+        return None
+    if st in ("waiting_client", "pending", "open"):
+        return "in_progress"
+    return None
+
+
+async def reconcile_ticket_queue_from_thread(
+    db: AsyncSession,
+    ticket_id: int,
+    *,
+    source: str | None,
+) -> None:
+    """Синхронизировать v2 с последним сообщением (lk — с абонентом; call_center/abs — КС↔инженеры)."""
+    row = await _load_ticket_queue_row(db, ticket_id)
+    if str(row.get("action_by") or "") == "external":
+        return
+
+    src = str(source or row.get("source") or "call_center")
+    queue_line = _coerce_queue_line(row)
+    chat_turn = _coerce_chat_turn(row)
+    action_since = row.get("action_since")
+    if action_since is not None:
+        action_since = _coerce_utc(action_since)
+
+    if is_internal_staff_chat_source(src):
+        meta = await _fetch_last_internal_staff_message_meta(
+            db, ticket_id, queue_line=queue_line,
+        )
+        if not meta:
+            return
+        author_party, msg_at = meta
+        expected_action = "engineers" if author_party == "cs" else "cs"
+        if (
+            chat_turn == "staff"
+            and str(row.get("action_by") or "") == expected_action
+            and action_since is not None
+            and msg_at <= action_since
+        ):
+            return
+        snap = on_internal_staff_message(author_party, queue_line, at=msg_at)
+        await _apply_queue_snapshot(db, ticket_id, snap, status=None)
+        await db.commit()
+        return
+
+    if not is_subscriber_chat_source(src):
+        return
+
+    meta = await _fetch_last_public_message_meta(db, ticket_id, source=src)
+    if not meta:
+        return
+
+    from_subscriber, msg_at = meta
+    current_status = str(row.get("status") or "")
+
+    if from_subscriber:
+        if chat_turn == "staff" and action_since is not None and msg_at <= action_since:
+            return
+        snap = on_subscriber_public_message(queue_line, at=msg_at)
+        await _apply_queue_snapshot(
+            db,
+            ticket_id,
+            snap,
+            status=_subscriber_reply_workflow_status(current_status),
+            last_client_message_at=msg_at,
+        )
+        await db.commit()
+        return
+
+    if chat_turn == "subscriber" and action_since is not None and msg_at <= action_since:
+        return
+    snap = on_staff_public_reply(queue_line, at=msg_at)
+    await _apply_queue_snapshot(
+        db,
+        ticket_id,
+        snap,
+        status=_staff_reply_workflow_status(current_status),
+    )
+    await db.commit()
+
+
+async def _apply_queue_snapshot(
+    db: AsyncSession,
+    ticket_id: int,
+    snapshot: TicketQueueSnapshot,
+    *,
+    status: str | None = None,
+    last_client_message_at: datetime | None = None,
+    sync_support_line: bool = True,
+) -> None:
+    """Обновить v2-колонки очереди (+ legacy support_line при необходимости)."""
+    params: dict[str, Any] = {
+        "ticket_id": ticket_id,
+        "queue_line": snapshot["queue_line"],
+        "action_by": snapshot["action_by"],
+        "chat_turn": snapshot["chat_turn"],
+        "action_since": snapshot["action_since"],
+    }
+    sets = [
+        "queue_line = CAST(:queue_line AS users.tracker_queue_line)",
+        "action_by = CAST(:action_by AS users.tracker_action_by)",
+        "chat_turn = CAST(:chat_turn AS users.tracker_chat_turn)",
+        "action_since = :action_since",
+        "updated_at = NOW()",
+    ]
+    if sync_support_line:
+        params["support_line"] = queue_line_to_legacy_support_line(snapshot["queue_line"])
+        sets.append("support_line = :support_line")
+    if status is not None:
+        params["status"] = status
+        sets.append("status = CAST(:status AS users.tracker_status)")
+    if last_client_message_at is not None:
+        params["last_client_message_at"] = last_client_message_at
+        sets.append("last_client_message_at = :last_client_message_at")
+    await db.execute(
+        text(
+            f"""
+            UPDATE users.tracker_tickets
+            SET {", ".join(sets)}
+            WHERE id = :ticket_id
+            """
+        ),
+        params,
+    )
+
+
+async def _apply_staff_chat_queue_update(
+    db: AsyncSession,
+    ticket_id: int,
+    *,
+    operator_role: str | None = None,
+    at: datetime | None = None,
+) -> None:
+    """Обновить v2 после сообщения staff: lk → абонент; call_center/abs → КС↔инженеры."""
+    row = await _load_ticket_queue_row(db, ticket_id)
+    now = at or datetime.now(timezone.utc)
+    source = str(row.get("source") or "call_center")
+    queue_line = _coerce_queue_line(row)
+
+    if is_internal_staff_chat_source(source):
+        party = _staff_party_from_role(operator_role, queue_line=queue_line)
+        snapshot = on_internal_staff_message(party, queue_line, at=now)
+        await _apply_queue_snapshot(db, ticket_id, snapshot, status=None)
+        return
+
+    snapshot = on_staff_public_reply(queue_line, at=now)
+    await _apply_queue_snapshot(
+        db,
+        ticket_id,
+        snapshot,
+        status=_staff_reply_workflow_status(str(row.get("status") or "")),
+    )
 
 
 def _format_subscriber_name(name: str | None) -> str:
@@ -474,43 +807,129 @@ def _mail_client_filter(alias: str = "um") -> str:
     """
 
 
-def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
-    """Список /tickets: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
-    operational_in = _enum_status_sql(TRACKER_OPERATIONAL_WAIT_STATUSES)
-    mail_client = _mail_client_filter("um")
-    staff = _STAFF_READ_IN_SQL
+def _tracker_list_viewer_owner_sql() -> str:
+    """Исполнитель на линии КС (assigned_to) или инженеров (engineer_id)."""
+    return """(
+        (q.queue_line = 'cs'::users.tracker_queue_line AND q.assigned_to = :viewer_id)
+        OR (q.queue_line = 'engineers'::users.tracker_queue_line AND q.engineer_id = :viewer_id)
+    )"""
 
-    closed_order = """
+
+def _tracker_list_viewer_line_needs_reply_sql() -> str:
+    """Нужен ответ staff на линии тикета или есть непрочитанное."""
+    return """(
+        q.calc_has_unread
+        OR (
+            q.chat_turn = 'staff'::users.tracker_chat_turn
+            AND (
+                (q.queue_line = 'cs'::users.tracker_queue_line
+                 AND q.action_by = 'cs'::users.tracker_action_by)
+                OR (q.queue_line = 'engineers'::users.tracker_queue_line
+                    AND q.action_by = 'engineers'::users.tracker_action_by)
+                OR (q.queue_line = 'partner'::users.tracker_queue_line
+                    AND q.action_by = 'partner'::users.tracker_action_by)
+            )
+        )
+    )"""
+
+
+def _tracker_list_cs_unassigned_sql() -> str:
+    return """(
+        q.queue_line = 'cs'::users.tracker_queue_line
+        AND q.assigned_to IS NULL
+        AND q.engineer_id IS NULL
+    )"""
+
+
+def _tracker_list_cs_other_assignee_sql() -> str:
+    return """(
+        q.queue_line = 'cs'::users.tracker_queue_line
+        AND q.assigned_to IS NOT NULL
+        AND q.assigned_to <> :viewer_id
+    )"""
+
+
+def _tracker_list_eng_unassigned_sql() -> str:
+    return """(
+        q.queue_line = 'engineers'::users.tracker_queue_line
+        AND q.engineer_id IS NULL
+    )"""
+
+
+def _tracker_list_lk_staff_pending_sql() -> str:
+    """ЛК: нужен ответ staff (КС видит даже на линии инженеров)."""
+    return """(
+        COALESCE(q.source, 'call_center') = 'lk'
+        AND q.chat_turn = 'staff'::users.tracker_chat_turn
+        AND q.action_by IN (
+            'cs'::users.tracker_action_by,
+            'engineers'::users.tracker_action_by,
+            'partner'::users.tracker_action_by
+        )
+    )"""
+
+
+def _tracker_list_sort_tier_sql() -> str:
+    """
+    Tier 0 — мои, нужен ответ / непрочитанное
+    Tier 1 — общая очередь КС без исполнителя, нужен ответ / непрочитанное
+    Tier 2 — чужие с непрочитанным или ЛК, где ждут staff (в т.ч. на линии инженеров)
+    Tier 3 — мои, ждём абонента
+    Tier 4 — чужие без нового
+    Tier 5 — линия инженеров (не ЛК), external, ops-пауза
+    """
+    operational_in = _enum_status_sql(TRACKER_OPERATIONAL_WAIT_STATUSES)
+    owner = _tracker_list_viewer_owner_sql()
+    needs = _tracker_list_viewer_line_needs_reply_sql()
+    cs_unassigned = _tracker_list_cs_unassigned_sql()
+    cs_other = _tracker_list_cs_other_assignee_sql()
+    lk_pending = _tracker_list_lk_staff_pending_sql()
+    return f"""
+        CASE
+            WHEN q.action_by = 'external'::users.tracker_action_by THEN 5
+            WHEN {owner} AND {needs} THEN 0
+            WHEN {cs_unassigned} AND {needs} THEN 1
+            WHEN ({cs_other} AND q.calc_has_unread) OR {lk_pending} THEN 2
+            WHEN {owner}
+                 AND q.chat_turn = 'subscriber'::users.tracker_chat_turn
+                 AND NOT q.calc_has_unread THEN 3
+            WHEN {cs_other} AND NOT q.calc_has_unread THEN 4
+            WHEN q.queue_line <> 'cs'::users.tracker_queue_line
+                 AND NOT {lk_pending} THEN 5
+            WHEN q.status IN ({operational_in}) THEN 5
+            ELSE 4
+        END
+    """
+
+
+def _tracker_list_order_sql(*, closed: bool) -> str:
+    if closed:
+        return """
         COALESCE(q.date_of_close, q.updated_at, q.date_of_create) DESC NULLS LAST,
         q.id DESC
-    """
-    open_order = f"""
-        CASE WHEN q.support_line = 1 THEN 0 ELSE 1 END,
-        CASE WHEN q.calc_has_unread THEN 0 ELSE 1 END,
-        CASE
-            WHEN q.assigned_to = :viewer_id THEN 0
-            WHEN q.assigned_to IS NULL THEN 1
-            ELSE 2
-        END,
-        CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
+        """
+    sort_tier = _tracker_list_sort_tier_sql()
+    return f"""
+        {sort_tier},
         CASE q.priority::text
             WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'middle' THEN 2 WHEN 'low' THEN 3 ELSE 4
         END,
+        CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
         CASE
-            WHEN q.calc_awaiting_subscriber THEN 1
-            WHEN q.status IN ({operational_in}) THEN 2
-            ELSE 0
-        END,
-        CASE
-            WHEN q.calc_has_unread THEN EXTRACT(EPOCH FROM q.waiting_since)
-            WHEN q.calc_awaiting_subscriber
-                THEN -EXTRACT(EPOCH FROM COALESCE(q.updated_at, q.date_of_create))
-            ELSE EXTRACT(EPOCH FROM q.waiting_since)
+            WHEN q.chat_turn = 'staff'::users.tracker_chat_turn
+                THEN EXTRACT(EPOCH FROM COALESCE(q.action_since, q.waiting_since))
+            WHEN q.action_by = 'subscriber'::users.tracker_action_by
+                THEN -EXTRACT(EPOCH FROM COALESCE(q.action_since, q.updated_at, q.date_of_create))
+            ELSE EXTRACT(EPOCH FROM COALESCE(q.action_since, q.waiting_since))
         END,
         q.id ASC
     """
-    order_by = closed_order if closed else open_order
 
+
+def _build_tracker_list_queue_ctes_sql(*, filter_sql: str) -> str:
+    """CTE filtered → queue для списка /tickets (unread только по id из filtered)."""
+    mail_client = _mail_client_filter("um")
+    staff = _STAFF_READ_IN_SQL
     return f"""
     WITH filtered AS (
         SELECT tt.id
@@ -566,29 +985,32 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
             tt.source,
             tt.user_id,
             tt.assigned_to,
+            tt.engineer_id,
             tt.category_id,
             tt.date_of_create,
             tt.updated_at,
             tt.date_of_close,
             tt.first_response_at,
             tt.last_client_message_at,
+            tt.queue_line,
+            tt.action_by,
+            tt.chat_turn,
+            tt.action_since,
             (COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL)
                 OR (COALESCE(tt.source, 'call_center') <> 'lk' AND tu.ticket_id IS NOT NULL)
                 AS calc_has_unread,
-            (
-                NOT (
-                    (COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL)
-                    OR (COALESCE(tt.source, 'call_center') <> 'lk' AND tu.ticket_id IS NOT NULL)
-                )
-                AND tt.status = 'waiting_client'::users.tracker_status
-            ) AS calc_awaiting_subscriber,
+            (tt.chat_turn = 'subscriber'::users.tracker_chat_turn) AS calc_awaiting_subscriber,
             CASE
-                WHEN (
-                    (COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL)
-                    OR (COALESCE(tt.source, 'call_center') <> 'lk' AND tu.ticket_id IS NOT NULL)
-                ) THEN 'needs_reply'
-                WHEN tt.status = 'waiting_client'::users.tracker_status THEN 'awaiting_subscriber'
-                ELSE 'needs_reply'
+                WHEN tt.chat_turn = 'staff'::users.tracker_chat_turn
+                     AND tt.action_by IN (
+                         'cs'::users.tracker_action_by,
+                         'engineers'::users.tracker_action_by,
+                         'partner'::users.tracker_action_by
+                     ) THEN 'needs_reply'
+                WHEN tt.chat_turn = 'subscriber'::users.tracker_chat_turn
+                     AND COALESCE(tt.source, 'call_center') = 'lk'
+                    THEN 'awaiting_subscriber'
+                ELSE NULL
             END AS communication_state,
             CASE
                 WHEN COALESCE(tt.source, 'call_center') = 'lk' AND mu.ticket_id IS NOT NULL
@@ -604,6 +1026,92 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
         LEFT JOIN mail_unread mu ON mu.ticket_id = tt.id
         LEFT JOIN tracker_unread tu ON tu.ticket_id = tt.id
     )
+    """
+
+
+_LIST_DIGEST_CACHE_TTL = 8
+
+
+def _tracker_list_digest_cache_key(
+    *,
+    viewer_id: int,
+    closed: bool,
+    page: int,
+    per_page: int,
+    subscriber_q: str | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> str:
+    payload = json.dumps(
+        {
+            "v": viewer_id,
+            "c": closed,
+            "p": page,
+            "n": per_page,
+            "q": (subscriber_q or "").strip(),
+            "df": date_from.isoformat() if date_from else "",
+            "dt": date_to.isoformat() if date_to else "",
+        },
+        sort_keys=True,
+        ensure_ascii=True,
+    )
+    h = hashlib.sha256(payload.encode()).hexdigest()[:24]
+    return f"tracker_list_digest:{h}"
+
+
+def _build_tracker_list_digest_sql(*, closed: bool, filter_sql: str) -> str:
+    """Лёгкий отпечаток страницы списка (без join абонентов/категорий/исполнителей)."""
+    order_by = _tracker_list_order_sql(closed=closed)
+    queue_ctes = _build_tracker_list_queue_ctes_sql(filter_sql=filter_sql)
+    return f"""
+    {queue_ctes},
+    page_slice AS (
+        SELECT
+            q.id,
+            q.status::text AS status,
+            q.priority::text AS priority,
+            q.queue_line::text AS queue_line,
+            q.action_by::text AS action_by,
+            q.chat_turn::text AS chat_turn,
+            q.action_since,
+            q.updated_at,
+            q.calc_has_unread,
+            q.assigned_to,
+            q.engineer_id,
+            ROW_NUMBER() OVER (ORDER BY {order_by}) AS rn
+        FROM queue q
+        ORDER BY
+            {order_by}
+        LIMIT :per_page OFFSET :offset
+    )
+    SELECT
+        (SELECT COUNT(*)::bigint FROM filtered) AS total,
+        md5(COALESCE(string_agg(
+            concat_ws('|',
+                ps.id::text,
+                ps.status,
+                COALESCE(ps.priority, ''),
+                ps.queue_line,
+                ps.action_by,
+                ps.chat_turn,
+                COALESCE(EXTRACT(EPOCH FROM ps.action_since)::bigint::text, ''),
+                COALESCE(EXTRACT(EPOCH FROM ps.updated_at)::bigint::text, ''),
+                ps.calc_has_unread::text,
+                COALESCE(ps.assigned_to::text, ''),
+                COALESCE(ps.engineer_id::text, '')
+            ),
+            ',' ORDER BY ps.rn
+        ), '')) AS digest
+    FROM page_slice ps
+    """
+
+
+def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
+    """Список /tickets: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
+    order_by = _tracker_list_order_sql(closed=closed)
+    queue_ctes = _build_tracker_list_queue_ctes_sql(filter_sql=filter_sql)
+    return f"""
+    {queue_ctes}
     SELECT
         q.id,
         q.title,
@@ -614,6 +1122,11 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
         q.source,
         q.user_id,
         q.assigned_to,
+        q.engineer_id,
+        q.queue_line::text AS queue_line,
+        q.action_by::text AS action_by,
+        q.chat_turn::text AS chat_turn,
+        q.action_since,
         q.date_of_create,
         q.updated_at,
         q.date_of_close,
@@ -630,8 +1143,14 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
         jur.short_name_organization AS jur_short_name,
         tc.name AS category_name,
         tcp.name AS category_parent_name,
-        assignee.full_name AS assignee_name,
-        assignee.role AS assignee_role
+        CASE
+            WHEN q.queue_line = 'engineers'::users.tracker_queue_line THEN eng.full_name
+            ELSE cs_op.full_name
+        END AS assignee_name,
+        CASE
+            WHEN q.queue_line = 'engineers'::users.tracker_queue_line THEN eng.role
+            ELSE cs_op.role
+        END AS assignee_role
     FROM queue q
     LEFT JOIN users."user" u ON q.user_id = u.id AND q.object_type = 'user'
     LEFT JOIN LATERAL (
@@ -644,7 +1163,8 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
     LEFT JOIN oss.jur_client_list jur ON jur.id = u.juridical_id
     LEFT JOIN users.ticket_categories tc ON q.category_id = tc.id
     LEFT JOIN users.ticket_categories tcp ON tc.parent_id = tcp.id
-    LEFT JOIN users.skystream_users assignee ON q.assigned_to = assignee.id
+    LEFT JOIN users.skystream_users cs_op ON q.assigned_to = cs_op.id
+    LEFT JOIN users.skystream_users eng ON q.engineer_id = eng.id
     LEFT JOIN users.tracker_tickets_ratings ttr ON ttr.ticket_id = q.id
     ORDER BY
         {order_by}
@@ -717,6 +1237,73 @@ async def fetch_tracker_list_page(
             stats["avg_rating_mine"] = round(float(avg_mine), 2) if avg_mine is not None else None
 
     return total, [dict(r) for r in rows], stats
+
+
+async def fetch_tracker_list_digest(
+    db: AsyncSession,
+    *,
+    viewer_id: int,
+    closed: bool,
+    page: int,
+    per_page: int,
+    subscriber_q: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    client_digest: str | None = None,
+) -> dict[str, Any]:
+    """
+    Отпечаток страницы списка для поллинга: без join абонентов/категорий.
+    client_digest совпадает → changed=false, полный list не нужен.
+    """
+    cache_key = _tracker_list_digest_cache_key(
+        viewer_id=viewer_id,
+        closed=closed,
+        page=page,
+        per_page=per_page,
+        subscriber_q=subscriber_q,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    try:
+        cached_raw = await redis_client.get(cache_key)
+        if cached_raw:
+            cached = json.loads(cached_raw)
+            if isinstance(cached, dict) and cached.get("digest"):
+                digest = str(cached["digest"])
+                total = int(cached.get("total") or 0)
+                changed = not client_digest or client_digest != digest
+                return {"changed": changed, "digest": digest, "total": total}
+    except Exception:
+        pass
+
+    filter_sql, filter_params = _tracker_list_filter_sql(
+        closed=closed,
+        subscriber_q=subscriber_q,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    params = {
+        **filter_params,
+        "viewer_id": viewer_id,
+        "per_page": per_page,
+        "offset": (page - 1) * per_page,
+    }
+    digest_sql = _build_tracker_list_digest_sql(closed=closed, filter_sql=filter_sql)
+    row = (await db.execute(text(digest_sql), params)).mappings().first()
+    total = int(row["total"] if row and row.get("total") is not None else 0)
+    digest = str(row["digest"] if row and row.get("digest") is not None else "")
+
+    try:
+        await redis_client.setex(
+            cache_key,
+            _LIST_DIGEST_CACHE_TTL,
+            json.dumps({"digest": digest, "total": total}, ensure_ascii=True),
+        )
+    except Exception:
+        pass
+
+    changed = not client_digest or client_digest != digest
+    return {"changed": changed, "digest": digest, "total": total}
 
 
 def ticket_list_order_by(viewer_id: int) -> tuple:
@@ -1403,7 +1990,11 @@ async def load_ticket_detail(
                     COALESCE(tt.person_type, 'user') AS person_type,
                     COALESCE(tt.object_type, 'user') AS object_type,
                     tt.user_id, tt.caller_name, tt.station_id, tt.hotspot_id, tt.vno,
-                    tt.category_id, tt.assigned_to, tt.author,
+                    tt.category_id, tt.assigned_to, tt.engineer_id, tt.author,
+                    tt.queue_line::text AS queue_line,
+                    tt.action_by::text AS action_by,
+                    tt.chat_turn::text AS chat_turn,
+                    tt.action_since,
                     COALESCE(tt.priority::text, tc.priority::text) AS priority,
                     tc.name AS category_name,
                     tc.parent_id AS category_parent_id,
@@ -1420,8 +2011,14 @@ async def load_ticket_detail(
                         ),
                         false
                     ) AS subscriber_online,
-                    su.full_name AS assignee_name,
-                    su.role AS assignee_role,
+                    CASE
+                        WHEN tt.queue_line = 'engineers'::users.tracker_queue_line THEN eng.full_name
+                        ELSE su.full_name
+                    END AS assignee_name,
+                    CASE
+                        WHEN tt.queue_line = 'engineers'::users.tracker_queue_line THEN eng.role
+                        ELSE su.role
+                    END AS assignee_role,
                     sf.station_name,
                     ig.name AS station_fallback_name
                 FROM users.tracker_tickets tt
@@ -1430,6 +2027,7 @@ async def load_ticket_detail(
                 LEFT JOIN users."user" u ON u.id = tt.user_id
                     AND COALESCE(tt.object_type, 'user') = 'user'
                 LEFT JOIN users.skystream_users su ON su.id = tt.assigned_to
+                LEFT JOIN users.skystream_users eng ON eng.id = tt.engineer_id
                 LEFT JOIN wifitochka.ip_group ig ON ig.id = COALESCE(tt.station_id, u.id_grp)
                 LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
                 WHERE tt.id = :ticket_id
@@ -1446,6 +2044,9 @@ async def load_ticket_detail(
     status_raw = d.get("status_raw") or "pending"
     source = d.get("source") or "call_center"
     line = int(d.get("support_line") or 1)
+    queue_line = _coerce_queue_line(d)
+    action_by = str(d.get("action_by") or queue_line)
+    chat_turn = _coerce_chat_turn(d)
     line_labels = {1: "КС", 2: "Инженеры", 3: "Партнёр"}
     pr = d.get("priority")
     cat = d.get("category_name")
@@ -1495,6 +2096,20 @@ async def load_ticket_detail(
     date_of_close = d.get("date_of_close")
     can_reopen = ticket_can_reopen(status_raw, date_of_close)
 
+    if status_raw in TRACKER_OPEN_STATUSES:
+        await reconcile_ticket_queue_from_thread(db, ticket_id, source=source)
+        qrow = await _load_ticket_queue_row(db, ticket_id)
+        queue_line = _coerce_queue_line(qrow)
+        action_by = str(qrow.get("action_by") or queue_line)
+        chat_turn = _coerce_chat_turn(qrow)
+        line = queue_line_to_legacy_support_line(queue_line)
+        status_raw = str(qrow.get("status") or status_raw)
+        d["action_since"] = qrow.get("action_since")
+
+    owner_id = int(d["engineer_id"]) if queue_line == "engineers" and d.get("engineer_id") else (
+        int(d["assigned_to"]) if d.get("assigned_to") is not None else None
+    )
+
     return {
         "id": int(d["id"]),
         "title": d.get("title") or f"Тикет #{ticket_id}",
@@ -1506,6 +2121,10 @@ async def load_ticket_detail(
         "priority_label": PRIORITY_DICT.get(pr, pr) if pr else None,
         "support_line": line,
         "support_line_label": line_labels.get(line, str(line)),
+        "queue_line": queue_line,
+        "action_by": action_by,
+        "chat_turn": chat_turn,
+        "action_since_iso": _iso(d.get("action_since")),
         "source": source,
         "source_label": SOURCE_DISPLAY.get(source, source),
         "category_label": category_label,
@@ -1525,7 +2144,7 @@ async def load_ticket_detail(
         "subscriber_profile_user_id": int(d["user_id"]) if d.get("user_id") is not None else None,
         "assignee_name": d.get("assignee_name"),
         "assignee_role": d.get("assignee_role"),
-        "assignee_is_viewer": bool(d.get("assigned_to") and int(d["assigned_to"]) == viewer_id),
+        "assignee_is_viewer": bool(owner_id is not None and owner_id == viewer_id),
         "station_name": station,
         "station_id": int(d["station_id"]) if d.get("station_id") else None,
         "date_of_create": d["date_of_create"],
@@ -1785,7 +2404,10 @@ async def _load_ticket_row_for_line_ops(db: AsyncSession, ticket_id: int) -> dic
         await db.execute(
             text(
                 """
-                SELECT id, support_line, status::text AS status, source, category_id
+                SELECT id, support_line, status::text AS status, source, category_id,
+                       queue_line::text AS queue_line,
+                       chat_turn::text AS chat_turn,
+                       action_by::text AS action_by
                 FROM users.tracker_tickets
                 WHERE id = :id
                 """
@@ -1841,11 +2463,13 @@ async def transfer_ticket_to_engineers(
     comment: str | None,
     author_id: int,
 ) -> dict[str, Any]:
-    """Передача тикета на линию инженеров (support_line=2) с опциональной классификацией."""
+    """Передача тикета на линию инженеров с опциональной классификацией (любой source)."""
+    row = await _load_ticket_row_for_line_ops(db, ticket_id)
+    await reconcile_ticket_queue_from_thread(db, ticket_id, source=row.get("source"))
     row = await _load_ticket_row_for_line_ops(db, ticket_id)
     from_line = int(row["support_line"] or 1)
-    if from_line != 1:
-        raise HTTPException(status_code=400, detail="Тикет уже на линии инженеров")
+    if _coerce_queue_line(row) != "cs":
+        raise HTTPException(status_code=400, detail="Тикет не на линии КС")
 
     catalog = catalog_source_for_ticket(row.get("source"))
     await _validate_leaf_category(db, category_id=category_id, catalog_source=catalog)
@@ -1853,19 +2477,28 @@ async def transfer_ticket_to_engineers(
     now = datetime.now(timezone.utc)
     old_category_id = row.get("category_id")
     new_category_id = int(category_id)
+    queue_snap = on_escalate_to_engineers(
+        chat_turn=_coerce_chat_turn(row),
+        at=now,
+    )
 
     await db.execute(
         text(
             """
             UPDATE users.tracker_tickets
-            SET support_line = 2,
-                category_id = :category_id,
+            SET category_id = :category_id,
                 assigned_to = NULL,
                 updated_at = :now
             WHERE id = :ticket_id
             """
         ),
         {"category_id": new_category_id, "now": now, "ticket_id": ticket_id},
+    )
+    await _apply_queue_snapshot(
+        db,
+        ticket_id,
+        queue_snap,
+        status="in_progress",
     )
 
     await _change_ticket_support_line(
@@ -2008,6 +2641,7 @@ async def reopen_ticket(db: AsyncSession, ticket_id: int, author_id: int) -> dic
     now = datetime.now(timezone.utc)
     new_status = "in_progress"
     support_line = int(row["support_line"] or 1)
+    queue_line = support_line_to_queue_line(support_line)
 
     await db.execute(
         text(
@@ -2015,7 +2649,7 @@ async def reopen_ticket(db: AsyncSession, ticket_id: int, author_id: int) -> dic
             UPDATE users.tracker_tickets
             SET status = :status,
                 date_of_close = NULL,
-                assigned_to = :assigned_to,
+                assigned_to = CASE WHEN :queue_line = 'cs' THEN :assigned_to ELSE assigned_to END,
                 updated_at = :now
             WHERE id = :ticket_id
             """
@@ -2023,10 +2657,37 @@ async def reopen_ticket(db: AsyncSession, ticket_id: int, author_id: int) -> dic
         {
             "status": new_status,
             "assigned_to": author_id,
+            "queue_line": queue_line,
             "now": now,
             "ticket_id": ticket_id,
         },
     )
+    if queue_line == "cs":
+        await _apply_queue_snapshot(
+            db,
+            ticket_id,
+            on_register_call_cs(at=now),
+            status=new_status,
+        )
+    elif queue_line == "engineers":
+        await _apply_queue_snapshot(
+            db,
+            ticket_id,
+            on_escalate_to_engineers(chat_turn="subscriber", at=now),
+            status=new_status,
+        )
+    else:
+        await _apply_queue_snapshot(
+            db,
+            ticket_id,
+            {
+                "queue_line": "partner",
+                "action_by": "partner",
+                "chat_turn": "subscriber",
+                "action_since": now,
+            },
+            status=new_status,
+        )
 
     await _record_ticket_reopened_history(
         db,
@@ -2049,22 +2710,33 @@ async def take_ticket_back_to_ks(
 ) -> dict[str, Any]:
     """Вернуть тикет на линию КС (support_line=1) и взять в работу."""
     row = await _load_ticket_row_for_line_ops(db, ticket_id)
+    await reconcile_ticket_queue_from_thread(db, ticket_id, source=row.get("source"))
+    row = await _load_ticket_row_for_line_ops(db, ticket_id)
     from_line = int(row["support_line"] or 1)
-    if from_line != 2:
+    if _coerce_queue_line(row) != "engineers":
         raise HTTPException(status_code=400, detail="Тикет не на линии инженеров")
 
     now = datetime.now(timezone.utc)
+    queue_snap = on_return_to_cs(
+        chat_turn=_coerce_chat_turn(row),
+        at=now,
+    )
     await db.execute(
         text(
             """
             UPDATE users.tracker_tickets
-            SET support_line = 1,
-                assigned_to = :assigned_to,
+            SET assigned_to = :assigned_to,
                 updated_at = :now
             WHERE id = :ticket_id
             """
         ),
         {"assigned_to": author_id, "now": now, "ticket_id": ticket_id},
+    )
+    await _apply_queue_snapshot(
+        db,
+        ticket_id,
+        queue_snap,
+        status="in_progress",
     )
 
     await _change_ticket_support_line(
@@ -2457,6 +3129,7 @@ async def mark_tracker_messages_read(
     viewer_id: int,
     message_ids: list[int],
 ) -> None:
+    """Прочтение входящих сообщений: только tracker_messages_reads, без смены v2-очереди."""
     if not message_ids:
         return
     for mid in message_ids:
@@ -2494,6 +3167,7 @@ async def mark_mail_messages_read(
     viewer_id: int,
     message_ids: list[int],
 ) -> None:
+    """Прочтение входящих сообщений: только user_mail_reads, без смены v2-очереди."""
     if not message_ids:
         return
     for mid in message_ids:
@@ -2761,15 +3435,8 @@ async def send_mail_reply(
     created = ins.get("date_tz")
 
     now = datetime.now(timezone.utc)
-    await db.execute(
-        text(
-            """
-            UPDATE users.tracker_tickets
-            SET updated_at = :now
-            WHERE id = :ticket_id
-            """
-        ),
-        {"now": now, "ticket_id": ticket_id},
+    await _apply_staff_chat_queue_update(
+        db, ticket_id, operator_role=operator_role, at=now,
     )
     await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()
@@ -2880,9 +3547,8 @@ async def send_tracker_reply(
     )
     db.add(msg)
     await db.flush()
-    await db.execute(
-        text("UPDATE users.tracker_tickets SET updated_at = :now WHERE id = :tid"),
-        {"now": now, "tid": ticket_id},
+    await _apply_staff_chat_queue_update(
+        db, ticket_id, operator_role=operator_role, at=now,
     )
     await maybe_set_first_response_at(db, ticket_id, operator_role)
     await db.commit()

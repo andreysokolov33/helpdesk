@@ -1,5 +1,10 @@
 import type { TicketRow } from "@/data/mockCc";
 
+export type TrackerQueueLine = "cs" | "engineers" | "partner";
+export type TrackerActionBy = "cs" | "engineers" | "partner" | "subscriber" | "external";
+export type TrackerChatTurn = "staff" | "subscriber";
+export type TrackerListHighlight = "chat" | "ops" | "none";
+
 export type TrackerTicketListItem = {
   id: number;
   title: string;
@@ -10,6 +15,11 @@ export type TrackerTicketListItem = {
   priority_label: string | null;
   support_line: number;
   support_line_label: string;
+  queue_line: TrackerQueueLine;
+  action_by: TrackerActionBy;
+  chat_turn: TrackerChatTurn;
+  action_since: string | null;
+  list_highlight: TrackerListHighlight;
   source: string | null;
   source_label: string;
   category_label: string | null;
@@ -44,13 +54,12 @@ export type TrackerTicketListResponse = {
   stats: TrackerTicketListStats | null;
 };
 
-/** Подписи коммуникационного слоя в колонке «Статус» (не workflow-status). */
+/** Подписи коммуникационного слоя в колонке «Статус». */
 export const COMMUNICATION_LABELS = {
   needs_reply: "Нужен ответ",
   awaiting_subscriber: "Ждём абонента",
 } as const;
 
-/** Закрытые/терминальные — в списке показываем workflow-подпись, не коммуникацию. */
 const TRACKER_CLOSED_STATUSES = new Set([
   "resolved",
   "closed",
@@ -59,36 +68,143 @@ const TRACKER_CLOSED_STATUSES = new Set([
   "not_resolved",
 ]);
 
+const STAFF_ACTION: TrackerActionBy[] = ["cs", "engineers", "partner"];
+
+/** Внутренний чат КС↔инженеры (без абонента в цепочке v2). */
+const INTERNAL_STAFF_CHAT_SOURCES = new Set(["call_center", "abs"]);
+
 export type TicketStatusColumn =
   | { kind: "comm"; state: keyof typeof COMMUNICATION_LABELS; label: string }
   | { kind: "workflow"; status: string; label: string };
 
-/**
- * Колонка «Статус» в /tickets:
- * — незакрытые: waiting_client без непрочитанного → «Ждём абонента», иначе «Нужен ответ»;
- * — закрытые (вкладка closed): workflow-подпись из status_label.
- */
+/** Жирная строка / красная точка — только непрочитанные сообщения (прочтение не снимает «Нужен ответ»). */
+export function ticketListNeedsAttention(
+  row: Pick<TrackerTicketListItem, "has_unread">,
+): boolean {
+  return row.has_unread;
+}
+
+/** Колонка «Исполнитель» — assigned_to (КС) или engineer_id (инженеры). */
+export type AssigneePillVariant = "you" | "unassigned" | "engineer" | "support";
+
+export type AssigneePillDisplay = {
+  label: string;
+  variant: AssigneePillVariant;
+  title?: string;
+};
+
+/** Правила для КС: имя только у support; инженеры/партнёры — «Инженер». */
+export function ticketListAssigneePill(
+  row: Pick<
+    TrackerTicketListItem,
+    "assignee_is_viewer" | "assignee_name" | "assignee_role" | "queue_line"
+  >,
+): AssigneePillDisplay {
+  if (row.assignee_is_viewer) {
+    return { label: "Вы", variant: "you" };
+  }
+
+  const name = row.assignee_name?.trim() || "";
+  const role = (row.assignee_role || "").trim().toLowerCase();
+  const line = row.queue_line ?? "cs";
+
+  if (line === "engineers" || line === "partner") {
+    return { label: "Инженер", variant: "engineer" };
+  }
+
+  if (role === "support") {
+    return name
+      ? { label: name, variant: "support" }
+      : { label: "Не назначен", variant: "unassigned" };
+  }
+
+  if (!name && !role) {
+    return { label: "Не назначен", variant: "unassigned" };
+  }
+
+  return { label: "Инженер", variant: "engineer" };
+}
+
+/** @deprecated используйте ticketListAssigneePill */
+export function ticketListAssigneeLabel(
+  row: Pick<
+    TrackerTicketListItem,
+    "assignee_is_viewer" | "assignee_name" | "assignee_role" | "queue_line"
+  >,
+): string {
+  return ticketListAssigneePill(row).label;
+}
+
+/** Колонка «Статус» в /tickets (v2 + workflow). */
 export function ticketListStatusColumn(
   row: Pick<
     TrackerTicketListItem,
-    "has_unread" | "communication_state" | "status" | "status_label"
+    | "status"
+    | "status_label"
+    | "source"
+    | "chat_turn"
+    | "action_by"
+    | "communication_state"
+    | "list_highlight"
   >,
 ): TicketStatusColumn {
   if (TRACKER_CLOSED_STATUSES.has(row.status)) {
     return { kind: "workflow", status: row.status, label: row.status_label };
   }
+
+  if (row.list_highlight === "ops") {
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+
+  if (row.action_by === "external") {
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+
+  const src = (row.source || "call_center").toLowerCase();
+  const internalStaffChat = INTERNAL_STAFF_CHAT_SOURCES.has(src);
+
   if (
-    row.status === "waiting_client" &&
-    !row.has_unread &&
-    row.communication_state !== "needs_reply"
+    internalStaffChat &&
+    row.chat_turn === "subscriber" &&
+    row.status === "in_progress" &&
+    row.action_by === "cs"
   ) {
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+
+  if (internalStaffChat && row.chat_turn === "subscriber") {
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+
+  if (
+    row.chat_turn === "subscriber" &&
+    row.status === "in_progress" &&
+    row.action_by === "cs"
+  ) {
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+
+  if (row.chat_turn === "staff" && STAFF_ACTION.includes(row.action_by)) {
+    const lkStaffPending = src === "lk";
+    if (lkStaffPending || row.list_highlight === "chat") {
+      return {
+        kind: "comm",
+        state: "needs_reply",
+        label: COMMUNICATION_LABELS.needs_reply,
+      };
+    }
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+
+  if (row.chat_turn === "subscriber") {
     return {
       kind: "comm",
       state: "awaiting_subscriber",
       label: COMMUNICATION_LABELS.awaiting_subscriber,
     };
   }
-  return { kind: "comm", state: "needs_reply", label: COMMUNICATION_LABELS.needs_reply };
+
+  return { kind: "workflow", status: row.status, label: row.status_label };
 }
 
 /** @deprecated используйте ticketListStatusColumn */
@@ -97,6 +213,44 @@ export function ticketListCommunicationBadge(
 ): { state: keyof typeof COMMUNICATION_LABELS; label: string } | null {
   const col = ticketListStatusColumn(row);
   return col.kind === "comm" ? { state: col.state, label: col.label } : null;
+}
+
+export type TrackerTicketListDigest = {
+  changed: boolean;
+  digest: string;
+  total: number;
+};
+
+/** Лёгкий поллинг: changed=false — полный /list не вызывать. */
+export async function fetchTrackerListDigest(params: {
+  page: number;
+  per_page: number;
+  closed?: boolean;
+  subscriber_q?: string;
+  date_from?: string;
+  date_to?: string;
+  digest?: string;
+}): Promise<TrackerTicketListDigest> {
+  const sp = new URLSearchParams({
+    page: String(params.page),
+    per_page: String(params.per_page),
+  });
+  if (params.closed) sp.set("closed", "true");
+  const q = params.subscriber_q?.trim();
+  if (q) sp.set("subscriber_q", q);
+  if (params.date_from) sp.set("date_from", params.date_from);
+  if (params.date_to) sp.set("date_to", params.date_to);
+  if (params.digest) sp.set("digest", params.digest);
+  const res = await fetch(`/api/v1/helpdesk/tracker/list/digest?${sp.toString()}`, {
+    method: "GET",
+    credentials: "include",
+  });
+  const data = (await res.json().catch(() => ({}))) as { detail?: string } & Partial<TrackerTicketListDigest>;
+  if (!res.ok) {
+    const msg = typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return data as TrackerTicketListDigest;
 }
 
 export async function fetchOpenTrackerTickets(params: {
@@ -171,8 +325,8 @@ export function trackerApiRowToTicketRow(row: TrackerTicketListItem): TicketRow 
   else if (_WAIT.has(row.status)) status = "wait";
 
   let dot: TicketRow["dot"] = "i2";
-  if (row.communication_state === "needs_reply" || row.has_unread) dot = "red";
-  else if (row.communication_state === "awaiting_subscriber") dot = "wn";
+  if (ticketListNeedsAttention(row)) dot = "red";
+  else if (row.chat_turn === "subscriber") dot = "wn";
   else if (_WAIT.has(row.status)) dot = "wn";
 
   const t = row.updated_at || row.date_of_create;

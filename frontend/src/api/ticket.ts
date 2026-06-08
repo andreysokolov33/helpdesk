@@ -75,6 +75,10 @@ export type TicketDetail = {
   priority_label?: string | null;
   support_line: number;
   support_line_label: string;
+  queue_line: "cs" | "engineers" | "partner" | string;
+  action_by: string;
+  chat_turn: "staff" | "subscriber" | string;
+  action_since_iso?: string | null;
   source: string;
   source_label: string;
   category_label?: string | null;
