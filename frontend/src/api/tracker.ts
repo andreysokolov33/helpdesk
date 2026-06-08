@@ -98,7 +98,7 @@ export function ticketListAssigneePill(
   row: Pick<
     TrackerTicketListItem,
     "assignee_is_viewer" | "assignee_name" | "assignee_role" | "queue_line"
-  >,
+  > & { support_line?: number },
 ): AssigneePillDisplay {
   if (row.assignee_is_viewer) {
     return { label: "Вы", variant: "you" };
@@ -107,6 +107,11 @@ export function ticketListAssigneePill(
   const name = row.assignee_name?.trim() || "";
   const role = (row.assignee_role || "").trim().toLowerCase();
   const line = row.queue_line ?? "cs";
+  const supportLine = row.support_line;
+
+  if (supportLine === 4 && !name) {
+    return { label: "Менеджер", variant: "unassigned", title: "Очередь менеджера" };
+  }
 
   if (line === "engineers" || line === "partner") {
     return { label: "Инженер", variant: "engineer" };
@@ -146,8 +151,13 @@ export function ticketListStatusColumn(
     | "action_by"
     | "communication_state"
     | "list_highlight"
+    | "support_line"
   >,
 ): TicketStatusColumn {
+  if (row.support_line === 4) {
+    return { kind: "workflow", status: row.status, label: row.status_label };
+  }
+
   if (TRACKER_CLOSED_STATUSES.has(row.status)) {
     return { kind: "workflow", status: row.status, label: row.status_label };
   }
@@ -292,11 +302,23 @@ const _WAIT = new Set([
   "no_technician",
 ]);
 
+export type CallConnectionKind = "existing" | "new_subscriber" | "new_partner";
+
+export type ConnectionLeadPayload = {
+  full_name: string;
+  address: string;
+  phone: string;
+  potential_subscribers?: number | null;
+  sees_network?: boolean | null;
+  plans_new_station?: boolean | null;
+  notes?: string | null;
+};
+
 export type RegisterCallPayload = {
-  body: string;
-  subscriber_unknown: boolean;
-  user_id: number | null;
-  caller_name?: string | null;
+  connection_kind: CallConnectionKind;
+  body?: string | null;
+  user_id?: number | null;
+  lead?: ConnectionLeadPayload | null;
   station_id?: number | null;
   hotspot_id?: number | null;
 };

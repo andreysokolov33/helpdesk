@@ -13,18 +13,19 @@ import TicketClassifyModal, { type ClassifyAction } from "@/workspace/TicketClas
 import TicketFastCheckDrawer from "@/workspace/TicketFastCheckDrawer";
 import { formatWorkDurationSince } from "@/utils/ticketFormat";
 import {
+  ticketListAssigneePill,
+  ticketListStatusColumn,
+} from "@/api/tracker";
+import {
   isLkTicketSource,
   priorityBadgeClass,
   sourceBadgeClass,
-  queueLineBadgeClass,
-  queueLineShortLabel,
 } from "@/utils/ticketLabels";
 import {
   fetchTicketDetail,
   fetchTicketMessages,
   fetchTicketReadReceipts,
   formatMsgTime,
-  formatTicketCreated,
   closeTicket,
   reopenTicket,
   deleteTicketMessage,
@@ -792,7 +793,7 @@ export default function TicketPage() {
       }
       const next = await transferTicketToEngineers(detail.id, {
         categoryId: payload.categoryId,
-        comment: isLkTicketSource(detail.source) ? payload.comment || undefined : undefined,
+        comment: payload.comment || undefined,
       });
       setDetail(next);
       setClassifyOpen(false);
@@ -1283,6 +1284,8 @@ export default function TicketPage() {
     return parts.length >= 2 ? parts[1] : subscriberSidebarName;
   })();
   const introBody = detail.body?.trim() || "";
+  const statusColumn = ticketListStatusColumn(detail);
+  const assigneePill = ticketListAssigneePill(detail);
   const chatMessages = messages.filter((m) => !m.is_initial);
   const isLkTicket = isLkTicketSource(detail.source);
   const isCommentsPanel = isLkTicket && chatPanel === "comments";
@@ -1329,7 +1332,15 @@ export default function TicketPage() {
               ·
             </span>
             <h1 className="tk-tbar-title">{detail.title}</h1>
-            <span className={`ch-status ch-status--${detail.status}`}>{detail.status_label}</span>
+            <span
+              className={
+                statusColumn.kind === "comm"
+                  ? `ch-comm ch-comm--${statusColumn.state}`
+                  : `ch-status ch-status--${detail.status}`
+              }
+            >
+              {statusColumn.label}
+            </span>
           </div>
           <div className="tacts">
             <button
@@ -1344,7 +1355,7 @@ export default function TicketPage() {
               </svg>
               {checkLoading ? "Проверяю…" : "Проверка"}
             </button>
-            {detail.is_open && detail.queue_line === "cs" ? (
+            {detail.is_open && detail.queue_line === "cs" && detail.support_line !== 4 ? (
               <button type="button" className="tb3" onClick={() => openClassify("esc")}>
                 Инженерам
               </button>
@@ -2019,20 +2030,35 @@ export default function TicketPage() {
               <div className="ipb">
                 <div className="ipl">Тикет</div>
                 <div className="kv">
-                  <span className="kvk">Источник</span>
+                  <span className="kvk">Статус</span>
                   <span className="kvv">
-                    <span className={`ch-source ch-source--${sourceBadgeClass(detail.source)}`}>
-                      {detail.source_label}
+                    <span
+                      className={
+                        statusColumn.kind === "comm"
+                          ? `ch-comm ch-comm--${statusColumn.state}`
+                          : `ch-status ch-status--${detail.status}`
+                      }
+                    >
+                      {statusColumn.label}
                     </span>
                   </span>
                 </div>
                 <div className="kv">
-                  <span className="kvk">Линия</span>
+                  <span className="kvk">Исполнитель</span>
                   <span className="kvv">
                     <span
-                      className={`ch-line ch-line--${queueLineBadgeClass(detail.queue_line)}`}
+                      className={`ch-assignee-pill ch-assignee-pill--${assigneePill.variant}`}
+                      title={assigneePill.title}
                     >
-                      {queueLineShortLabel(detail.queue_line, detail.support_line)}
+                      {assigneePill.label}
+                    </span>
+                  </span>
+                </div>
+                <div className="kv">
+                  <span className="kvk">Источник</span>
+                  <span className="kvv">
+                    <span className={`ch-source ch-source--${sourceBadgeClass(detail.source)}`}>
+                      {detail.source_label}
                     </span>
                   </span>
                 </div>
@@ -2066,13 +2092,9 @@ export default function TicketPage() {
                     <span className="kvv">{detail.station_name}</span>
                   </div>
                 ) : null}
-                <div className="kv">
-                  <span className="kvk">Создан</span>
-                  <span className="kvv">{formatTicketCreated(detail.date_of_create_iso) || "—"}</span>
-                </div>
                 {detail.date_of_create_iso ? (
                   <div className="kv">
-                    <span className="kvk">Время в работе</span>
+                    <span className="kvk">В работе</span>
                     <span className="kvv">{formatWorkDurationSince(detail.date_of_create_iso, nowPulse)}</span>
                   </div>
                 ) : null}

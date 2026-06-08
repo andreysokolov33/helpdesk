@@ -331,6 +331,17 @@
   border: 1px solid var(--rsf, rgba(255, 19, 0, 0.2));
 }
 
+.call-success {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ok);
+  background: rgba(27, 122, 72, 0.08);
+  border: 1px solid rgba(27, 122, 72, 0.22);
+}
+
 .call-card__footer {
   display: flex;
   gap: 8px;
@@ -364,6 +375,120 @@
 .call-btn-primary:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.call-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+@media (min-width: 520px) {
+  .call-mode-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.call-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 12px 11px;
+  border-radius: 12px;
+  border: 1.5px solid var(--ln);
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.call-mode-card:hover {
+  border-color: var(--lm);
+}
+
+.call-mode-card--on {
+  border-color: var(--red);
+  background: var(--rbg);
+  box-shadow: 0 0 0 3px rgba(255, 19, 0, 0.07);
+}
+
+.call-mode-card--partner.call-mode-card--on {
+  border-color: #3d7dd6;
+  background: rgba(61, 125, 214, 0.08);
+  box-shadow: 0 0 0 3px rgba(61, 125, 214, 0.1);
+}
+
+.call-mode-card__title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.call-mode-card__hint {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--i2);
+}
+
+.call-lead-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.call-lead-form__row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 480px) {
+  .call-lead-form__row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .call-lead-form__row--split {
+    align-items: end;
+  }
+}
+
+.call-input--num {
+  max-width: 120px;
+}
+
+.call-textarea--compact {
+  min-height: 72px;
+}
+
+.call-bool {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.call-bool__btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ln);
+  background: var(--bg);
+  color: var(--i2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.call-bool__btn:hover {
+  border-color: var(--lm);
+  color: var(--ink);
+}
+
+.call-bool__btn.on {
+  border-color: var(--red);
+  background: var(--rbg);
+  color: var(--red);
 }
 
 /* ——— Карточка тикета ——— */
@@ -788,6 +913,52 @@
 
 #tp-ticket .tk-sidebar .ips {
   padding-left: 3px;
+}
+
+#tp-ticket .tk-sidebar .kv {
+  display: grid;
+  grid-template-columns: minmax(72px, 38%) minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: start;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+#tp-ticket .tk-sidebar .kvk {
+  color: var(--i3);
+  line-height: 1.35;
+  padding-top: 2px;
+}
+
+#tp-ticket .tk-sidebar .kvv {
+  font-weight: 600;
+  text-align: right;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+#tp-ticket .tk-sidebar .kvv .ch-status,
+#tp-ticket .tk-sidebar .kvv .ch-comm,
+#tp-ticket .tk-sidebar .kvv .ch-source,
+#tp-ticket .tk-sidebar .kvv .ch-priority,
+#tp-ticket .tk-sidebar .kvv .ch-line,
+#tp-ticket .tk-sidebar .kvv .ch-assignee-pill {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  white-space: normal;
+  text-align: right;
+}
+
+#tp-ticket .tk-sidebar .tk-category-kv {
+  display: block;
+}
+
+#tp-ticket .tk-sidebar .tk-category-kv__top {
+  display: grid;
+  grid-template-columns: minmax(72px, 38%) minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: start;
 }
 
 #tp-ticket .tk-side-account {
@@ -1413,6 +1584,77 @@
 
 #tp-ticket .tk-intro__text.tk-msg-text--html {
   text-align: left;
+}
+
+/* Анкета «новое подключение» в body тикета */
+#tp-ticket .tk-lead {
+  margin: 0;
+  text-align: left;
+}
+
+#tp-ticket .tk-lead__title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--i2);
+}
+
+#tp-ticket .tk-lead--partner .tk-lead__title {
+  color: #3d7dd6;
+}
+
+#tp-ticket .tk-lead__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#tp-ticket .tk-lead__table th,
+#tp-ticket .tk-lead__table td {
+  padding: 5px 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--ln);
+  text-align: left;
+}
+
+#tp-ticket .tk-lead__table tr:last-child th,
+#tp-ticket .tk-lead__table tr:last-child td {
+  border-bottom: none;
+}
+
+#tp-ticket .tk-lead__table th {
+  width: 42%;
+  padding-right: 10px;
+  font-weight: 600;
+  color: var(--i3);
+  font-size: 11px;
+}
+
+#tp-ticket .tk-lead__table td {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+#tp-ticket .tk-lead__notes {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed var(--ln);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--i2);
+}
+
+#tp-ticket .tk-lead__notes-lbl {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+  color: var(--i3);
+  margin-bottom: 4px;
 }
 
 /* Быстрые ответы (макросы) */

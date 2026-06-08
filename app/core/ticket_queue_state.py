@@ -192,6 +192,34 @@ def on_register_call_cs(
     }
 
 
+def on_register_new_subscriber_lead(
+    *,
+    at: datetime | None = None,
+) -> TicketQueueSnapshot:
+    """Лид «новый абонент»: КС доводит до регистрации."""
+    now = at or datetime.now(timezone.utc)
+    return {
+        "queue_line": "cs",
+        "action_by": "cs",
+        "chat_turn": "staff",
+        "action_since": now,
+    }
+
+
+def on_register_partner_prospect(
+    *,
+    at: datetime | None = None,
+) -> TicketQueueSnapshot:
+    """Лид «новый партнёр»: очередь менеджера (support_line=4), не требует ответа КС."""
+    now = at or datetime.now(timezone.utc)
+    return {
+        "queue_line": "cs",
+        "action_by": "cs",
+        "chat_turn": "subscriber",
+        "action_since": now,
+    }
+
+
 def on_partner_technician_wait(
     *,
     at: datetime | None = None,
@@ -244,12 +272,16 @@ def list_highlight_for_viewer(
     has_unread: bool = False,
     workflow_status: str | None = None,
     source: str | None = None,
+    support_line: int = 1,
 ) -> Literal["chat", "ops", "none"]:
     """Подсветка строки в списке для КС, инженера или партнёра."""
-    from app.constants import is_subscriber_chat_source
+    from app.constants import is_manager_support_line, is_subscriber_chat_source
 
     line_role = _viewer_line_role(viewer_role)
     if line_role is None:
+        return "none"
+
+    if line_role == "support" and is_manager_support_line(support_line):
         return "none"
 
     action = state["action_by"]

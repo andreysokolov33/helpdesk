@@ -16,16 +16,21 @@ from sqlalchemy import Boolean, DateTime, String, case, cast, literal_column, se
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.constants import (
+    COMMUNICATION_STATE_LABELS,
     PRIORITY_DICT,
     SOURCE_DISPLAY,
     STATUS_DISPLAY,
+    SUPPORT_LINE_DISPLAY,
+    TRACKER_ACTION_BY_DISPLAY,
+    TRACKER_CHAT_TURN_DISPLAY,
     TRACKER_CLOSED_STATUSES,
     TRACKER_HELPDESK_LIST_SOURCES,
     TRACKER_OPEN_STATUSES,
-    COMMUNICATION_STATE_LABELS,
     TRACKER_OPERATIONAL_WAIT_STATUSES,
+    TRACKER_QUEUE_LINE_DISPLAY,
     is_internal_staff_chat_source,
     is_subscriber_chat_source,
+    is_visible_to_cs_support,
 )
 from app.models.users import TrackerTickets
 from app.models.users import (
@@ -42,6 +47,8 @@ from app.core.ticket_queue_state import (
     TicketQueueSnapshot,
     TrackerChatTurn,
     TrackerQueueLine,
+    communication_state_from_v2,
+    list_highlight_for_viewer,
     on_escalate_to_engineers,
     on_internal_staff_message,
     on_register_call_cs,
@@ -255,7 +262,10 @@ async def reconcile_ticket_queue_from_thread(
         if not meta:
             return
         author_party, msg_at = meta
+        msg_at = _coerce_utc(msg_at)
         expected_action = "engineers" if author_party == "cs" else "cs"
+        if action_since is not None and action_since > msg_at:
+            return
         if (
             chat_turn == "staff"
             and str(row.get("action_by") or "") == expected_action
@@ -276,9 +286,12 @@ async def reconcile_ticket_queue_from_thread(
         return
 
     from_subscriber, msg_at = meta
+    msg_at = _coerce_utc(msg_at)
     current_status = str(row.get("status") or "")
 
     if from_subscriber:
+        if action_since is not None and action_since > msg_at:
+            return
         if chat_turn == "staff" and action_since is not None and msg_at <= action_since:
             return
         snap = on_subscriber_public_message(queue_line, at=msg_at)
@@ -292,6 +305,8 @@ async def reconcile_ticket_queue_from_thread(
         await db.commit()
         return
 
+    if action_since is not None and action_since > msg_at:
+        return
     if chat_turn == "subscriber" and action_since is not None and msg_at <= action_since:
         return
     snap = on_staff_public_reply(queue_line, at=msg_at)
@@ -788,13 +803,15 @@ def _tracker_list_filter_sql(
     subscriber_q: str | None,
     date_from: date | None,
     date_to: date | None,
+    hide_manager_line: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     base = _tracker_list_status_sources_sql(closed=closed)
     sub_sql, sub_params = _tracker_subscriber_filter_sql(subscriber_q)
     date_sql, date_params = _tracker_date_filter_sql(
         closed=closed, date_from=date_from, date_to=date_to
     )
-    sql = f"{base}\n          {sub_sql}\n          {date_sql}"
+    manager_sql = "AND tt.support_line <> 4" if hide_manager_line else ""
+    sql = f"{base}\n          {sub_sql}\n          {date_sql}\n          {manager_sql}"
     params = {**sub_params, **date_params}
     return sql, params
 
@@ -1183,11 +1200,13 @@ async def fetch_tracker_list_page(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> tuple[int, list[dict[str, Any]], dict[str, float | None]]:
+    hide_manager = await _viewer_hides_manager_line(db, viewer_id)
     filter_sql, filter_params = _tracker_list_filter_sql(
         closed=closed,
         subscriber_q=subscriber_q,
         date_from=date_from,
         date_to=date_to,
+        hide_manager_line=hide_manager,
     )
     params = {**filter_params, "viewer_id": viewer_id, "per_page": per_page, "offset": (page - 1) * per_page}
 
@@ -1276,11 +1295,13 @@ async def fetch_tracker_list_digest(
     except Exception:
         pass
 
+    hide_manager = await _viewer_hides_manager_line(db, viewer_id)
     filter_sql, filter_params = _tracker_list_filter_sql(
         closed=closed,
         subscriber_q=subscriber_q,
         date_from=date_from,
         date_to=date_to,
+        hide_manager_line=hide_manager,
     )
     params = {
         **filter_params,
@@ -1975,6 +1996,44 @@ async def load_helpdesk_macros(db: AsyncSession) -> list[dict[str, Any]]:
     ]
 
 
+def _queue_line_display_label(queue_line: str, support_line: int) -> str:
+    """Подпись линии из v2 queue_line; support_line=4 → «Менеджер»."""
+    if support_line == 4 and queue_line == "cs":
+        return SUPPORT_LINE_DISPLAY[4]
+    return TRACKER_QUEUE_LINE_DISPLAY.get(queue_line, queue_line)
+
+
+async def _ticket_detail_has_unread(db: AsyncSession, ticket_id: int) -> bool:
+    row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT ({ticket_has_unread_sql('tt')}) AS has_unread
+                FROM users.tracker_tickets tt
+                WHERE tt.id = :ticket_id
+                """
+            ),
+            {"ticket_id": ticket_id},
+        )
+    ).mappings().first()
+    return bool(row and row.get("has_unread"))
+
+
+async def _viewer_role(db: AsyncSession, viewer_id: int) -> str:
+    row = (
+        await db.execute(
+            text("SELECT role FROM users.skystream_users WHERE id = :id"),
+            {"id": viewer_id},
+        )
+    ).mappings().first()
+    return str(row["role"] if row and row.get("role") else "support")
+
+
+async def _viewer_hides_manager_line(db: AsyncSession, viewer_id: int) -> bool:
+    """Операторы КС (role=support) не видят очередь менеджера (support_line=4)."""
+    return (await _viewer_role(db, viewer_id)).strip().lower() == "support"
+
+
 async def load_ticket_detail(
     db: AsyncSession,
     ticket_id: int,
@@ -2044,10 +2103,13 @@ async def load_ticket_detail(
     status_raw = d.get("status_raw") or "pending"
     source = d.get("source") or "call_center"
     line = int(d.get("support_line") or 1)
+
+    viewer_role = await _viewer_role(db, viewer_id)
+    if viewer_role == "support" and not is_visible_to_cs_support(line):
+        raise HTTPException(status_code=404, detail="Тикет не найден")
     queue_line = _coerce_queue_line(d)
     action_by = str(d.get("action_by") or queue_line)
     chat_turn = _coerce_chat_turn(d)
-    line_labels = {1: "КС", 2: "Инженеры", 3: "Партнёр"}
     pr = d.get("priority")
     cat = d.get("category_name")
     cat_parent = d.get("category_parent_name")
@@ -2102,13 +2164,34 @@ async def load_ticket_detail(
         queue_line = _coerce_queue_line(qrow)
         action_by = str(qrow.get("action_by") or queue_line)
         chat_turn = _coerce_chat_turn(qrow)
-        line = queue_line_to_legacy_support_line(queue_line)
+        line = int(qrow.get("support_line") or d.get("support_line") or 1)
         status_raw = str(qrow.get("status") or status_raw)
         d["action_since"] = qrow.get("action_since")
 
     owner_id = int(d["engineer_id"]) if queue_line == "engineers" and d.get("engineer_id") else (
         int(d["assigned_to"]) if d.get("assigned_to") is not None else None
     )
+
+    has_unread = await _ticket_detail_has_unread(db, ticket_id)
+    queue_snap = {
+        "queue_line": queue_line,
+        "action_by": action_by,
+        "chat_turn": chat_turn,
+        "action_since": d.get("action_since"),
+    }
+    list_highlight = list_highlight_for_viewer(
+        queue_snap,
+        viewer_role=viewer_role,  # type: ignore[arg-type]
+        has_unread=has_unread,
+        workflow_status=status_raw,
+        source=source,
+        support_line=line,
+    )
+    comm_state = communication_state_from_v2(chat_turn, action_by, source=source)
+    if comm_state is None and list_highlight == "ops":
+        comm_label = STATUS_DISPLAY.get(status_raw, status_raw)
+    else:
+        comm_label = COMMUNICATION_STATE_LABELS.get(comm_state) if comm_state else None
 
     return {
         "id": int(d["id"]),
@@ -2120,11 +2203,18 @@ async def load_ticket_detail(
         "priority": pr,
         "priority_label": PRIORITY_DICT.get(pr, pr) if pr else None,
         "support_line": line,
-        "support_line_label": line_labels.get(line, str(line)),
+        "support_line_label": SUPPORT_LINE_DISPLAY.get(line, str(line)),
         "queue_line": queue_line,
+        "queue_line_label": _queue_line_display_label(queue_line, line),
         "action_by": action_by,
+        "action_by_label": TRACKER_ACTION_BY_DISPLAY.get(action_by, action_by),
         "chat_turn": chat_turn,
+        "chat_turn_label": TRACKER_CHAT_TURN_DISPLAY.get(chat_turn, chat_turn),
         "action_since_iso": _iso(d.get("action_since")),
+        "has_unread": has_unread,
+        "list_highlight": list_highlight,
+        "communication_state": comm_state,
+        "communication_label": comm_label,
         "source": source,
         "source_label": SOURCE_DISPLAY.get(source, source),
         "category_label": category_label,
@@ -2463,11 +2553,16 @@ async def transfer_ticket_to_engineers(
     comment: str | None,
     author_id: int,
 ) -> dict[str, Any]:
-    """Передача тикета на линию инженеров с опциональной классификацией (любой source)."""
+    """Передача тикета на линию инженеров: v2 + support_line=2, снятие исполнителей КС."""
     row = await _load_ticket_row_for_line_ops(db, ticket_id)
     await reconcile_ticket_queue_from_thread(db, ticket_id, source=row.get("source"))
     row = await _load_ticket_row_for_line_ops(db, ticket_id)
     from_line = int(row["support_line"] or 1)
+    if from_line == 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Тикет на линии менеджера — передача инженерам недоступна",
+        )
     if _coerce_queue_line(row) != "cs":
         raise HTTPException(status_code=400, detail="Тикет не на линии КС")
 
@@ -2488,6 +2583,7 @@ async def transfer_ticket_to_engineers(
             UPDATE users.tracker_tickets
             SET category_id = :category_id,
                 assigned_to = NULL,
+                engineer_id = NULL,
                 updated_at = :now
             WHERE id = :ticket_id
             """
@@ -2499,15 +2595,32 @@ async def transfer_ticket_to_engineers(
         ticket_id,
         queue_snap,
         status="in_progress",
+        sync_support_line=True,
     )
 
     await _change_ticket_support_line(
         db,
         ticket_id=ticket_id,
         from_line=from_line,
-        to_line=2,
+        to_line=queue_line_to_legacy_support_line(queue_snap["queue_line"]),
         changed_by=author_id,
         now=now,
+    )
+
+    _add_line_history_event(
+        db,
+        ticket_id=ticket_id,
+        changed_by=author_id,
+        now=now,
+        event_type="escalated_to_engineers",
+        payload={
+            "queue_line": queue_snap["queue_line"],
+            "action_by": queue_snap["action_by"],
+            "chat_turn": queue_snap["chat_turn"],
+            "action_since": _iso(queue_snap["action_since"]),
+            "from_line": from_line,
+            "to_line": queue_line_to_legacy_support_line(queue_snap["queue_line"]),
+        },
     )
 
     if old_category_id != new_category_id:
@@ -2524,13 +2637,27 @@ async def transfer_ticket_to_engineers(
         )
 
     text_clean = (comment or "").strip()
-    if text_clean and is_lk_ticket_source(row.get("source")):
+    src = str(row.get("source") or "call_center")
+    if text_clean and is_lk_ticket_source(src):
         db.add(
             TrackerComments(
                 ticket_id=ticket_id,
                 author_id=author_id,
                 body=text_clean,
             )
+        )
+    elif text_clean and is_internal_staff_chat_source(src):
+        db.add(
+            TrackerMessages(
+                ticket_id=ticket_id,
+                author_id=author_id,
+                body=text_clean,
+                created_at=now,
+                person_type="skystream",
+            )
+        )
+        await _apply_staff_chat_queue_update(
+            db, ticket_id, operator_role="support", at=now,
         )
 
     await db.commit()
@@ -2726,6 +2853,7 @@ async def take_ticket_back_to_ks(
             """
             UPDATE users.tracker_tickets
             SET assigned_to = :assigned_to,
+                engineer_id = NULL,
                 updated_at = :now
             WHERE id = :ticket_id
             """
@@ -2737,15 +2865,33 @@ async def take_ticket_back_to_ks(
         ticket_id,
         queue_snap,
         status="in_progress",
+        sync_support_line=True,
     )
 
+    to_line = queue_line_to_legacy_support_line(queue_snap["queue_line"])
     await _change_ticket_support_line(
         db,
         ticket_id=ticket_id,
         from_line=from_line,
-        to_line=1,
+        to_line=to_line,
         changed_by=author_id,
         now=now,
+    )
+
+    _add_line_history_event(
+        db,
+        ticket_id=ticket_id,
+        changed_by=author_id,
+        now=now,
+        event_type="returned_to_cs",
+        payload={
+            "queue_line": queue_snap["queue_line"],
+            "action_by": queue_snap["action_by"],
+            "chat_turn": queue_snap["chat_turn"],
+            "action_since": _iso(queue_snap["action_since"]),
+            "from_line": from_line,
+            "to_line": to_line,
+        },
     )
 
     await db.commit()

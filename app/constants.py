@@ -40,7 +40,20 @@ SUPPORT_LINE_DISPLAY = {
     1: 'Контактный сервис',
     2: 'Инженеры',
     3: 'Партнёр',
+    4: 'Менеджер',
 }
+
+# Линия менеджера: тикеты не в очереди КС (список /tickets, «нужен ответ»).
+TRACKER_MANAGER_SUPPORT_LINE = 4
+
+
+def is_manager_support_line(support_line: int | None) -> bool:
+    return int(support_line or 1) == TRACKER_MANAGER_SUPPORT_LINE
+
+
+def is_visible_to_cs_support(support_line: int | None) -> bool:
+    """Тикет показывается операторам КС в списке и как требующий их ответа."""
+    return not is_manager_support_line(support_line)
 
 # Для карточки тикета и списка: компактные названия статусов
 STATUS_DISPLAY = {

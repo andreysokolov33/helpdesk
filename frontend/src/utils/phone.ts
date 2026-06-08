@@ -4,6 +4,33 @@ export function phoneDigits(raw: string | null | undefined): string {
   return raw.replace(/\D/g, "");
 }
 
+/** Полный RU-номер: +7 и ровно 10 цифр (12 символов). */
+export const RU_PHONE_COMPLETE_RE = /^\+7\d{10}$/;
+
+/**
+ * Маска ввода: +7XXXXXXXXXX, не больше 10 цифр после +7.
+ * 8… и 7… в начале нормализуются к +7….
+ */
+export function maskRuPhoneInput(raw: string): string {
+  let digits = phoneDigits(raw);
+  if (!digits) return "+7";
+  if (digits.startsWith("8")) digits = `7${digits.slice(1)}`;
+  if (!digits.startsWith("7")) digits = `7${digits}`;
+  digits = digits.slice(0, 11);
+  if (digits.length <= 1) return "+7";
+  return `+7${digits.slice(1)}`;
+}
+
+export function isCompleteRuPhone(raw: string | null | undefined): boolean {
+  return RU_PHONE_COMPLETE_RE.test((raw ?? "").trim());
+}
+
+/** Нормализованный номер для API: +7XXXXXXXXXX. */
+export function normalizeRuPhone(raw: string): string | null {
+  const masked = maskRuPhoneInput(raw);
+  return isCompleteRuPhone(masked) ? masked : null;
+}
+
 /**
  * Форматирование RU-телефонов: +7 (XXX) XXX-XX-XX.
  * Если распознать не удалось — исходная строка.

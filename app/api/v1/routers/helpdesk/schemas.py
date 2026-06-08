@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.v1.routers.helpdesk.user_profile_schemas import TicketSubscriberAccountSummary
 
@@ -86,25 +87,87 @@ class DeskSearchSubscriberHit(BaseModel):
     hotspot_id: int | None = None
 
 
-class RegisterCallRequest(BaseModel):
-    body: str = Field(..., min_length=1, max_length=8000, description="Что говорит клиент")
-    user_id: int | None = Field(None, description="ID абонента; NULL если не определён")
-    subscriber_unknown: bool = Field(
-        False,
-        description="Абонент не определён — user_id не передаётся, person_type=cs",
-    )
-    caller_name: str | None = Field(
+_RU_PHONE_RE = re.compile(r"^\+7\d{10}$")
+
+
+def _normalize_ru_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone.strip())
+    if digits.startswith("8") and len(digits) == 11:
+        digits = f"7{digits[1:]}"
+    if digits.startswith("7") and len(digits) == 11:
+        return f"+7{digits[1:]}"
+    raise ValueError("Телефон в формате +7XXXXXXXXXX (10 цифр после +7)")
+
+
+class ConnectionLeadPayload(BaseModel):
+    full_name: str = Field(..., min_length=1, max_length=200)
+    address: str = Field(..., min_length=1, max_length=500)
+    phone: str = Field(..., min_length=12, max_length=12)
+    potential_subscribers: int | None = Field(
         None,
-        max_length=500,
-        description="Как представился звонящий, если абонент не в базе",
+        ge=0,
+        le=99_999,
+        description="Только для нового партнёра",
+    )
+    sees_network: bool | None = Field(
+        None,
+        description="Новый абонент: видит ли сеть на месте",
+    )
+    plans_new_station: bool | None = Field(
+        None,
+        description="Новый партнёр: планирует ли станцию",
+    )
+    notes: str | None = Field(None, max_length=2000, description="Дополнительно от звонящего")
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        normalized = _normalize_ru_phone(v)
+        if not _RU_PHONE_RE.match(normalized):
+            raise ValueError("Телефон в формате +7XXXXXXXXXX (10 цифр после +7)")
+        return normalized
+
+
+class RegisterCallRequest(BaseModel):
+    connection_kind: str = Field(
+        "existing",
+        description="existing | new_subscriber | new_partner",
+    )
+    body: str | None = Field(
+        None,
+        max_length=8000,
+        description="Что говорит клиент (только для existing)",
+    )
+    user_id: int | None = Field(None, description="ID абонента (только для existing)")
+    lead: ConnectionLeadPayload | None = Field(
+        None,
+        description="Анкета нового подключения (new_subscriber / new_partner)",
     )
     station_id: int | None = None
     hotspot_id: int | None = None
 
     @model_validator(mode="after")
-    def require_caller_when_unknown(self) -> "RegisterCallRequest":
-        if self.subscriber_unknown and not (self.caller_name or "").strip():
-            raise ValueError("Укажите, как представился клиент")
+    def validate_connection_kind(self) -> "RegisterCallRequest":
+        kind = (self.connection_kind or "existing").strip()
+        if kind not in ("existing", "new_subscriber", "new_partner"):
+            raise ValueError("Некорректный тип обращения")
+        self.connection_kind = kind
+
+        if kind == "existing":
+            if self.user_id is None:
+                raise ValueError("Выберите абонента")
+            if not (self.body or "").strip():
+                raise ValueError("Опишите, что говорит клиент")
+            return self
+
+        if self.lead is None:
+            raise ValueError("Заполните анкету нового подключения")
+        if kind == "new_subscriber" and self.lead.sees_network is None:
+            raise ValueError("Укажите, видит ли клиент сеть")
+        if kind == "new_partner" and self.lead.plans_new_station is None:
+            raise ValueError("Укажите, планирует ли партнёр новую станцию")
+        if kind == "new_partner" and self.lead.potential_subscribers is None:
+            raise ValueError("Укажите число потенциальных абонентов")
         return self
 
 
@@ -202,9 +265,16 @@ class TicketDetailResponse(BaseModel):
     support_line: int
     support_line_label: str
     queue_line: str = "cs"
+    queue_line_label: str = "КС"
     action_by: str = "cs"
+    action_by_label: str = "КС"
     chat_turn: str = "subscriber"
+    chat_turn_label: str = "Ждём абонента"
     action_since_iso: str | None = None
+    has_unread: bool = False
+    list_highlight: str = "none"
+    communication_state: str | None = None
+    communication_label: str | None = None
     source: str
     source_label: str
     category_label: str | None = None

@@ -39,10 +39,13 @@ from app.api.v1.routers.helpdesk.schemas import (
 )
 from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
 from app.core.ticket_message_validation import html_to_plain_text, validate_ticket_message_text
+from app.api.v1.routers.helpdesk.call_lead_html import build_connection_lead_html
 from app.core.ticket_queue_state import (
     communication_state_from_v2,
     list_highlight_for_viewer,
     on_register_call_cs,
+    on_register_new_subscriber_lead,
+    on_register_partner_prospect,
     support_line_to_queue_line,
 )
 from app.constants import (
@@ -226,6 +229,7 @@ async def list_tracker_tickets(
             has_unread=has_unread,
             workflow_status=st,
             source=str(src or "call_center"),
+            support_line=int(m.get("support_line") or 1),
         )
         comm_state = communication_state_from_v2(
             chat_turn, action_by, source=str(src or "call_center"),
@@ -350,7 +354,9 @@ async def list_tracker_tickets_digest(
     return TrackerTicketListDigestResponse(**data)
 
 
-_CALL_PLACEHOLDER_TITLE = "Звонок"
+_CALL_TITLE_EXISTING = "Звонок"
+_CALL_TITLE_NEW_SUBSCRIBER = "Новое подключение — абонент"
+_CALL_TITLE_NEW_PARTNER = "Новое подключение — партнёр"
 
 
 @router.post("/register-call", response_model=RegisterCallResponse)
@@ -360,54 +366,86 @@ async def register_call(
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> RegisterCallResponse:
     """
-    Регистрация входящего звонка: создаёт тикет в users.tracker_tickets без категории и SLA.
+    Регистрация входящего звонка: абонент в базе, новый абонент или новый партнёр.
     """
-    body_text = payload.body.strip()
-    if not body_text:
-        raise HTTPException(status_code=400, detail="Укажите, что говорит клиент")
-
-    caller_name: str | None = None
-    if payload.subscriber_unknown:
-        caller_name = (payload.caller_name or "").strip()
-        if not caller_name:
-            raise HTTPException(
-                status_code=400,
-                detail="Укажите, как представился клиент",
-            )
-        ticket_user_id = None
-        person_type = "cs"
-        station_id = None
-        hotspot_id = None
-    else:
-        if payload.user_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Выберите абонента или отметьте «Не удалось определить»",
-            )
-        ticket_user_id = int(payload.user_id)
-        person_type = "user"
-        station_id = payload.station_id
-        hotspot_id = payload.hotspot_id
-
+    kind = payload.connection_kind
     now = datetime.now(timezone.utc)
     author_id = int(user["user_id"])
-    queue_snap = on_register_call_cs(at=now)
+
+    if kind == "existing":
+        body_text = (payload.body or "").strip()
+        ticket_user_id = int(payload.user_id)  # type: ignore[arg-type]
+        caller_name = None
+        person_type = "user"
+        object_type = "user"
+        station_id = payload.station_id
+        hotspot_id = payload.hotspot_id
+        support_line = 1
+        status = "in_progress"
+        assigned_to = author_id
+        title = _CALL_TITLE_EXISTING
+        queue_snap = on_register_call_cs(at=now)
+    elif kind == "new_subscriber":
+        lead = payload.lead
+        assert lead is not None
+        body_text = build_connection_lead_html(
+            kind="subscriber",
+            full_name=lead.full_name,
+            address=lead.address,
+            phone=lead.phone,
+            sees_network=lead.sees_network,
+            notes=lead.notes,
+        )
+        ticket_user_id = None
+        caller_name = lead.full_name.strip()
+        person_type = "cs"
+        object_type = "other"
+        station_id = None
+        hotspot_id = None
+        support_line = 1
+        status = "in_progress"
+        assigned_to = author_id
+        title = _CALL_TITLE_NEW_SUBSCRIBER
+        queue_snap = on_register_new_subscriber_lead(at=now)
+    else:
+        lead = payload.lead
+        assert lead is not None
+        body_text = build_connection_lead_html(
+            kind="partner",
+            full_name=lead.full_name,
+            address=lead.address,
+            phone=lead.phone,
+            potential_subscribers=lead.potential_subscribers,
+            plans_new_station=lead.plans_new_station,
+            notes=lead.notes,
+        )
+        ticket_user_id = None
+        caller_name = lead.full_name.strip()
+        person_type = "partner"
+        object_type = "other"
+        station_id = None
+        hotspot_id = None
+        support_line = 4
+        status = "pending"
+        assigned_to = None
+        title = _CALL_TITLE_NEW_PARTNER
+        queue_snap = on_register_partner_prospect(at=now)
 
     ticket = TrackerTickets(
         author=author_id,
-        assigned_to=author_id,
+        assigned_to=assigned_to,
         engineer_id=None,
         user_id=ticket_user_id,
-        support_line=1,
-        status="in_progress",
-        title=_CALL_PLACEHOLDER_TITLE,
+        support_line=support_line,
+        status=status,
+        title=title,
         body=body_text,
         priority="middle",
         source="call_center",
         complexity="L1",
         person_type=person_type,
         caller_name=caller_name,
-        object_type="user",
+        object_type=object_type,
         station_id=station_id,
         hotspot_id=hotspot_id,
         vno=1,
@@ -423,7 +461,7 @@ async def register_call(
     db.add(
         TrackerTicketLineHistory(
             ticket_id=int(ticket.id),
-            support_line=1,
+            support_line=support_line,
             start_time=now,
             changed_by=author_id,
             state="active",
@@ -436,7 +474,11 @@ async def register_call(
             start_time=now,
             changed_by=author_id,
             event_type="created",
-            payload={"status": "in_progress", "source": "call_center"},
+            payload={
+                "status": status,
+                "source": "call_center",
+                "connection_kind": kind,
+            },
         )
     )
     await db.commit()

@@ -26,9 +26,10 @@ export function queueLineBadgeClass(line: string): "1" | "2" | "3" | "o" {
 }
 
 export function queueLineShortLabel(line: string, legacySupportLine?: number): string {
-  if (line === "cs") return "КС";
+  if (line === "cs") return legacySupportLine === 4 ? "Менеджер" : "КС";
   if (line === "engineers") return "Инженеры";
   if (line === "partner") return "Партнёр";
+  if (legacySupportLine === 4) return "Менеджер";
   if (legacySupportLine === 2) return "Инженеры";
   if (legacySupportLine === 3) return "Партнёр";
   return "КС";
@@ -44,6 +45,7 @@ export function supportLineLabel(line: number, label?: string | null): string {
   if (line === 1) return "Контактный сервис";
   if (line === 2) return "Инженеры";
   if (line === 3) return "Партнёр";
+  if (line === 4) return "Менеджер";
   return String(line);
 }
 

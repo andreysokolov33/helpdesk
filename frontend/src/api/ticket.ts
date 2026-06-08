@@ -76,9 +76,16 @@ export type TicketDetail = {
   support_line: number;
   support_line_label: string;
   queue_line: "cs" | "engineers" | "partner" | string;
+  queue_line_label: string;
   action_by: string;
+  action_by_label: string;
   chat_turn: "staff" | "subscriber" | string;
+  chat_turn_label: string;
   action_since_iso?: string | null;
+  has_unread?: boolean;
+  list_highlight?: "chat" | "ops" | "none" | string;
+  communication_state?: string | null;
+  communication_label?: string | null;
   source: string;
   source_label: string;
   category_label?: string | null;

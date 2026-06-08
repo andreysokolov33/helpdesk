@@ -1139,7 +1139,7 @@ class TrackerTicketLineHistory(Base):
     __tablename__ = 'tracker_ticket_line_history'
     __table_args__ = (
         CheckConstraint(
-            '(support_line IS NULL OR support_line = ANY (ARRAY[1, 2]))',
+            text('support_line IS NULL OR support_line = ANY (ARRAY[1, 2, 3, 4])'),
             name='tracker_ticket_line_history_support_line_check',
         ),
         ForeignKeyConstraint(['ticket_id'], ['users.tracker_tickets.id'],
