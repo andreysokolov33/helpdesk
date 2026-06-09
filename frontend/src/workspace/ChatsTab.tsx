@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchAuthMe } from "@/api/auth";
 import DatePickerField from "@/components/DatePickerField";
 import {
   fetchOpenTrackerTickets,
   fetchTrackerListDigest,
+  mergeTrackerListPage,
   ticketListAssigneePill,
   ticketListNeedsAttention,
   ticketListStatusColumn,
@@ -129,6 +130,8 @@ export default function ChatsTab() {
   const listLoadGenRef = useRef(0);
   const listDigestRef = useRef<string | null>(null);
   const pollTimerRef = useRef<number | null>(null);
+  const listRowIdsRef = useRef<Set<number>>(new Set());
+  const [enteringRowIds, setEnteringRowIds] = useState<ReadonlySet<number>>(() => new Set());
 
   const closedMode = params.get("closed") === "true";
   const dateFrom = params.get("date_from") ?? "";
@@ -198,7 +201,25 @@ export default function ChatsTab() {
           date_to: closedMode && dateTo ? dateTo : undefined,
         });
         if (gen !== listLoadGenRef.current) return;
-        setListRows(data.items);
+        const applyRows = (items: TrackerTicketListItem[]) => {
+          if (silent) {
+            const prevIds = listRowIdsRef.current;
+            const newIds = items.filter((r) => !prevIds.has(r.id)).map((r) => r.id);
+            listRowIdsRef.current = new Set(items.map((r) => r.id));
+            startTransition(() => {
+              setListRows((prev) => mergeTrackerListPage(prev, items));
+              if (newIds.length > 0) {
+                setEnteringRowIds(new Set(newIds));
+                window.setTimeout(() => setEnteringRowIds(new Set()), 320);
+              }
+            });
+          } else {
+            listRowIdsRef.current = new Set(items.map((r) => r.id));
+            setEnteringRowIds(new Set());
+            setListRows(items);
+          }
+        };
+        applyRows(data.items);
         setListTotal(data.total);
         setListStats(data.stats);
         const totalPages = Math.max(1, Math.ceil(data.total / perPage));
@@ -426,7 +447,7 @@ export default function ChatsTab() {
       return (
         <div
           key={row.id}
-          className={`ch-row${needsAttention ? " ch-row--unread" : ""}${closedMode ? " ch-row--closed" : ""}`}
+          className={`ch-row${needsAttention ? " ch-row--unread" : ""}${closedMode ? " ch-row--closed" : ""}${enteringRowIds.has(row.id) ? " ch-row--enter" : ""}`}
           role="button"
           tabIndex={0}
           onClick={() => openChatFromApi(row)}

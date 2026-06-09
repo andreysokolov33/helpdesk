@@ -825,10 +825,13 @@ def _mail_client_filter(alias: str = "um") -> str:
 
 
 def _tracker_list_viewer_owner_sql() -> str:
-    """Исполнитель на линии КС (assigned_to) или инженеров (engineer_id)."""
+    """Мои тикеты: закреплённый оператор КС (assigned_to) или инженер на своей линии."""
     return """(
-        (q.queue_line = 'cs'::users.tracker_queue_line AND q.assigned_to = :viewer_id)
-        OR (q.queue_line = 'engineers'::users.tracker_queue_line AND q.engineer_id = :viewer_id)
+        q.assigned_to = :viewer_id
+        OR (
+            q.queue_line = 'engineers'::users.tracker_queue_line
+            AND q.engineer_id = :viewer_id
+        )
     )"""
 
 
@@ -845,6 +848,21 @@ def _tracker_list_viewer_line_needs_reply_sql() -> str:
                     AND q.action_by = 'engineers'::users.tracker_action_by)
                 OR (q.queue_line = 'partner'::users.tracker_queue_line
                     AND q.action_by = 'partner'::users.tracker_action_by)
+            )
+        )
+    )"""
+
+
+def _tracker_list_staff_needs_reply_sql() -> str:
+    """Нужен ответ любой линии staff или есть непрочитанное (без привязки к assigned_to)."""
+    return """(
+        q.calc_has_unread
+        OR (
+            q.chat_turn = 'staff'::users.tracker_chat_turn
+            AND q.action_by IN (
+                'cs'::users.tracker_action_by,
+                'engineers'::users.tracker_action_by,
+                'partner'::users.tracker_action_by
             )
         )
     )"""
@@ -888,33 +906,21 @@ def _tracker_list_lk_staff_pending_sql() -> str:
 
 def _tracker_list_sort_tier_sql() -> str:
     """
-    Tier 0 — мои, нужен ответ / непрочитанное
-    Tier 1 — общая очередь КС без исполнителя, нужен ответ / непрочитанное
-    Tier 2 — чужие с непрочитанным или ЛК, где ждут staff (в т.ч. на линии инженеров)
-    Tier 3 — мои, ждём абонента
-    Tier 4 — чужие без нового
-    Tier 5 — линия инженеров (не ЛК), external, ops-пауза
+    Tier 0 — нужен ответ staff / непрочитанное (любая линия, любой исполнитель)
+    Tier 1 — мои, без ожидания ответа
+    Tier 2 — остальные без ожидания ответа
+    Tier 3 — external, операционная пауза
     """
     operational_in = _enum_status_sql(TRACKER_OPERATIONAL_WAIT_STATUSES)
     owner = _tracker_list_viewer_owner_sql()
-    needs = _tracker_list_viewer_line_needs_reply_sql()
-    cs_unassigned = _tracker_list_cs_unassigned_sql()
-    cs_other = _tracker_list_cs_other_assignee_sql()
-    lk_pending = _tracker_list_lk_staff_pending_sql()
+    needs = _tracker_list_staff_needs_reply_sql()
     return f"""
         CASE
-            WHEN q.action_by = 'external'::users.tracker_action_by THEN 5
-            WHEN {owner} AND {needs} THEN 0
-            WHEN {cs_unassigned} AND {needs} THEN 1
-            WHEN ({cs_other} AND q.calc_has_unread) OR {lk_pending} THEN 2
-            WHEN {owner}
-                 AND q.chat_turn = 'subscriber'::users.tracker_chat_turn
-                 AND NOT q.calc_has_unread THEN 3
-            WHEN {cs_other} AND NOT q.calc_has_unread THEN 4
-            WHEN q.queue_line <> 'cs'::users.tracker_queue_line
-                 AND NOT {lk_pending} THEN 5
-            WHEN q.status IN ({operational_in}) THEN 5
-            ELSE 4
+            WHEN q.action_by = 'external'::users.tracker_action_by THEN 3
+            WHEN q.status IN ({operational_in}) AND NOT ({needs}) THEN 3
+            WHEN {needs} THEN 0
+            WHEN {owner} THEN 1
+            ELSE 2
         END
     """
 
@@ -928,10 +934,6 @@ def _tracker_list_order_sql(*, closed: bool) -> str:
     sort_tier = _tracker_list_sort_tier_sql()
     return f"""
         {sort_tier},
-        CASE q.priority::text
-            WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'middle' THEN 2 WHEN 'low' THEN 3 ELSE 4
-        END,
-        CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
         CASE
             WHEN q.chat_turn = 'staff'::users.tracker_chat_turn
                 THEN EXTRACT(EPOCH FROM COALESCE(q.action_since, q.waiting_since))
@@ -939,6 +941,10 @@ def _tracker_list_order_sql(*, closed: bool) -> str:
                 THEN -EXTRACT(EPOCH FROM COALESCE(q.action_since, q.updated_at, q.date_of_create))
             ELSE EXTRACT(EPOCH FROM COALESCE(q.action_since, q.waiting_since))
         END,
+        CASE q.priority::text
+            WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'middle' THEN 2 WHEN 'low' THEN 3 ELSE 4
+        END,
+        CASE WHEN COALESCE(q.source, 'call_center') = 'lk' AND q.first_response_at IS NULL THEN 0 ELSE 1 END,
         q.id ASC
     """
 
@@ -1160,14 +1166,8 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
         jur.short_name_organization AS jur_short_name,
         tc.name AS category_name,
         tcp.name AS category_parent_name,
-        CASE
-            WHEN q.queue_line = 'engineers'::users.tracker_queue_line THEN eng.full_name
-            ELSE cs_op.full_name
-        END AS assignee_name,
-        CASE
-            WHEN q.queue_line = 'engineers'::users.tracker_queue_line THEN eng.role
-            ELSE cs_op.role
-        END AS assignee_role
+        cs_op.full_name AS assignee_name,
+        cs_op.role AS assignee_role
     FROM queue q
     LEFT JOIN users."user" u ON q.user_id = u.id AND q.object_type = 'user'
     LEFT JOIN LATERAL (
@@ -1181,7 +1181,6 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
     LEFT JOIN users.ticket_categories tc ON q.category_id = tc.id
     LEFT JOIN users.ticket_categories tcp ON tc.parent_id = tcp.id
     LEFT JOIN users.skystream_users cs_op ON q.assigned_to = cs_op.id
-    LEFT JOIN users.skystream_users eng ON q.engineer_id = eng.id
     LEFT JOIN users.tracker_tickets_ratings ttr ON ttr.ticket_id = q.id
     ORDER BY
         {order_by}
@@ -2070,14 +2069,8 @@ async def load_ticket_detail(
                         ),
                         false
                     ) AS subscriber_online,
-                    CASE
-                        WHEN tt.queue_line = 'engineers'::users.tracker_queue_line THEN eng.full_name
-                        ELSE su.full_name
-                    END AS assignee_name,
-                    CASE
-                        WHEN tt.queue_line = 'engineers'::users.tracker_queue_line THEN eng.role
-                        ELSE su.role
-                    END AS assignee_role,
+                    su.full_name AS assignee_name,
+                    su.role AS assignee_role,
                     sf.station_name,
                     ig.name AS station_fallback_name
                 FROM users.tracker_tickets tt
@@ -2086,7 +2079,6 @@ async def load_ticket_detail(
                 LEFT JOIN users."user" u ON u.id = tt.user_id
                     AND COALESCE(tt.object_type, 'user') = 'user'
                 LEFT JOIN users.skystream_users su ON su.id = tt.assigned_to
-                LEFT JOIN users.skystream_users eng ON eng.id = tt.engineer_id
                 LEFT JOIN wifitochka.ip_group ig ON ig.id = COALESCE(tt.station_id, u.id_grp)
                 LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
                 WHERE tt.id = :ticket_id
@@ -2168,9 +2160,7 @@ async def load_ticket_detail(
         status_raw = str(qrow.get("status") or status_raw)
         d["action_since"] = qrow.get("action_since")
 
-    owner_id = int(d["engineer_id"]) if queue_line == "engineers" and d.get("engineer_id") else (
-        int(d["assigned_to"]) if d.get("assigned_to") is not None else None
-    )
+    owner_id = int(d["assigned_to"]) if d.get("assigned_to") is not None else None
 
     has_unread = await _ticket_detail_has_unread(db, ticket_id)
     queue_snap = {
@@ -3169,6 +3159,29 @@ async def load_tracker_messages(
     return messages
 
 
+def ticket_poll_snapshot_from_detail(detail: dict[str, Any]) -> dict[str, Any]:
+    """Лёгкий снимок статуса для поллинга /messages?since_id=…"""
+    return {
+        "status": detail["status"],
+        "status_label": detail["status_label"],
+        "is_open": detail["is_open"],
+        "can_reopen": bool(detail.get("can_reopen")),
+        "can_reply": bool(detail.get("can_reply")),
+        "date_of_close_iso": detail.get("date_of_close_iso"),
+        "updated_at_iso": detail.get("updated_at_iso"),
+        "queue_line": detail.get("queue_line") or "cs",
+        "queue_line_label": detail.get("queue_line_label") or "КС",
+        "action_by": detail.get("action_by") or "cs",
+        "action_by_label": detail.get("action_by_label") or "КС",
+        "chat_turn": detail.get("chat_turn") or "subscriber",
+        "chat_turn_label": detail.get("chat_turn_label") or "Ждём абонента",
+        "action_since_iso": detail.get("action_since_iso"),
+        "list_highlight": detail.get("list_highlight") or "none",
+        "communication_state": detail.get("communication_state"),
+        "communication_label": detail.get("communication_label"),
+    }
+
+
 async def list_ticket_messages(
     db: AsyncSession,
     ticket_id: int,
@@ -3180,7 +3193,15 @@ async def list_ticket_messages(
     after_id: int | None = None,
     around_id: int | None = None,
     since_id: int = 0,
-) -> tuple[list[dict[str, Any]], str, dict[int, str], dict[int, list[dict[str, str]]], bool, bool]:
+) -> tuple[
+    list[dict[str, Any]],
+    str,
+    dict[int, str],
+    dict[int, list[dict[str, str]]],
+    bool,
+    bool,
+    dict[str, Any] | None,
+]:
     from app.api.v1.routers.helpdesk import ticket_chat_pages as chat_pages
 
     detail = await load_ticket_detail(db, ticket_id, viewer_id)
@@ -3253,7 +3274,8 @@ async def list_ticket_messages(
         viewer_id=viewer_id,
         subscriber_display_name=sub_display,
     )
-    return raw, mode, receipts, read_by, has_older, has_newer
+    ticket_snapshot = ticket_poll_snapshot_from_detail(detail) if since_id > 0 else None
+    return raw, mode, receipts, read_by, has_older, has_newer, ticket_snapshot
 
 
 async def get_ticket_read_receipts(

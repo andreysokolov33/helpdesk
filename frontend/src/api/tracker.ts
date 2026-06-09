@@ -77,14 +77,63 @@ export type TicketStatusColumn =
   | { kind: "comm"; state: keyof typeof COMMUNICATION_LABELS; label: string }
   | { kind: "workflow"; status: string; label: string };
 
-/** Жирная строка / красная точка — только непрочитанные сообщения (прочтение не снимает «Нужен ответ»). */
+/** Тикет требует внимания: непрочитанное или ожидается ответ staff. */
 export function ticketListNeedsAttention(
-  row: Pick<TrackerTicketListItem, "has_unread">,
+  row: Pick<
+    TrackerTicketListItem,
+    "has_unread" | "chat_turn" | "action_by" | "communication_state" | "list_highlight"
+  >,
 ): boolean {
-  return row.has_unread;
+  if (row.has_unread) return true;
+  if (row.communication_state === "needs_reply") return true;
+  if (row.list_highlight === "chat") return true;
+  return row.chat_turn === "staff" && STAFF_ACTION.includes(row.action_by);
 }
 
-/** Колонка «Исполнитель» — assigned_to (КС) или engineer_id (инженеры). */
+const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
+  "status",
+  "status_label",
+  "priority",
+  "priority_label",
+  "support_line",
+  "support_line_label",
+  "queue_line",
+  "action_by",
+  "chat_turn",
+  "action_since",
+  "list_highlight",
+  "assignee_name",
+  "assignee_role",
+  "assignee_is_viewer",
+  "has_unread",
+  "communication_state",
+  "communication_label",
+  "updated_at",
+  "title",
+  "category_label",
+  "subscriber_name",
+];
+
+function trackerListRowEqual(a: TrackerTicketListItem, b: TrackerTicketListItem): boolean {
+  if (a.id !== b.id) return false;
+  return _LIST_ROW_MERGE_KEYS.every((k) => a[k] === b[k]);
+}
+
+/** Сохраняет ссылки на неизменённые строки — меньше перерисовок при поллинге. */
+export function mergeTrackerListPage(
+  prev: TrackerTicketListItem[],
+  next: TrackerTicketListItem[],
+): TrackerTicketListItem[] {
+  if (prev.length === 0) return next;
+  const prevById = new Map(prev.map((r) => [r.id, r]));
+  return next.map((row) => {
+    const old = prevById.get(row.id);
+    if (old && trackerListRowEqual(old, row)) return old;
+    return row;
+  });
+}
+
+/** Колонка «Исполнитель» — закреплённый оператор КС (assigned_to). */
 export type AssigneePillVariant = "you" | "unassigned" | "engineer" | "support";
 
 export type AssigneePillDisplay = {
@@ -93,11 +142,11 @@ export type AssigneePillDisplay = {
   title?: string;
 };
 
-/** Правила для КС: имя только у support; инженеры/партнёры — «Инженер». */
+/** Имя оператора КС, закреплённого за тикетом; не меняется при смене линии очереди. */
 export function ticketListAssigneePill(
   row: Pick<
     TrackerTicketListItem,
-    "assignee_is_viewer" | "assignee_name" | "assignee_role" | "queue_line"
+    "assignee_is_viewer" | "assignee_name" | "assignee_role"
   > & { support_line?: number },
 ): AssigneePillDisplay {
   if (row.assignee_is_viewer) {
@@ -105,36 +154,24 @@ export function ticketListAssigneePill(
   }
 
   const name = row.assignee_name?.trim() || "";
-  const role = (row.assignee_role || "").trim().toLowerCase();
-  const line = row.queue_line ?? "cs";
   const supportLine = row.support_line;
 
   if (supportLine === 4 && !name) {
     return { label: "Менеджер", variant: "unassigned", title: "Очередь менеджера" };
   }
 
-  if (line === "engineers" || line === "partner") {
-    return { label: "Инженер", variant: "engineer" };
+  if (name) {
+    return { label: name, variant: "support" };
   }
 
-  if (role === "support") {
-    return name
-      ? { label: name, variant: "support" }
-      : { label: "Не назначен", variant: "unassigned" };
-  }
-
-  if (!name && !role) {
-    return { label: "Не назначен", variant: "unassigned" };
-  }
-
-  return { label: "Инженер", variant: "engineer" };
+  return { label: "Не назначен", variant: "unassigned" };
 }
 
 /** @deprecated используйте ticketListAssigneePill */
 export function ticketListAssigneeLabel(
   row: Pick<
     TrackerTicketListItem,
-    "assignee_is_viewer" | "assignee_name" | "assignee_role" | "queue_line"
+    "assignee_is_viewer" | "assignee_name" | "assignee_role"
   >,
 ): string {
   return ticketListAssigneePill(row).label;

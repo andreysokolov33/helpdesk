@@ -305,6 +305,28 @@ class TicketDetailResponse(BaseModel):
     subscriber_account: TicketSubscriberAccountSummary | None = None
 
 
+class TicketPollSnapshot(BaseModel):
+    """Снимок статуса тикета для поллинга сообщений (без тяжёлого detail)."""
+
+    status: str
+    status_label: str
+    is_open: bool
+    can_reopen: bool = False
+    can_reply: bool = True
+    date_of_close_iso: str | None = None
+    updated_at_iso: str | None = None
+    queue_line: str = "cs"
+    queue_line_label: str = "КС"
+    action_by: str = "cs"
+    action_by_label: str = "КС"
+    chat_turn: str = "subscriber"
+    chat_turn_label: str = "Ждём абонента"
+    action_since_iso: str | None = None
+    list_highlight: str = "none"
+    communication_state: str | None = None
+    communication_label: str | None = None
+
+
 class TicketMessagesResponse(BaseModel):
     messages: list[TicketMessageItem]
     chat_mode: str
@@ -312,6 +334,7 @@ class TicketMessagesResponse(BaseModel):
     read_by_receipts: dict[int, list[TicketMessageReadByItem]] = Field(default_factory=dict)
     has_older: bool = False
     has_newer: bool = False
+    ticket: TicketPollSnapshot | None = None
 
 
 class TicketReadReceiptsResponse(BaseModel):

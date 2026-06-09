@@ -184,6 +184,27 @@ export type FetchTicketMessagesOpts = {
   limit?: number;
 };
 
+export type TicketPollSnapshot = Pick<
+  TicketDetail,
+  | "status"
+  | "status_label"
+  | "is_open"
+  | "can_reopen"
+  | "can_reply"
+  | "date_of_close_iso"
+  | "updated_at_iso"
+  | "queue_line"
+  | "queue_line_label"
+  | "action_by"
+  | "action_by_label"
+  | "chat_turn"
+  | "chat_turn_label"
+  | "action_since_iso"
+  | "list_highlight"
+  | "communication_state"
+  | "communication_label"
+>;
+
 export type TicketMessagesResult = {
   messages: TicketMessage[];
   chat_mode: string;
@@ -191,7 +212,42 @@ export type TicketMessagesResult = {
   read_by_receipts?: Record<string, TicketMessageReadBy[]>;
   has_older?: boolean;
   has_newer?: boolean;
+  ticket?: TicketPollSnapshot | null;
 };
+
+const TICKET_POLL_SNAPSHOT_KEYS: (keyof TicketPollSnapshot)[] = [
+  "status",
+  "status_label",
+  "is_open",
+  "can_reopen",
+  "can_reply",
+  "date_of_close_iso",
+  "updated_at_iso",
+  "queue_line",
+  "queue_line_label",
+  "action_by",
+  "action_by_label",
+  "chat_turn",
+  "chat_turn_label",
+  "action_since_iso",
+  "list_highlight",
+  "communication_state",
+  "communication_label",
+];
+
+export function ticketPollSnapshotChanged(
+  prev: TicketDetail,
+  snap: TicketPollSnapshot,
+): boolean {
+  return TICKET_POLL_SNAPSHOT_KEYS.some((k) => prev[k] !== snap[k]);
+}
+
+export function mergeTicketPollSnapshot(
+  prev: TicketDetail,
+  snap: TicketPollSnapshot,
+): TicketDetail {
+  return { ...prev, ...snap };
+}
 
 export type TicketReadReceiptsResult = {
   chat_mode: string;

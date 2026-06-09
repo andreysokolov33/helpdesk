@@ -28,6 +28,7 @@ from app.api.v1.routers.helpdesk.schemas import (
     TicketMessageEditRequest,
     TicketMessageItem,
     TicketMessagesResponse,
+    TicketPollSnapshot,
     TicketReadReceiptsResponse,
     TicketSendMessageResponse,
     HelpdeskMacroItem,
@@ -241,10 +242,7 @@ async def list_tracker_tickets(
                 COMMUNICATION_STATE_LABELS.get(comm_state) if comm_state else None
             )
 
-        if queue_line == "engineers":
-            owner_id = int(m["engineer_id"]) if m.get("engineer_id") is not None else None
-        else:
-            owner_id = int(m["assigned_to"]) if m.get("assigned_to") is not None else None
+        owner_id = int(m["assigned_to"]) if m.get("assigned_to") is not None else None
         assignee_is_viewer = bool(owner_id is not None and owner_id == viewer_skystream_id)
 
         if cat_name and cat_parent:
@@ -716,7 +714,7 @@ async def get_ticket_messages(
             detail="since_id нельзя сочетать с before_id, after_id или around_id",
         )
 
-    raw, mode, receipts, read_by, has_older, has_newer = await ticket_svc.list_ticket_messages(
+    raw, mode, receipts, read_by, has_older, has_newer, ticket_snap = await ticket_svc.list_ticket_messages(
         db,
         ticket_id,
         int(user["user_id"]),
@@ -734,6 +732,7 @@ async def get_ticket_messages(
         read_by_receipts=read_by,
         has_older=has_older,
         has_newer=has_newer,
+        ticket=TicketPollSnapshot(**ticket_snap) if ticket_snap else None,
     )
 
 

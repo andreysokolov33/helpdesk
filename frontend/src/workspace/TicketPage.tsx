@@ -26,8 +26,11 @@ import {
   fetchTicketMessages,
   fetchTicketReadReceipts,
   formatMsgTime,
+  mergeTicketPollSnapshot,
+  ticketPollSnapshotChanged,
   closeTicket,
   reopenTicket,
+  type TicketPollSnapshot,
   deleteTicketMessage,
   sendTicketMessage,
   takeTicketBackToKs,
@@ -435,6 +438,33 @@ export default function TicketPage() {
     }
   }, [ticketId]);
 
+  const detailRef = useRef<TicketDetail | null>(null);
+  useEffect(() => {
+    detailRef.current = detail;
+  }, [detail]);
+
+  const clearComposerDrafts = useCallback(() => {
+    setReplyTo(null);
+    setEditingId(null);
+    setEditingAttachments([]);
+    setDetachPendingIds(new Set());
+    setUploads([]);
+    setCommentEditingId(null);
+    setCommentDraft("");
+  }, []);
+
+  const applyTicketPollSnapshot = useCallback(
+    (snap: TicketPollSnapshot) => {
+      const prev = detailRef.current;
+      if (!prev || !ticketPollSnapshotChanged(prev, snap)) return;
+      if (prev.is_open && !snap.is_open) {
+        clearComposerDrafts();
+      }
+      setDetail(mergeTicketPollSnapshot(prev, snap));
+    },
+    [clearComposerDrafts],
+  );
+
   const applyReadReceiptsUpdate = useCallback((raw: TicketReadReceiptsResult) => {
       const { receipts, readBy } = mergeIncomingReadState(
         readReceiptsRef.current,
@@ -467,6 +497,9 @@ export default function TicketPage() {
     const sinceId = maxLoadedMessageId(messagesRef.current);
     try {
       const res = await fetchTicketMessages(ticketId, { sinceId });
+      if (res.ticket) {
+        applyTicketPollSnapshot(res.ticket);
+      }
       const { receipts, readBy } = mergeIncomingReadState(
         readReceiptsRef.current,
         readByReceiptsRef.current,
@@ -511,7 +544,7 @@ export default function TicketPage() {
     } catch {
       /* поллинг не мешает работе чата */
     }
-  }, [ticketId]);
+  }, [ticketId, applyTicketPollSnapshot]);
 
   const pollComments = useCallback(async () => {
     if (!Number.isFinite(ticketId) || ticketId <= 0) return;
@@ -1545,10 +1578,22 @@ export default function TicketPage() {
                       subscriberUnreadCount={subscriberChatUnread}
                     />
                   ) : null}
-                  <div className="tk-no-reply">
-                    {isCommentsPanel
-                      ? "Тикет закрыт — служебные комментарии доступны только для просмотра"
-                      : "Тикет закрыт — переписка доступна только для просмотра"}
+                  <div className="tk-closed-bar">
+                    <div className="tk-no-reply">
+                      {isCommentsPanel
+                        ? "Тикет закрыт — служебные комментарии доступны только для просмотра"
+                        : "Тикет закрыт — переписка доступна только для просмотра"}
+                    </div>
+                    {detail.can_reopen ? (
+                      <button
+                        type="button"
+                        className="tb3 tk-reopen-btn"
+                        disabled={reopenLoading}
+                        onClick={() => void handleReopenTicket()}
+                      >
+                        {reopenLoading ? "Открываю…" : "Переоткрыть"}
+                      </button>
+                    ) : null}
                   </div>
                 </>
               ) : isCommentsPanel ? (
