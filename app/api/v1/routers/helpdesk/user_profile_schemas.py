@@ -13,6 +13,7 @@ class ProfilePersonal(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     id_doc: Optional[str] = None
+    active_contract: Optional[str] = None
     is_juridical: int
     entity_label: str
     user_status: Optional[int] = None
@@ -52,6 +53,8 @@ class ProfileTariffActive(BaseModel):
     unfreeze_at: Optional[str] = None
     frozen_remaining_label: Optional[str] = None
     freeze_reason: Optional[str] = None
+    freeze_blocked_message: Optional[str] = None
+    unfreeze_blocked_message: Optional[str] = None
     can_freeze: bool = False
     can_unfreeze: bool = False
     can_cancel_planned_freeze: bool = False

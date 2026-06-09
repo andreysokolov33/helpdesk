@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -142,6 +142,31 @@ def jur_traffic_overrun_mb(
     if consumed > int(jur_normal):
         return bytes_to_mb(consumed - int(jur_normal))
     return None
+
+
+def format_date_ru(value: date | datetime | None) -> str | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        value = value.date()
+    return value.strftime("%d.%m.%Y")
+
+
+def format_jur_active_contract(row: dict[str, Any] | None) -> str | None:
+    """Номер действующего договора ЮЛ: «{first}{num}/{year}{last} от {effective_date}»."""
+    if not row:
+        return None
+    first = (row.get("first_letter") or "").strip()
+    last = (row.get("last_letter") or "").strip()
+    num = row.get("number")
+    year = row.get("year")
+    num_str = "" if num is None else str(num)
+    year_str = "" if year is None else str(year)
+    label = f"{first}{num_str}/{year_str}{last}"
+    eff = format_date_ru(row.get("effective_date"))
+    if eff:
+        return f"{label} от {eff}"
+    return label or None
 
 
 def format_dt_msk(dt: datetime | None, *, time_sep: str = ", ", short_year: bool = False) -> str | None:

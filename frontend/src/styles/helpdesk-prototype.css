@@ -1178,6 +1178,8 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
   margin:0;font-size:13px;font-weight:600;line-height:1.55;color:var(--i2)
 }
 .up-tariff-empty__text strong{color:var(--ink);font-weight:800}
+.up-tariff-empty--archived{border-color:var(--wn);background:var(--wbg)}
+.up-tariff-empty--archived .up-tariff-empty__title{color:var(--wn)}
 [data-theme="dark"] .up-tariff-empty,
 [data-theme="dark"] .up-tickets-empty{
   background:rgba(255,255,255,.04);border-color:var(--lm)

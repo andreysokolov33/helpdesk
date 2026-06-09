@@ -40,6 +40,7 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     format_speed_display,
     format_valid_date_countdown,
     format_valid_date_remaining,
+    format_jur_active_contract,
     jur_frozen_traffic_mb,
     jur_traffic_overrun_mb,
     parse_speed_line,
@@ -70,6 +71,16 @@ from app.models.users import TrackerTickets, User, UserDetails, UserFreezeTariff
 
 _ENTITY = {0: "Физическое лицо", 1: "Физическое лицо", 2: "Юридическое лицо"}
 _STATUS = {1: "Активен", 2: "Заморожен", 3: "В архиве"}
+_FREEZE_ALREADY_USED_MSG = (
+    "В рамках данного тарифа абоненту уже был заморожен тарифный план. "
+    "Если абоненту требуется повторная заморозка, создайте тикет инженерам "
+    "и опишите ситуацию, чтобы они приняли решение о повторной заморозке."
+)
+_UNFREEZE_TECH_REASON_MSG = (
+    "Данный абонент был заморожен по техническим причинам. "
+    "Создайте заявку инженерам, чтобы получить детали заморозки "
+    "и примерные сроки разморозки тарифа абонента"
+)
 
 
 async def _require_juridical_subscriber(session: AsyncSession, user_id: int) -> dict[str, Any]:
@@ -97,6 +108,31 @@ async def _require_physical_subscriber(session: AsyncSession, user_id: int) -> d
 async def _load_personal(session: AsyncSession, user_id: int) -> ProfilePersonal:
     personal, _balance = await _load_personal_with_balance(session, user_id)
     return personal
+
+
+async def _load_active_jur_contract(session: AsyncSession, user_id: int) -> str | None:
+    """Действующий договор ЮЛ: при нескольких — с наименьшим number (старший)."""
+    row = (
+        await session.execute(
+            text("""
+                SELECT
+                    jcl2.first_letter,
+                    jcl2."year",
+                    jcl2."number",
+                    jcl2.last_letter,
+                    jcl2.effective_date
+                FROM oss.jur_client_list jcl
+                JOIN oss.jur_contract_list jcl2 ON jcl2.juridical_id = jcl.id
+                JOIN users."user" u ON u.juridical_id = jcl.id
+                WHERE u.id = :uid
+                  AND jcl2.status = 'Действует'
+                ORDER BY jcl2."number" ASC NULLS LAST
+                LIMIT 1
+            """),
+            {"uid": user_id},
+        )
+    ).mappings().one_or_none()
+    return format_jur_active_contract(dict(row) if row else None)
 
 
 async def _load_personal_with_balance(
@@ -148,11 +184,14 @@ async def _load_personal_with_balance(
         raise HTTPException(status_code=404, detail="Абонент не найден")
 
     is_jur = int(row["is_juridical"] or 0)
+    active_contract: str | None = None
     if is_jur == 2:
         name = (row["short_name_organization"] or row["full_name"] or "").strip()
         email = row["email_organization"]
         phone = row["phone_organization"]
         id_doc = (row["inn"] or "").strip() or None
+        contract_label = await _load_active_jur_contract(session, user_id)
+        active_contract = contract_label or "Не удалось найти договор"
     else:
         parts = [row["ud_surname"], row["ud_name"], row["ud_patronymic"]]
         name = " ".join(p for p in parts if p and str(p).strip()).strip() or (row["full_name"] or "")
@@ -168,6 +207,7 @@ async def _load_personal_with_balance(
         email=(email or "").strip() or None,
         phone=(phone or "").strip() or None,
         id_doc=id_doc,
+        active_contract=active_contract,
         is_juridical=is_jur,
         entity_label=_ENTITY.get(is_jur, "Физическое лицо"),
         user_status=us,
@@ -186,6 +226,41 @@ def _online_from_radacct_summary(
         last_session_end=last_end,
         last_session_end_label=format_dt_msk(last_end) if last_end else None,
     )
+
+
+def _freeze_reason_code(freeze: Optional[dict[str, Any]]) -> int:
+    if not freeze:
+        return 0
+    code = freeze.get("reason_code")
+    if code is None:
+        raw = freeze.get("reason")
+        if raw is not None and str(raw).strip().isdigit():
+            code = int(str(raw).strip())
+    return int(code or 0)
+
+
+def _was_tariff_frozen_before(trow: Optional[dict[str, Any]]) -> bool:
+    return int((trow or {}).get("was_frozen") or 0) == 1
+
+
+async def _assert_physical_can_freeze(session: AsyncSession, user_id: int) -> None:
+    row = await UsersDAO.find_one_or_none(session, id=user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
+    login = (row.get("login") or "").strip()
+    if not login:
+        raise HTTPException(status_code=400, detail="У абонента не задан логин")
+    trow = await _load_tariff_row(session, user_id, login)
+    if _was_tariff_frozen_before(trow):
+        raise HTTPException(status_code=400, detail=_FREEZE_ALREADY_USED_MSG)
+
+
+async def _assert_physical_can_unfreeze(session: AsyncSession, user_id: int) -> None:
+    freeze = await _load_freeze(session, user_id)
+    if not freeze or not freeze.get("is_frozen"):
+        raise HTTPException(status_code=400, detail="Тариф не заморожен")
+    if _freeze_reason_code(freeze) == 4:
+        raise HTTPException(status_code=400, detail=_UNFREEZE_TECH_REASON_MSG)
 
 
 async def _load_tariff_row(session: AsyncSession, user_id: int, login: str) -> Optional[dict[str, Any]]:
@@ -212,6 +287,7 @@ async def _load_tariff_row(session: AsyncSession, user_id: int, login: str) -> O
                 END AS is_active,
                 r.groupname AS rad_groupname,
                 r.sname AS rad_sname,
+                r.was_frozen,
                 usd.traffic_renew_count,
                 usd.valid_date,
                 u.traffic_update_hour AS msk_hour,
@@ -219,7 +295,7 @@ async def _load_tariff_row(session: AsyncSession, user_id: int, login: str) -> O
                 ru.now_day_traffic AS unlim_day_traffic
             FROM users."user" u
             LEFT JOIN LATERAL (
-                SELECT r.groupname, r.sname, r.priority
+                SELECT r.groupname, r.sname, r.priority, r.was_frozen
                 FROM radius.radusergroup r
                 WHERE lower(r.username) = lower(u.login)
                 ORDER BY r.priority NULLS LAST
@@ -329,6 +405,7 @@ def _build_tariff(
         if is_jur == 2 and jur_normal is not None and full:
             jur_main_remain, jur_dop_used = jur_frozen_traffic_mb(remain, full, jur_normal)
             overrun = jur_dop_used
+        tech_freeze = is_fl and _freeze_reason_code(freeze) == 4
         return ProfileTariffActive(
             state="frozen",
             tariff_name=name,
@@ -343,7 +420,8 @@ def _build_tariff(
             unfreeze_at=format_dt_msk(freeze.get("date_unfreeze")),
             frozen_remaining_label=format_seconds_remaining(freeze.get("remaining_time")),
             freeze_reason=freeze.get("reason_short") or freeze.get("reason"),
-            can_unfreeze=is_fl,
+            unfreeze_blocked_message=_UNFREEZE_TECH_REASON_MSG if tech_freeze else None,
+            can_unfreeze=is_fl and not tech_freeze,
             can_freeze=False,
             can_cancel_planned_freeze=False,
             can_remove_ended_tariff=False,
@@ -403,6 +481,9 @@ def _build_tariff(
     if tariff_ended:
         remain_mb = 0.0
 
+    was_frozen_before = _was_tariff_frozen_before(trow)
+    freeze_allowed = is_fl and is_active and not planned and not was_frozen_before
+
     return ProfileTariffActive(
         state=state,
         tariff_name=(trow or {}).get("tariff_name") or (freeze.get("tariff") if freeze else "—"),
@@ -429,7 +510,12 @@ def _build_tariff(
         ),
         planned_freeze_at=format_dt_msk(freeze.get("date_freeze")) if planned else None,
         unfreeze_at=format_dt_msk(freeze.get("date_unfreeze")) if planned else None,
-        can_freeze=is_fl and is_active and not planned,
+        freeze_blocked_message=(
+            _FREEZE_ALREADY_USED_MSG
+            if is_fl and is_active and not planned and was_frozen_before
+            else None
+        ),
+        can_freeze=freeze_allowed,
         can_unfreeze=False,
         can_cancel_planned_freeze=is_fl and planned,
         can_remove_ended_tariff=is_fl and tariff_ended,
@@ -1010,6 +1096,7 @@ async def unfreeze_tariff(
     request: Request,
 ) -> ActionMessage:
     await _require_physical_subscriber(session, user_id)
+    await _assert_physical_can_unfreeze(session, user_id)
     await _call_radius_proc(session, "CALL radius.unfreeze_tariff(:uid)", {"uid": user_id})
     await _log_tariff_action(
         session,
@@ -1061,6 +1148,7 @@ async def apply_freeze(
     request: Request,
 ) -> ActionMessage:
     await _require_physical_subscriber(session, user_id)
+    await _assert_physical_can_freeze(session, user_id)
     now = datetime.now(timezone.utc)
     immediate = date_freeze is None or date_freeze <= now
 

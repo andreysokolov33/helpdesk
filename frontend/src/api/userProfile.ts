@@ -5,6 +5,7 @@ export type ProfilePersonal = {
   email: string | null;
   phone: string | null;
   id_doc: string | null;
+  active_contract: string | null;
   is_juridical: number;
   entity_label: string;
   user_status: number | null;
@@ -43,6 +44,8 @@ export type ProfileTariff = {
   unfreeze_at: string | null;
   frozen_remaining_label: string | null;
   freeze_reason: string | null;
+  freeze_blocked_message: string | null;
+  unfreeze_blocked_message: string | null;
   can_freeze: boolean;
   can_unfreeze: boolean;
   can_cancel_planned_freeze: boolean;

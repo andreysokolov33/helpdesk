@@ -27,9 +27,11 @@ import { categoryBadgeClass, supportLineBadgeClass, supportLineLabel } from "@/u
 
 type ModalKind =
   | "unfreeze"
+  | "unfreeze_blocked"
   | "unarchive"
   | "disconnect"
   | "freeze"
+  | "freeze_blocked"
   | "cancel_planned_freeze"
   | "remove_ended_tariff"
   | "password_reset"
@@ -137,6 +139,7 @@ function TariffCard({
   netflowNote,
   netflowTariff,
   isJuridical,
+  userStatus,
   onFreeze,
   onUnfreeze,
   onCancelPlan,
@@ -151,6 +154,7 @@ function TariffCard({
   netflowNote: string | null;
   netflowTariff: string | null;
   isJuridical: number;
+  userStatus: number | null;
   openSessionsCount: number;
   disconnectSessionsRemaining: number;
   disconnectSessionsLimit: number;
@@ -161,6 +165,21 @@ function TariffCard({
   onRemoveEndedTariff?: () => void;
   onDisconnect: () => void;
 }) {
+  if (userStatus === 3) {
+    return (
+      <div className="card up-card up-tariff up-tariff-main">
+        <div className="ct up-tariff-title">Тарифный план</div>
+        <div className="up-tariff-empty up-tariff-empty--archived" role="status">
+          <div className="up-tariff-empty__title">Учётная запись абонента архивирована</div>
+          <p className="up-tariff-empty__text">
+            Он не может ни войти в личный кабинет, ни работать в нашей сети. Если он хочет продолжить
+            пользоваться этой учётной записью, восстановите УЗ.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (!tariff && !netflowTariff) {
     return (
       <div className="card up-card up-tariff up-tariff-main">
@@ -191,7 +210,9 @@ function TariffCard({
     canManageTariff &&
     Boolean(
       tariff?.can_unfreeze ||
+        tariff?.unfreeze_blocked_message ||
         tariff?.can_freeze ||
+        tariff?.freeze_blocked_message ||
         (isPlannedFreeze && tariff?.can_cancel_planned_freeze),
     );
   const freezeHandler = tariff?.can_unfreeze
@@ -292,7 +313,7 @@ function TariffCard({
                 <span className="up-frozen-unfreeze-missing">не установлена</span>
               )}
             </div>
-            {canManageTariff && tariff.can_unfreeze ? (
+            {canManageTariff && (tariff.can_unfreeze || tariff.unfreeze_blocked_message) ? (
               <button type="button" className="up-frozen-unfreeze-btn" onClick={onUnfreeze}>
                 Разморозить тариф
               </button>
@@ -658,6 +679,18 @@ export default function UserProfilePage() {
                     <span className="up-k">{idDocLabel}</span>
                     <span className="up-v">{p.id_doc ?? "—"}</span>
                   </div>
+                  {p.is_juridical === 2 ? (
+                    <div className="up-kv">
+                      <span className="up-k">Договор</span>
+                      <span
+                        className={
+                          p.active_contract === "Не удалось найти договор" ? "up-v bad" : "up-v"
+                        }
+                      >
+                        {p.active_contract ?? "—"}
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="up-kv">
                     <span className="up-k">Станция</span>
                     <span className="up-v">{p.station_name ?? "—"}</span>
@@ -669,17 +702,28 @@ export default function UserProfilePage() {
                 netflowNote={data.netflow_note}
                 netflowTariff={data.netflow_tariff}
                 isJuridical={p.is_juridical}
+                userStatus={p.user_status}
                 openSessionsCount={data.open_sessions_count}
                 disconnectSessionsRemaining={data.disconnect_sessions_remaining}
                 disconnectSessionsLimit={data.disconnect_sessions_limit}
                 disconnectSessionsWindowMinutes={data.disconnect_sessions_window_minutes}
                 onFreeze={() => {
+                  if (data.tariff?.freeze_blocked_message) {
+                    setModal("freeze_blocked");
+                    return;
+                  }
                   setFreezeDate("");
                   setUnfreezeDate("");
                   setShowUnfreezeDate(false);
                   setModal("freeze");
                 }}
-                onUnfreeze={() => setModal("unfreeze")}
+                onUnfreeze={() => {
+                  if (data.tariff?.unfreeze_blocked_message) {
+                    setModal("unfreeze_blocked");
+                    return;
+                  }
+                  setModal("unfreeze");
+                }}
                 onCancelPlan={() => setModal("cancel_planned_freeze")}
                 onRemoveEndedTariff={() => setModal("remove_ended_tariff")}
                 onDisconnect={() => {
@@ -896,6 +940,34 @@ export default function UserProfilePage() {
                     onClick={() => runAction(() => postUnfreeze(uid))}
                   >
                     Разморозить тариф
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {modal === "unfreeze_blocked" ? (
+              <>
+                <div className="up-modal-title">Разморозка недоступна</div>
+                <p className="up-modal-lead">
+                  {data.tariff?.unfreeze_blocked_message ??
+                    "Данный абонент был заморожен по техническим причинам. Создайте заявку инженерам, чтобы получить детали заморозки и примерные сроки разморозки тарифа абонента"}
+                </p>
+                <div className="up-modal-actions">
+                  <button type="button" className="up-btn sec" onClick={() => setModal(null)}>
+                    Понятно
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {modal === "freeze_blocked" ? (
+              <>
+                <div className="up-modal-title">Заморозка недоступна</div>
+                <p className="up-modal-lead">
+                  {data.tariff?.freeze_blocked_message ??
+                    "В рамках данного тарифа абоненту уже был заморожен тарифный план. Если абоненту требуется повторная заморозка, создайте тикет инженерам и опишите ситуацию, чтобы они приняли решение о повторной заморозке."}
+                </p>
+                <div className="up-modal-actions">
+                  <button type="button" className="up-btn sec" onClick={() => setModal(null)}>
+                    Понятно
                   </button>
                 </div>
               </>
