@@ -292,6 +292,7 @@ async def list_tracker_tickets(
                 assignee_name=assignee_name,
                 assignee_role=assignee_role,
                 assignee_is_viewer=assignee_is_viewer,
+                assigned_to=int(m["assigned_to"]) if m.get("assigned_to") is not None else None,
                 has_unread=has_unread,
                 communication_state=comm_state,
                 communication_label=comm_label,
@@ -550,11 +551,11 @@ async def transfer_ticket_to_engineers(
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> TicketDetailResponse:
-    """Передача тикета на линию инженеров (support_line=2) с классификацией."""
+    """Передача тикета на линию инженеров (support_line=2) без смены категории КС."""
     data = await ticket_svc.transfer_ticket_to_engineers(
         db,
         ticket_id,
-        int(payload.category_id),
+        payload.category_id,
         payload.comment,
         int(user["user_id"]),
     )
@@ -583,15 +584,19 @@ async def close_ticket(
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> TicketDetailResponse:
-    """Закрытие тикета с классификацией и опциональным служебным комментарием."""
-    data = await ticket_svc.close_ticket(
-        db,
-        ticket_id,
-        int(payload.category_id),
-        payload.comment,
-        int(user["user_id"]),
+    """Заглушка: закрытие с классификацией отключено в UI КС (ticket_svc.close_ticket сохранён)."""
+    raise HTTPException(
+        status_code=403,
+        detail="Закрытие тикета из интерфейса КС временно недоступно",
     )
-    return TicketDetailResponse(**data)
+    # data = await ticket_svc.close_ticket(
+    #     db,
+    #     ticket_id,
+    #     int(payload.category_id),
+    #     payload.comment,
+    #     int(user["user_id"]),
+    # )
+    # return TicketDetailResponse(**data)
 
 
 @router.post("/{ticket_id}/reopen", response_model=TicketDetailResponse)

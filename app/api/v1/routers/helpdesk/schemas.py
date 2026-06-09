@@ -39,6 +39,7 @@ class TrackerTicketListItem(BaseModel):
     assignee_role: Optional[str] = None
     assignee_is_viewer: bool = False
     """True, если тикет назначен на текущего оператора (users.skystream_users.id)."""
+    assigned_to: Optional[int] = None
     has_unread: bool = False
     """Есть сообщения абонента, которые ещё не прочитал ни один сотрудник."""
     communication_state: Optional[str] = None
@@ -180,7 +181,11 @@ class LinkTicketSubscriberRequest(BaseModel):
 
 
 class TransferTicketToEngineersRequest(BaseModel):
-    category_id: int = Field(..., ge=1, description="ID подкатегории (лист ticket_categories)")
+    category_id: int | None = Field(
+        None,
+        ge=1,
+        description="ID подкатегории (не используется операторами КС; для совместимости API)",
+    )
     comment: str | None = Field(
         None,
         max_length=8000,
@@ -293,6 +298,7 @@ class TicketDetailResponse(BaseModel):
     assignee_name: str | None = None
     assignee_role: str | None = None
     assignee_is_viewer: bool = False
+    assigned_to: int | None = None
     station_name: str | None = None
     station_id: int | None = None
     date_of_create_iso: str | None = None

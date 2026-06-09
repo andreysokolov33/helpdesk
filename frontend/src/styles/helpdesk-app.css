@@ -917,24 +917,27 @@
 
 #tp-ticket .tk-sidebar .kv {
   display: grid;
-  grid-template-columns: minmax(72px, 38%) minmax(0, 1fr);
-  gap: 4px 10px;
+  grid-template-columns: minmax(84px, 44%) minmax(0, 1fr);
+  gap: 6px 12px;
   align-items: start;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-size: 11px;
 }
 
 #tp-ticket .tk-sidebar .kvk {
   color: var(--i3);
-  line-height: 1.35;
-  padding-top: 2px;
+  line-height: 1.4;
+  padding-top: 3px;
+  word-break: break-word;
+  hyphens: auto;
 }
 
 #tp-ticket .tk-sidebar .kvv {
   font-weight: 600;
   text-align: right;
   min-width: 0;
-  line-height: 1.35;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 #tp-ticket .tk-sidebar .kvv .ch-status,
@@ -948,17 +951,30 @@
   vertical-align: top;
   white-space: normal;
   text-align: right;
+  word-break: break-word;
 }
 
-#tp-ticket .tk-sidebar .tk-category-kv {
+#tp-ticket .tk-sidebar .tk-ticket-meta .tk-category-kv {
   display: block;
+  margin-bottom: 10px;
 }
 
 #tp-ticket .tk-sidebar .tk-category-kv__top {
   display: grid;
-  grid-template-columns: minmax(72px, 38%) minmax(0, 1fr);
-  gap: 4px 10px;
+  grid-template-columns: minmax(84px, 44%) minmax(0, 1fr);
+  gap: 6px 12px;
   align-items: start;
+}
+
+#tp-ticket .tk-sidebar .tk-category-kv__child {
+  margin-top: 4px;
+  padding-left: calc(44% + 12px);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: right;
+  color: var(--i2);
+  word-break: break-word;
 }
 
 #tp-ticket .tk-side-account {

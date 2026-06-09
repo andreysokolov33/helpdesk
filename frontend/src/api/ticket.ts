@@ -104,6 +104,7 @@ export type TicketDetail = {
   assignee_name?: string | null;
   assignee_role?: string | null;
   assignee_is_viewer: boolean;
+  assigned_to?: number | null;
   station_name?: string | null;
   station_id?: number | null;
   date_of_create_iso?: string | null;
@@ -140,14 +141,13 @@ export async function linkTicketSubscriber(ticketId: number, userId: number): Pr
 
 export async function transferTicketToEngineers(
   ticketId: number,
-  payload: { categoryId: number; comment?: string },
+  payload?: { comment?: string },
 ): Promise<TicketDetail> {
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/transfer-to-engineers`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      category_id: payload.categoryId,
-      comment: payload.comment?.trim() || null,
+      comment: payload?.comment?.trim() || null,
     }),
   });
 }

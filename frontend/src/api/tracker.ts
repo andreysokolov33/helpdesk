@@ -31,6 +31,7 @@ export type TrackerTicketListItem = {
   assignee_name: string | null;
   assignee_role: string | null;
   assignee_is_viewer: boolean;
+  assigned_to: number | null;
   has_unread: boolean;
   communication_state: "needs_reply" | "awaiting_subscriber" | null;
   communication_label: string | null;
@@ -105,6 +106,7 @@ const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
   "assignee_name",
   "assignee_role",
   "assignee_is_viewer",
+  "assigned_to",
   "has_unread",
   "communication_state",
   "communication_label",
@@ -133,8 +135,8 @@ export function mergeTrackerListPage(
   });
 }
 
-/** Колонка «Исполнитель» — закреплённый оператор КС (assigned_to). */
-export type AssigneePillVariant = "you" | "unassigned" | "engineer" | "support";
+/** Колонка «Исполнитель» — только assigned_to (оператор КС). */
+export type AssigneePillVariant = "you" | "unassigned" | "support";
 
 export type AssigneePillDisplay = {
   label: string;
@@ -142,36 +144,34 @@ export type AssigneePillDisplay = {
   title?: string;
 };
 
-/** Имя оператора КС, закреплённого за тикетом; не меняется при смене линии очереди. */
+function ticketHasCsAssignee(
+  row: Pick<TrackerTicketListItem, "assigned_to" | "assignee_name">,
+): boolean {
+  if (row.assigned_to != null && row.assigned_to > 0) return true;
+  return Boolean(row.assignee_name?.trim());
+}
+
+/** Вы — если assigned_to это я; иначе КС или «Нет исполнителя». */
 export function ticketListAssigneePill(
   row: Pick<
     TrackerTicketListItem,
-    "assignee_is_viewer" | "assignee_name" | "assignee_role"
-  > & { support_line?: number },
+    "assignee_is_viewer" | "assignee_name" | "assigned_to"
+  >,
 ): AssigneePillDisplay {
   if (row.assignee_is_viewer) {
     return { label: "Вы", variant: "you" };
   }
-
-  const name = row.assignee_name?.trim() || "";
-  const supportLine = row.support_line;
-
-  if (supportLine === 4 && !name) {
-    return { label: "Менеджер", variant: "unassigned", title: "Очередь менеджера" };
+  if (ticketHasCsAssignee(row)) {
+    return { label: "КС", variant: "support" };
   }
-
-  if (name) {
-    return { label: name, variant: "support" };
-  }
-
-  return { label: "Не назначен", variant: "unassigned" };
+  return { label: "Нет исполнителя", variant: "unassigned" };
 }
 
 /** @deprecated используйте ticketListAssigneePill */
 export function ticketListAssigneeLabel(
   row: Pick<
     TrackerTicketListItem,
-    "assignee_is_viewer" | "assignee_name" | "assignee_role"
+    "assignee_is_viewer" | "assignee_name" | "assigned_to"
   >,
 ): string {
   return ticketListAssigneePill(row).label;

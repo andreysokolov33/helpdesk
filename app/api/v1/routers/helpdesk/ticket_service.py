@@ -2225,6 +2225,7 @@ async def load_ticket_detail(
         "assignee_name": d.get("assignee_name"),
         "assignee_role": d.get("assignee_role"),
         "assignee_is_viewer": bool(owner_id is not None and owner_id == viewer_id),
+        "assigned_to": int(d["assigned_to"]) if d.get("assigned_to") is not None else None,
         "station_name": station,
         "station_id": int(d["station_id"]) if d.get("station_id") else None,
         "date_of_create": d["date_of_create"],
@@ -2536,10 +2537,39 @@ async def _assert_ticket_open_for_write(db: AsyncSession, ticket_id: int) -> Non
         raise HTTPException(status_code=400, detail="Тикет закрыт")
 
 
+async def _maybe_claim_cs_assignee(
+    db: AsyncSession,
+    ticket_id: int,
+    operator_id: int,
+    operator_role: str | None,
+) -> None:
+    """Первое сообщение оператора КС: закрепить тикет (assigned_to), если исполнитель не задан."""
+    if (operator_role or "").strip().lower() != "support":
+        return
+    row = (
+        await db.execute(
+            text("SELECT assigned_to FROM users.tracker_tickets WHERE id = :id"),
+            {"id": ticket_id},
+        )
+    ).mappings().first()
+    if not row or row.get("assigned_to") is not None:
+        return
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET assigned_to = :operator_id, updated_at = NOW()
+            WHERE id = :ticket_id AND assigned_to IS NULL
+            """
+        ),
+        {"operator_id": operator_id, "ticket_id": ticket_id},
+    )
+
+
 async def transfer_ticket_to_engineers(
     db: AsyncSession,
     ticket_id: int,
-    category_id: int,
+    category_id: int | None,
     comment: str | None,
     author_id: int,
 ) -> dict[str, Any]:
@@ -2556,30 +2586,43 @@ async def transfer_ticket_to_engineers(
     if _coerce_queue_line(row) != "cs":
         raise HTTPException(status_code=400, detail="Тикет не на линии КС")
 
-    catalog = catalog_source_for_ticket(row.get("source"))
-    await _validate_leaf_category(db, category_id=category_id, catalog_source=catalog)
+    if category_id is not None:
+        catalog = catalog_source_for_ticket(row.get("source"))
+        await _validate_leaf_category(db, category_id=category_id, catalog_source=catalog)
 
     now = datetime.now(timezone.utc)
     old_category_id = row.get("category_id")
-    new_category_id = int(category_id)
+    new_category_id = int(category_id) if category_id is not None else None
     queue_snap = on_escalate_to_engineers(
         chat_turn=_coerce_chat_turn(row),
         at=now,
     )
 
-    await db.execute(
-        text(
-            """
-            UPDATE users.tracker_tickets
-            SET category_id = :category_id,
-                assigned_to = NULL,
-                engineer_id = NULL,
-                updated_at = :now
-            WHERE id = :ticket_id
-            """
-        ),
-        {"category_id": new_category_id, "now": now, "ticket_id": ticket_id},
-    )
+    if new_category_id is not None:
+        await db.execute(
+            text(
+                """
+                UPDATE users.tracker_tickets
+                SET category_id = :category_id,
+                    engineer_id = NULL,
+                    updated_at = :now
+                WHERE id = :ticket_id
+                """
+            ),
+            {"category_id": new_category_id, "now": now, "ticket_id": ticket_id},
+        )
+    else:
+        await db.execute(
+            text(
+                """
+                UPDATE users.tracker_tickets
+                SET engineer_id = NULL,
+                    updated_at = :now
+                WHERE id = :ticket_id
+                """
+            ),
+            {"now": now, "ticket_id": ticket_id},
+        )
     await _apply_queue_snapshot(
         db,
         ticket_id,
@@ -2613,7 +2656,7 @@ async def transfer_ticket_to_engineers(
         },
     )
 
-    if old_category_id != new_category_id:
+    if new_category_id is not None and old_category_id != new_category_id:
         _add_line_history_event(
             db,
             ticket_id=ticket_id,
@@ -2842,13 +2885,13 @@ async def take_ticket_back_to_ks(
         text(
             """
             UPDATE users.tracker_tickets
-            SET assigned_to = :assigned_to,
-                engineer_id = NULL,
+            SET engineer_id = NULL,
+                assigned_to = COALESCE(assigned_to, :author_id),
                 updated_at = :now
             WHERE id = :ticket_id
             """
         ),
-        {"assigned_to": author_id, "now": now, "ticket_id": ticket_id},
+        {"now": now, "ticket_id": ticket_id, "author_id": author_id},
     )
     await _apply_queue_snapshot(
         db,
@@ -3603,6 +3646,7 @@ async def send_mail_reply(
     created = ins.get("date_tz")
 
     now = datetime.now(timezone.utc)
+    await _maybe_claim_cs_assignee(db, ticket_id, operator_id, operator_role)
     await _apply_staff_chat_queue_update(
         db, ticket_id, operator_role=operator_role, at=now,
     )
@@ -3715,6 +3759,7 @@ async def send_tracker_reply(
     )
     db.add(msg)
     await db.flush()
+    await _maybe_claim_cs_assignee(db, ticket_id, operator_id, operator_role)
     await _apply_staff_chat_queue_update(
         db, ticket_id, operator_role=operator_role, at=now,
     )

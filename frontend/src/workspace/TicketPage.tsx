@@ -9,7 +9,6 @@ import TicketMessageContextMenu, { type MessageMenuAction } from "@/components/T
 import TicketChatScrollDown from "@/components/TicketChatScrollDown";
 import TicketMessageReplyQuote from "@/components/TicketMessageReplyQuote";
 import { postDisconnect, type FastCheckResponse } from "@/api/userProfile";
-import TicketClassifyModal, { type ClassifyAction } from "@/workspace/TicketClassifyModal";
 import TicketFastCheckDrawer from "@/workspace/TicketFastCheckDrawer";
 import { formatWorkDurationSince } from "@/utils/ticketFormat";
 import {
@@ -19,6 +18,8 @@ import {
 import {
   isLkTicketSource,
   priorityBadgeClass,
+  queueLineBadgeClass,
+  queueLineShortLabel,
   sourceBadgeClass,
 } from "@/utils/ticketLabels";
 import {
@@ -26,9 +27,9 @@ import {
   fetchTicketMessages,
   fetchTicketReadReceipts,
   formatMsgTime,
+  formatTicketCreated,
   mergeTicketPollSnapshot,
   ticketPollSnapshotChanged,
-  closeTicket,
   reopenTicket,
   type TicketPollSnapshot,
   deleteTicketMessage,
@@ -43,7 +44,6 @@ import {
   type TicketMessageReadBy,
   type TicketReadReceiptsResult,
 } from "@/api/ticket";
-import type { TicketCategoryLeaf } from "@/api/ticketCategories";
 import {
   applyReadReceiptsToMessages,
   canMessageContextMenu,
@@ -193,10 +193,8 @@ export default function TicketPage() {
   const [editorEmpty, setEditorEmpty] = useState(true);
   const [sending, setSending] = useState(false);
   const [sideOpen, setSideOpen] = useState(true);
-  const [classifyOpen, setClassifyOpen] = useState(false);
-  const [classifyAction, setClassifyAction] = useState<ClassifyAction>("close");
-  const [classifyConfirming, setClassifyConfirming] = useState(false);
   const [takeBackLoading, setTakeBackLoading] = useState(false);
+  const [transferLoading, setTransferLoading] = useState(false);
   const [reopenLoading, setReopenLoading] = useState(false);
   const [chatPanel, setChatPanel] = useState<TicketChatPanelMode>("subscriber");
   const [comments, setComments] = useState<TicketComment[]>([]);
@@ -797,49 +795,20 @@ export default function TicketPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  function openClassify(action: ClassifyAction) {
-    setClassifyAction(action);
-    setClassifyOpen(true);
-  }
-
-  async function handleClassifyConfirm(payload: {
-    categoryId: number;
-    leaf: TicketCategoryLeaf;
-    comment: string;
-  }) {
-    if (!detail) return;
-    setClassifyConfirming(true);
+  async function handleTransferToEngineers() {
+    if (!detail || transferLoading) return;
+    setTransferLoading(true);
     try {
-      if (classifyAction === "close") {
-        const next = await closeTicket(detail.id, {
-          categoryId: payload.categoryId,
-          comment: payload.comment || undefined,
-        });
-        setDetail(next);
-        setClassifyOpen(false);
-        setCommentEditingId(null);
-        setCommentDraft("");
-        setReplyTo(null);
-        setEditingId(null);
-        setToast({ message: "Тикет закрыт", variant: "success" });
-        return;
-      }
-      const next = await transferTicketToEngineers(detail.id, {
-        categoryId: payload.categoryId,
-        comment: payload.comment || undefined,
-      });
+      const next = await transferTicketToEngineers(detail.id);
       setDetail(next);
-      setClassifyOpen(false);
       setToast({ message: "Тикет передан инженерам", variant: "success" });
     } catch (e: unknown) {
-      const fallback =
-        classifyAction === "close" ? "Не удалось закрыть тикет" : "Не удалось передать тикет";
       setToast({
-        message: e instanceof Error ? e.message : fallback,
+        message: e instanceof Error ? e.message : "Не удалось передать тикет",
         variant: "error",
       });
     } finally {
-      setClassifyConfirming(false);
+      setTransferLoading(false);
     }
   }
 
@@ -1135,6 +1104,9 @@ export default function TicketPage() {
         setUploads([]);
       } else {
         const created = await sendTicketMessage(ticketId, html, uploadSummary.doneTokens, null, replyTo?.id ?? null);
+        if (detail && detail.assigned_to == null && !detail.assignee_is_viewer) {
+          setDetail((prev) => (prev ? { ...prev, assignee_is_viewer: true } : prev));
+        }
         void fetchTicketDetail(ticketId).then(setDetail).catch(() => {});
         flushSync(() => {
           if (created.length) {
@@ -1389,8 +1361,13 @@ export default function TicketPage() {
               {checkLoading ? "Проверяю…" : "Проверка"}
             </button>
             {detail.is_open && detail.queue_line === "cs" && detail.support_line !== 4 ? (
-              <button type="button" className="tb3" onClick={() => openClassify("esc")}>
-                Инженерам
+              <button
+                type="button"
+                className="tb3"
+                disabled={transferLoading}
+                onClick={() => void handleTransferToEngineers()}
+              >
+                {transferLoading ? "Передаю…" : "Инженерам"}
               </button>
             ) : null}
             {detail.is_open && detail.queue_line === "engineers" ? (
@@ -1403,11 +1380,7 @@ export default function TicketPage() {
                 {takeBackLoading ? "Возврат…" : "Взять в работу"}
               </button>
             ) : null}
-            {detail.is_open ? (
-              <button type="button" className="tb3 cls" onClick={() => openClassify("close")}>
-                Завершить
-              </button>
-            ) : detail.can_reopen ? (
+            {detail.can_reopen ? (
               <button
                 type="button"
                 className="tb3"
@@ -2026,6 +1999,9 @@ export default function TicketPage() {
                     {detail.caller_name ? (
                       <div className="tk-side-meta">Как представился: {detail.caller_name}</div>
                     ) : null}
+                    {detail.station_name ? (
+                      <div className="tk-side-meta">Станция: {detail.station_name}</div>
+                    ) : null}
                     <button type="button" className="tb3 tk-link-subscriber-btn" onClick={() => setLinkSubscriberOpen(true)}>
                       Найти абонента
                     </button>
@@ -2056,6 +2032,9 @@ export default function TicketPage() {
                     {detail.subscriber_login ? (
                       <div className="tk-side-meta">Логин: {detail.subscriber_login}</div>
                     ) : null}
+                    {detail.station_name ? (
+                      <div className="tk-side-meta">Станция: {detail.station_name}</div>
+                    ) : null}
                     {detail.subscriber_profile_user_id != null ? (
                       <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-profile-link">
                         Карточка абонента →
@@ -2072,8 +2051,20 @@ export default function TicketPage() {
                 />
               ) : null}
 
-              <div className="ipb">
+              <div className="ipb tk-ticket-meta">
                 <div className="ipl">Тикет</div>
+                <div className="kv">
+                  <span className="kvk">Линия</span>
+                  <span className="kvv">
+                    <span
+                      className={`ch-line ch-line--${queueLineBadgeClass(detail.queue_line)}`}
+                      title={detail.support_line_label}
+                    >
+                      {detail.queue_line_label ||
+                        queueLineShortLabel(detail.queue_line, detail.support_line)}
+                    </span>
+                  </span>
+                </div>
                 <div className="kv">
                   <span className="kvk">Статус</span>
                   <span className="kvv">
@@ -2089,6 +2080,14 @@ export default function TicketPage() {
                   </span>
                 </div>
                 <div className="kv">
+                  <span className="kvk">Источник</span>
+                  <span className="kvv">
+                    <span className={`ch-source ch-source--${sourceBadgeClass(detail.source)}`}>
+                      {detail.source_label}
+                    </span>
+                  </span>
+                </div>
+                <div className="kv">
                   <span className="kvk">Исполнитель</span>
                   <span className="kvv">
                     <span
@@ -2100,27 +2099,6 @@ export default function TicketPage() {
                   </span>
                 </div>
                 <div className="kv">
-                  <span className="kvk">Источник</span>
-                  <span className="kvv">
-                    <span className={`ch-source ch-source--${sourceBadgeClass(detail.source)}`}>
-                      {detail.source_label}
-                    </span>
-                  </span>
-                </div>
-                {detail.category_name || detail.category_parent_name ? (
-                  <div className="kv tk-category-kv">
-                    <div className="tk-category-kv__top">
-                      <span className="kvk">Категория</span>
-                      <span className="kvv">
-                        {detail.category_parent_name || detail.category_name}
-                      </span>
-                    </div>
-                    {detail.category_parent_name && detail.category_name ? (
-                      <div className="tk-category-kv__child">{detail.category_name}</div>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="kv">
                   <span className="kvk">Приоритет</span>
                   <span className="kvv">
                     <span
@@ -2131,38 +2109,34 @@ export default function TicketPage() {
                     </span>
                   </span>
                 </div>
-                {detail.station_name ? (
-                  <div className="kv">
-                    <span className="kvk">Станция</span>
-                    <span className="kvv">{detail.station_name}</span>
+                <div className="kv tk-category-kv">
+                  <div className="tk-category-kv__top">
+                    <span className="kvk">Категория</span>
+                    <span className="kvv">
+                      {detail.category_parent_name || detail.category_name || "—"}
+                    </span>
                   </div>
-                ) : null}
+                  {detail.category_parent_name && detail.category_name ? (
+                    <div className="tk-category-kv__child">{detail.category_name}</div>
+                  ) : null}
+                </div>
                 {detail.date_of_create_iso ? (
-                  <div className="kv">
-                    <span className="kvk">В работе</span>
-                    <span className="kvv">{formatWorkDurationSince(detail.date_of_create_iso, nowPulse)}</span>
-                  </div>
+                  <>
+                    <div className="kv">
+                      <span className="kvk">Создан</span>
+                      <span className="kvv">{formatTicketCreated(detail.date_of_create_iso) || "—"}</span>
+                    </div>
+                    <div className="kv">
+                      <span className="kvk">В работе</span>
+                      <span className="kvv">{formatWorkDurationSince(detail.date_of_create_iso, nowPulse)}</span>
+                    </div>
+                  </>
                 ) : null}
               </div>
             </div>
           </aside>
         </div>
       </div>
-
-      <TicketClassifyModal
-        key={`${detail.id}-${classifyAction}`}
-        open={classifyOpen}
-        ticketId={detail.id}
-        ticketSource={detail.source}
-        initialCategoryId={detail.category_id}
-        initialCategoryParentId={detail.category_parent_id}
-        action={classifyAction}
-        confirming={classifyConfirming}
-        onClose={() => {
-          if (!classifyConfirming) setClassifyOpen(false);
-        }}
-        onConfirm={handleClassifyConfirm}
-      />
 
       <TicketLinkSubscriberModal
         open={linkSubscriberOpen}
