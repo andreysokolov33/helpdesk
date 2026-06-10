@@ -301,7 +301,6 @@ async def list_tracker_tickets(
                 assignee_role=assignee_role,
                 assignee_is_viewer=assignee_is_viewer,
                 assigned_to=int(m["assigned_to"]) if m.get("assigned_to") is not None else None,
-                staff_participants=m.get("staff_participants") or [],
                 has_unread=has_unread,
                 communication_state=comm_state,
                 communication_label=comm_label,

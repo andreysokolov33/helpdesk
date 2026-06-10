@@ -119,15 +119,36 @@ def on_internal_staff_message(
     }
 
 
+def _preserve_chat_action_by(
+    chat_turn: TrackerChatTurn,
+    action_by: str,
+    *,
+    idle_action_by: TrackerActionBy,
+) -> TrackerActionBy:
+    """При смене линии не сбрасывать «мяч» в internal/lk-чате."""
+    if chat_turn == "subscriber":
+        return idle_action_by
+    ab = (action_by or "").strip()
+    if ab in ("cs", "engineers", "partner"):
+        return ab  # type: ignore[return-value]
+    return idle_action_by
+
+
 def on_escalate_to_engineers(
     *,
     chat_turn: TrackerChatTurn = "staff",
+    action_by: str | None = None,
     at: datetime | None = None,
 ) -> TicketQueueSnapshot:
     now = at or datetime.now(timezone.utc)
+    ab = _preserve_chat_action_by(
+        chat_turn,
+        action_by or "engineers",
+        idle_action_by="engineers",
+    )
     return {
         "queue_line": "engineers",
-        "action_by": "engineers",
+        "action_by": ab,
         "chat_turn": chat_turn,
         "action_since": now,
     }
@@ -151,13 +172,19 @@ def on_escalate_to_partner(
 def on_return_to_cs(
     *,
     chat_turn: TrackerChatTurn = "subscriber",
+    action_by: str | None = None,
     at: datetime | None = None,
 ) -> TicketQueueSnapshot:
     """Инженеры или партнёр вернули тикет на КС."""
     now = at or datetime.now(timezone.utc)
+    ab = _preserve_chat_action_by(
+        chat_turn,
+        action_by or "cs",
+        idle_action_by="cs",
+    )
     return {
         "queue_line": "cs",
-        "action_by": "cs",
+        "action_by": ab,
         "chat_turn": chat_turn,
         "action_since": now,
     }
@@ -255,6 +282,8 @@ def communication_state_from_v2(
 
     src = (source or "").strip()
     if chat_turn == "staff" and action_by in ("cs", "engineers", "partner"):
+        if is_internal_staff_chat_source(src):
+            return None
         return "needs_reply"
     if chat_turn == "subscriber" and is_subscriber_chat_source(src):
         return "awaiting_subscriber"

@@ -1320,6 +1320,68 @@ export default function TicketPage() {
     setContextMenu({ x: e.clientX, y: e.clientY, msg: m });
   }
 
+  function renderFeedMessage(m: TicketMessage) {
+    if (m.side === "bot") {
+      return (
+        <div key={m.id} className="msg bot">
+          <div className="mc2">
+            <div className="bbl bot">
+              <div className="tk-msg-label">{ticketAuthorLabel(m, subscriberChatName)}</div>
+              <MessageBody text={m.text} />
+              <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
+            </div>
+            <div className="mtm">{formatMsgTime(m.created_at_iso) || "—"}</div>
+          </div>
+        </div>
+      );
+    }
+
+    const authorRole = m.author_role;
+    return (
+      <div
+        key={m.id}
+        data-msg-id={m.id}
+        className={`${ticketMsgRowClass(m.side, authorRole)}${highlightId === m.id ? " tk-msg--highlight" : ""}`}
+        onContextMenu={(e) => handleFeedContextMenu(e, m)}
+      >
+        <div className={ticketMavClass(m.side, authorRole)}>{ticketAvatarLetter(m, subscriberChatName)}</div>
+        <div className="mc2">
+          <div className={ticketBblClass(m.side, authorRole)}>
+            <div className="tk-msg-label">
+              {isCommentsPanel
+                ? m.author_name || ticketAuthorLabel(m, subscriberChatName)
+                : ticketAuthorLabel(m, subscriberChatName)}
+            </div>
+            {!isCommentsPanel && m.reply_preview ? (
+              <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
+            ) : null}
+            <MessageBody text={m.text} />
+            {!isCommentsPanel ? <AttachmentsBlock msg={m} onOpenImage={openImageViewer} /> : null}
+          </div>
+          <div className="mtm">
+            <span>
+              {formatMsgTime(m.created_at_iso) || "—"}
+              {m.is_edited ? (
+                <span className="tk-msg-edited" title={m.updated_at_iso || undefined}>
+                  {" "}
+                  · изменено
+                  {m.updated_at_iso ? ` ${formatMsgTime(m.updated_at_iso)}` : ""}
+                </span>
+              ) : null}
+            </span>
+            {!isCommentsPanel ? (
+              <TicketDeliveryTicks
+                side={m.side}
+                recipientReadAtIso={m.recipient_read_at_iso}
+                readBy={m.read_by}
+              />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="tp on" id="tp-ticket" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div className="tk-ticket-shell">
@@ -1461,64 +1523,7 @@ export default function TicketPage() {
                     {isCommentsPanel ? "Комментариев пока нет" : "Сообщений пока нет"}
                   </div>
                 ) : (
-                  feedMessages.map((m) =>
-                    m.side === "bot" ? (
-                      <div key={m.id} className="msg bot">
-                        <div className="mc2">
-                          <div className="bbl bot">
-                            <div className="tk-msg-label">{ticketAuthorLabel(m, subscriberChatName)}</div>
-                            <MessageBody text={m.text} />
-                            <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
-                          </div>
-                          <div className="mtm">{formatMsgTime(m.created_at_iso) || "—"}</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        key={m.id}
-                        data-msg-id={m.id}
-                        className={`${ticketMsgRowClass(m.side)}${highlightId === m.id ? " tk-msg--highlight" : ""}`}
-                        onContextMenu={(e) => handleFeedContextMenu(e, m)}
-                      >
-                        <div className={ticketMavClass(m.side)}>{ticketAvatarLetter(m, subscriberChatName)}</div>
-                        <div className="mc2">
-                          <div className={ticketBblClass(m.side)}>
-                            <div className="tk-msg-label">
-                              {isCommentsPanel
-                                ? m.author_name || ticketAuthorLabel(m, subscriberChatName)
-                                : ticketAuthorLabel(m, subscriberChatName)}
-                            </div>
-                            {!isCommentsPanel && m.reply_preview ? (
-                              <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
-                            ) : null}
-                            <MessageBody text={m.text} />
-                            {!isCommentsPanel ? (
-                              <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
-                            ) : null}
-                          </div>
-                          <div className="mtm">
-                            <span>
-                              {formatMsgTime(m.created_at_iso) || "—"}
-                              {m.is_edited ? (
-                                <span className="tk-msg-edited" title={m.updated_at_iso || undefined}>
-                                  {" "}
-                                  · изменено
-                                  {m.updated_at_iso ? ` ${formatMsgTime(m.updated_at_iso)}` : ""}
-                                </span>
-                              ) : null}
-                            </span>
-                            {!isCommentsPanel ? (
-                              <TicketDeliveryTicks
-                                side={m.side}
-                                recipientReadAtIso={m.recipient_read_at_iso}
-                                readBy={m.read_by}
-                              />
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                    ),
-                  )
+                  feedMessages.map((m) => renderFeedMessage(m))
                 )}
                 {loadingNewer ? (
                   <div className="tk-chat-load-hint tk-chat-load-hint--bottom" aria-live="polite">

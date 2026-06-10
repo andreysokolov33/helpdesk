@@ -97,20 +97,29 @@ export function applyReadReceiptsToMessages<
   });
 }
 
-export function ticketMsgRowClass(side: string): string {
+export function ticketMsgRowClass(side: string, authorRole?: string | null): string {
   if (side === "bot") return "msg bot";
-  if (isOwnTicketMessage(side)) return "msg me";
+  if (isOwnTicketMessage(side)) {
+    if ((authorRole || "").toLowerCase() === "engineer") return "msg me tk-msg--engineer";
+    return "msg me";
+  }
   return `msg cl tk-msg--${side}`;
 }
 
-export function ticketBblClass(side: string): string {
+export function ticketBblClass(side: string, authorRole?: string | null): string {
   if (side === "bot") return "bbl bot";
-  if (isOwnTicketMessage(side)) return "bbl ag";
+  if (isOwnTicketMessage(side)) {
+    if ((authorRole || "").toLowerCase() === "engineer") return "bbl ag tk-bbl--engineer";
+    return "bbl ag";
+  }
   return `bbl cl tk-bbl--${side}`;
 }
 
-export function ticketMavClass(side: string): string {
-  if (isOwnTicketMessage(side)) return "mav ag";
+export function ticketMavClass(side: string, authorRole?: string | null): string {
+  if (isOwnTicketMessage(side)) {
+    if ((authorRole || "").toLowerCase() === "engineer") return "mav ag tk-mav--engineer";
+    return "mav ag";
+  }
   return `mav cl tk-mav--${side}`;
 }
 

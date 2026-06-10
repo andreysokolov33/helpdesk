@@ -50,8 +50,6 @@ class TrackerTicketListItem(BaseModel):
     assignee_is_viewer: bool = False
     """True, если assigned_to — текущий оператор."""
     assigned_to: Optional[int] = None
-    staff_participants: list[TicketStaffParticipant] = Field(default_factory=list)
-    """assigned_to + соисполнители из tracker_ticket_executors (role=support)."""
     has_unread: bool = False
     """Есть сообщения абонента, которые ещё не прочитал ни один сотрудник."""
     communication_state: Optional[str] = None

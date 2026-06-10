@@ -264,11 +264,24 @@ async def reconcile_ticket_queue_from_thread(
         author_party, msg_at = meta
         msg_at = _coerce_utc(msg_at)
         expected_action = "engineers" if author_party == "cs" else "cs"
+        current_action = str(row.get("action_by") or "")
+        if (
+            chat_turn == "staff"
+            and current_action == expected_action
+            and action_since is not None
+            and action_since >= msg_at
+        ):
+            return
+        if chat_turn == "staff" and current_action != expected_action:
+            snap = on_internal_staff_message(author_party, queue_line, at=msg_at)
+            await _apply_queue_snapshot(db, ticket_id, snap, status=None)
+            await db.commit()
+            return
         if action_since is not None and action_since > msg_at:
             return
         if (
             chat_turn == "staff"
-            and str(row.get("action_by") or "") == expected_action
+            and current_action == expected_action
             and action_since is not None
             and msg_at <= action_since
         ):
@@ -538,6 +551,13 @@ async def fetch_subscriber_display_name(
 ) -> str:
     identity = await fetch_subscriber_identity(db, user_id)
     return str(identity.get("chat_name") or "Абонент")
+
+
+def _staff_author_role(staff_role: str | None, side: str) -> str | None:
+    if side in ("client", "bot", "partner"):
+        return None
+    role = (staff_role or "").strip().lower()
+    return role or None
 
 
 def _staff_side_and_name(
@@ -1336,10 +1356,7 @@ async def fetch_tracker_list_page(
             stats["avg_rating_mine"] = round(float(avg_mine), 2) if avg_mine is not None else None
 
     dict_rows = [dict(r) for r in rows]
-    ticket_ids = [int(r["id"]) for r in dict_rows]
-    executor_map = await _fetch_ticket_executor_rows_by_ticket_ids(db, ticket_ids)
     for row in dict_rows:
-        tid = int(row["id"])
         assigned = int(row["assigned_to"]) if row.get("assigned_to") is not None else None
         row.update(
             assignee_display_fields(
@@ -1349,15 +1366,6 @@ async def fetch_tracker_list_page(
                 viewer_id=viewer_id,
             )
         )
-        participants = build_ticket_staff_participants(
-            assigned_to=assigned,
-            assignee_name=row.get("assignee_name"),
-            assignee_role=row.get("assignee_role"),
-            executor_rows=executor_map.get(tid, []),
-            viewer_id=viewer_id,
-        )
-        row["staff_participants"] = participants
-        row["assignee_is_viewer"] = any(p["is_viewer"] for p in participants)
 
     return total, dict_rows, stats
 
@@ -2864,6 +2872,7 @@ async def transfer_ticket_to_engineers(
     new_category_id = int(category_id) if category_id is not None else None
     queue_snap = on_escalate_to_engineers(
         chat_turn=_coerce_chat_turn(row),
+        action_by=str(row.get("action_by") or "engineers"),
         at=now,
     )
 
@@ -3150,6 +3159,7 @@ async def take_ticket_back_to_ks(
     now = datetime.now(timezone.utc)
     queue_snap = on_return_to_cs(
         chat_turn=_coerce_chat_turn(row),
+        action_by=str(row.get("action_by") or "cs"),
         at=now,
     )
     await db.execute(
@@ -3362,6 +3372,7 @@ async def load_mail_messages(
                 "side": side,
                 "text": (r.get("text_raw") or "").strip(),
                 "author_name": author_name,
+                "author_role": _staff_author_role(r.get("staff_role"), side),
                 "created_at_iso": _iso(dt) if isinstance(dt, datetime) else None,
                 "has_read": True if is_bot or side == "me" else mid in read_ids,
                 "reply_to_id": _parse_reply_to_id(r.get("relay_msg_id")),
@@ -3463,6 +3474,7 @@ async def load_tracker_messages(
                 "side": side,
                 "text": (r.get("body") or "").strip(),
                 "author_name": author_name,
+                "author_role": _staff_author_role(r.get("staff_role"), side),
                 "created_at_iso": _iso(r.get("created_at")),
                 "has_read": is_own or mid in staff_read_ids,
                 "reply_to_id": _parse_reply_to_id(r.get("reply_to_id")),
@@ -3765,6 +3777,7 @@ async def edit_ticket_message(
             "side": "me",
             "text": text_body,
             "author_name": "Вы",
+            "author_role": _staff_author_role(viewer_role, "me"),
             "created_at_iso": _iso(row.get("date_tz")),
             "has_read": True,
             "recipient_read_at_iso": None,
@@ -3793,6 +3806,7 @@ async def edit_ticket_message(
             "side": "me",
             "text": text_body,
             "author_name": "Вы",
+            "author_role": _staff_author_role(viewer_role, "me"),
             "created_at_iso": _iso(row.get("created_at")),
             "has_read": True,
             "recipient_read_at_iso": None,
@@ -3979,6 +3993,7 @@ async def send_mail_reply(
         "side": "me",
         "text": text_body,
         "author_name": "Вы",
+        "author_role": _staff_author_role(operator_role, "me"),
         "created_at_iso": _iso(created if isinstance(created, datetime) else now),
         "has_read": True,
         "recipient_read_at_iso": None,
@@ -4086,6 +4101,7 @@ async def send_tracker_reply(
         "side": "me",
         "text": text_body,
         "author_name": "Вы",
+        "author_role": _staff_author_role(operator_role, "me"),
         "created_at_iso": _iso(now),
         "has_read": True,
         "recipient_read_at_iso": None,

@@ -40,7 +40,6 @@ export type TrackerTicketListItem = {
   assignee_role: string | null;
   assignee_is_viewer: boolean;
   assigned_to: number | null;
-  staff_participants: TicketStaffParticipant[];
   has_unread: boolean;
   communication_state: "needs_reply" | "awaiting_subscriber" | null;
   communication_label: string | null;
@@ -87,17 +86,12 @@ export type TicketStatusColumn =
   | { kind: "comm"; state: keyof typeof COMMUNICATION_LABELS; label: string }
   | { kind: "workflow"; status: string; label: string };
 
-/** Тикет требует внимания: непрочитанное или ожидается ответ staff. */
+/** Тикет требует внимания: непрочитанное или ожидается ответ на линии зрителя. */
 export function ticketListNeedsAttention(
-  row: Pick<
-    TrackerTicketListItem,
-    "has_unread" | "chat_turn" | "action_by" | "communication_state" | "list_highlight"
-  >,
+  row: Pick<TrackerTicketListItem, "has_unread" | "list_highlight">,
 ): boolean {
   if (row.has_unread) return true;
-  if (row.communication_state === "needs_reply") return true;
-  if (row.list_highlight === "chat") return true;
-  return row.chat_turn === "staff" && STAFF_ACTION.includes(row.action_by);
+  return row.list_highlight === "chat";
 }
 
 const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
@@ -116,7 +110,6 @@ const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
   "assignee_role",
   "assignee_is_viewer",
   "assigned_to",
-  "staff_participants",
   "has_unread",
   "communication_state",
   "communication_label",
@@ -126,21 +119,8 @@ const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
   "subscriber_name",
 ];
 
-function staffParticipantsEqual(a: TicketStaffParticipant[], b: TicketStaffParticipant[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every(
-    (item, i) =>
-      item.id === b[i].id &&
-      item.label === b[i].label &&
-      item.role === b[i].role &&
-      item.is_primary === b[i].is_primary &&
-      item.is_viewer === b[i].is_viewer,
-  );
-}
-
 function trackerListRowEqual(a: TrackerTicketListItem, b: TrackerTicketListItem): boolean {
   if (a.id !== b.id) return false;
-  if (!staffParticipantsEqual(a.staff_participants ?? [], b.staff_participants ?? [])) return false;
   return _LIST_ROW_MERGE_KEYS.every((k) => a[k] === b[k]);
 }
 

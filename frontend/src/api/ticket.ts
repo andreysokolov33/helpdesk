@@ -34,6 +34,8 @@ export type TicketMessage = {
   updated_at_iso?: string | null;
   reply_preview?: TicketMessageReplyPreview | null;
   author_name?: string | null;
+  /** support | engineer — для своих сообщений (side=me) и стилизации */
+  author_role?: string | null;
   legacy_file_url?: string | null;
   attachments: TicketAttachment[];
   is_initial?: boolean;

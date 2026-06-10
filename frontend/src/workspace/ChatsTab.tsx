@@ -11,7 +11,7 @@ import {
   type TrackerTicketListItem,
   type TrackerTicketListStats,
 } from "@/api/tracker";
-import TicketStaffParticipants from "@/components/TicketStaffParticipants";
+import TicketAssigneePill from "@/components/TicketAssigneePill";
 import {
   formatRatingAvg,
   formatTicketUpdatedLocal,
@@ -490,7 +490,7 @@ export default function ChatsTab() {
           {!closedMode ? (
             <>
               <div className="ch-exec-cell">
-                <TicketStaffParticipants participants={row.staff_participants ?? []} />
+                <TicketAssigneePill row={row} />
               </div>
               <span
                 className={`ch-line ch-line--${queueLineBadgeClass(row.queue_line ?? "cs")}`}
