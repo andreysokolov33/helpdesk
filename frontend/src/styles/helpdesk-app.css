@@ -892,10 +892,14 @@
 
 [data-theme="dark"] #tp-ticket .bbl.cl.tk-bbl--engineer,
 [data-theme="dark"] #tp-ticket .bbl.ag.tk-bbl--engineer {
-  background: rgba(255, 200, 80, 0.18);
-  border: 1px solid rgba(255, 200, 80, 0.35);
-  color: #f0d890;
+  background: #2a271f;
+  border: 1px solid #3d392c;
+  color: #d0c9b4;
   box-shadow: none;
+}
+
+[data-theme="dark"] #tp-ticket .bbl.tk-bbl--engineer .tk-msg-label {
+  color: #9a9280;
 }
 
 [data-theme="light"] #tp-ticket .tk-bbl--partner {
@@ -936,8 +940,9 @@
 
 [data-theme="dark"] #tp-ticket .mav.cl.tk-mav--engineer,
 [data-theme="dark"] #tp-ticket .mav.ag.tk-mav--engineer {
-  background: #8a7020;
-  color: #fff8e6;
+  background: #4a4535;
+  color: #e2dbc8;
+  border: 1px solid #5c5542;
 }
 
 [data-theme="dark"] #tp-ticket .tk-mav--partner {
