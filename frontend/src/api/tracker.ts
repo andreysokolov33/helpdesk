@@ -5,6 +5,14 @@ export type TrackerActionBy = "cs" | "engineers" | "partner" | "subscriber" | "e
 export type TrackerChatTurn = "staff" | "subscriber";
 export type TrackerListHighlight = "chat" | "ops" | "none";
 
+export type TicketStaffParticipant = {
+  id: number;
+  label: string;
+  role: "support" | "engineer" | "manager" | string;
+  is_primary: boolean;
+  is_viewer: boolean;
+};
+
 export type TrackerTicketListItem = {
   id: number;
   title: string;
@@ -28,10 +36,11 @@ export type TrackerTicketListItem = {
   subscriber_is_juridical: number;
   subscriber_name: string | null;
   subscriber_login: string | null;
-  assignee_name: string | null;
+  assignee_label: string | null;
   assignee_role: string | null;
   assignee_is_viewer: boolean;
   assigned_to: number | null;
+  staff_participants: TicketStaffParticipant[];
   has_unread: boolean;
   communication_state: "needs_reply" | "awaiting_subscriber" | null;
   communication_label: string | null;
@@ -103,10 +112,11 @@ const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
   "chat_turn",
   "action_since",
   "list_highlight",
-  "assignee_name",
+  "assignee_label",
   "assignee_role",
   "assignee_is_viewer",
   "assigned_to",
+  "staff_participants",
   "has_unread",
   "communication_state",
   "communication_label",
@@ -116,8 +126,21 @@ const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
   "subscriber_name",
 ];
 
+function staffParticipantsEqual(a: TicketStaffParticipant[], b: TicketStaffParticipant[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every(
+    (item, i) =>
+      item.id === b[i].id &&
+      item.label === b[i].label &&
+      item.role === b[i].role &&
+      item.is_primary === b[i].is_primary &&
+      item.is_viewer === b[i].is_viewer,
+  );
+}
+
 function trackerListRowEqual(a: TrackerTicketListItem, b: TrackerTicketListItem): boolean {
   if (a.id !== b.id) return false;
+  if (!staffParticipantsEqual(a.staff_participants ?? [], b.staff_participants ?? [])) return false;
   return _LIST_ROW_MERGE_KEYS.every((k) => a[k] === b[k]);
 }
 
@@ -135,8 +158,8 @@ export function mergeTrackerListPage(
   });
 }
 
-/** Колонка «Исполнитель» — только assigned_to (оператор КС). */
-export type AssigneePillVariant = "you" | "unassigned" | "support";
+/** Колонка «Исполнитель» — только assigned_to. */
+export type AssigneePillVariant = "you" | "unassigned" | "support" | "engineer" | "manager";
 
 export type AssigneePillDisplay = {
   label: string;
@@ -144,36 +167,55 @@ export type AssigneePillDisplay = {
   title?: string;
 };
 
-function ticketHasCsAssignee(
-  row: Pick<TrackerTicketListItem, "assigned_to" | "assignee_name">,
-): boolean {
-  if (row.assigned_to != null && row.assigned_to > 0) return true;
-  return Boolean(row.assignee_name?.trim());
+export type AssigneePillRow = Pick<
+  TrackerTicketListItem,
+  "assigned_to" | "assignee_label" | "assignee_role" | "assignee_is_viewer"
+>;
+
+function assigneePillVariant(role: string | null | undefined): AssigneePillVariant {
+  const r = (role || "support").toLowerCase();
+  if (r === "engineer") return "engineer";
+  if (r === "manager") return "manager";
+  return "support";
 }
 
-/** Вы — если assigned_to это я; иначе КС или «Нет исполнителя». */
-export function ticketListAssigneePill(
-  row: Pick<
-    TrackerTicketListItem,
-    "assignee_is_viewer" | "assignee_name" | "assigned_to"
-  >,
-): AssigneePillDisplay {
+/** Лейбл одного участника (assigned_to или соисполнитель). */
+export function staffParticipantPill(p: TicketStaffParticipant): AssigneePillDisplay {
+  if (p.is_viewer) {
+    return { label: "Вы", variant: "you" };
+  }
+  const role = (p.role || "support").toLowerCase();
+  if (role === "engineer") {
+    return { label: "Инженер", variant: "engineer" };
+  }
+  if (role === "manager") {
+    return { label: "Менеджер", variant: "manager" };
+  }
+  const label = p.label?.trim() || "—";
+  return { label, variant: "support", title: label };
+}
+
+/** Исполнитель: assigned_to; ФИО только для support. */
+export function ticketListAssigneePill(row: AssigneePillRow): AssigneePillDisplay {
+  if (row.assigned_to == null) {
+    return { label: "Нет исполнителя", variant: "unassigned" };
+  }
   if (row.assignee_is_viewer) {
     return { label: "Вы", variant: "you" };
   }
-  if (ticketHasCsAssignee(row)) {
-    return { label: "КС", variant: "support" };
+  const role = (row.assignee_role || "support").toLowerCase();
+  if (role === "engineer") {
+    return { label: "Инженер", variant: "engineer" };
   }
-  return { label: "Нет исполнителя", variant: "unassigned" };
+  if (role === "manager") {
+    return { label: "Менеджер", variant: "manager" };
+  }
+  const label = row.assignee_label?.trim() || "—";
+  return { label, variant: assigneePillVariant(role), title: label };
 }
 
 /** @deprecated используйте ticketListAssigneePill */
-export function ticketListAssigneeLabel(
-  row: Pick<
-    TrackerTicketListItem,
-    "assignee_is_viewer" | "assignee_name" | "assigned_to"
-  >,
-): string {
+export function ticketListAssigneeLabel(row: AssigneePillRow): string {
   return ticketListAssigneePill(row).label;
 }
 

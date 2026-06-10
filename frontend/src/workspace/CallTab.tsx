@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import SubscriberSearchField from "@/components/SubscriberSearchField";
+import PartnerTicketSuccessModal from "@/components/PartnerTicketSuccessModal";
 import type { SubscriberSearchHit } from "@/api/search";
 import { registerCall, type CallConnectionKind, type ConnectionLeadPayload } from "@/api/tracker";
 import { maskRuPhoneInput, normalizeRuPhone } from "@/utils/phone";
@@ -95,12 +96,16 @@ export default function CallTab() {
   const [lead, setLead] = useState<ConnectionLeadPayload>({ ...EMPTY_LEAD });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [partnerTicketId, setPartnerTicketId] = useState<number | null>(null);
+
+  const goHome = useCallback(() => {
+    setPartnerTicketId(null);
+    navigate("/");
+  }, [navigate]);
 
   function switchMode(next: CallConnectionKind) {
     setMode(next);
     setError(null);
-    setSuccess(null);
     if (next !== "existing") {
       setSubscriber(null);
       setDesc("");
@@ -199,7 +204,7 @@ export default function CallTab() {
         },
       });
       if (mode === "new_partner") {
-        setSuccess(`Заявка №${result.id} передана менеджеру`);
+        setPartnerTicketId(result.id);
         setLead({ ...EMPTY_LEAD });
         setMode("existing");
       } else {
@@ -400,11 +405,6 @@ export default function CallTab() {
             )}
           </section>
 
-          {success ? (
-            <div className="call-success" role="status">
-              {success}
-            </div>
-          ) : null}
           {error ? (
             <div className="call-error" role="alert">
               {error}
@@ -421,6 +421,12 @@ export default function CallTab() {
           </footer>
         </div>
       </div>
+
+      <PartnerTicketSuccessModal
+        open={partnerTicketId != null}
+        ticketId={partnerTicketId ?? 0}
+        onGoHome={goHome}
+      />
     </div>
   );
 }

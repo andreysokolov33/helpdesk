@@ -6,12 +6,12 @@ import {
   fetchOpenTrackerTickets,
   fetchTrackerListDigest,
   mergeTrackerListPage,
-  ticketListAssigneePill,
   ticketListNeedsAttention,
   ticketListStatusColumn,
   type TrackerTicketListItem,
   type TrackerTicketListStats,
 } from "@/api/tracker";
+import TicketStaffParticipants from "@/components/TicketStaffParticipants";
 import {
   formatRatingAvg,
   formatTicketUpdatedLocal,
@@ -447,7 +447,6 @@ export default function ChatsTab() {
 
     function renderRow(row: TrackerTicketListItem) {
       const statusCol = ticketListStatusColumn(row);
-      const assigneePill = ticketListAssigneePill(row);
       const needsAttention = !closedMode && ticketListNeedsAttention(row);
       const workEnd = closedMode ? row.date_of_close || row.updated_at : null;
       const workDuration = closedMode
@@ -491,12 +490,7 @@ export default function ChatsTab() {
           {!closedMode ? (
             <>
               <div className="ch-exec-cell">
-                <span
-                  className={`ch-assignee-pill ch-assignee-pill--${assigneePill.variant}`}
-                  title={assigneePill.title ?? assigneePill.label}
-                >
-                  {assigneePill.label}
-                </span>
+                <TicketStaffParticipants participants={row.staff_participants ?? []} />
               </div>
               <span
                 className={`ch-line ch-line--${queueLineBadgeClass(row.queue_line ?? "cs")}`}

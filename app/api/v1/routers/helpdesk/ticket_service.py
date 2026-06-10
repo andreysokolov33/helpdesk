@@ -797,10 +797,26 @@ def _tracker_date_filter_sql(
     return f"AND {' AND '.join(clauses)}", params
 
 
+def _support_co_executor_exists_sql(*, ticket_expr: str, user_param: str) -> str:
+    """Участие оператора КС в тикете (общая таблица, фильтр по role=support)."""
+    return f"""EXISTS (
+        SELECT 1
+        FROM users.tracker_ticket_executors e
+        JOIN users.skystream_users su ON su.id = e.abs_user_id
+        WHERE e.ticket_id = {ticket_expr}
+          AND e.abs_user_id = {user_param}
+          AND su.role = 'support'
+    )"""
+
+
 def _tracker_assignee_filter_sql(assigned_to: int | None) -> tuple[str, dict[str, Any]]:
     if assigned_to is None:
         return "", {}
-    return "AND tt.assigned_to = :list_assigned_to", {"list_assigned_to": assigned_to}
+    co_exec = _support_co_executor_exists_sql(ticket_expr="tt.id", user_param=":list_assigned_to")
+    return f"""AND (
+        tt.assigned_to = :list_assigned_to
+        OR {co_exec}
+    )""", {"list_assigned_to": assigned_to}
 
 
 def _tracker_list_filter_sql(
@@ -833,9 +849,11 @@ def _mail_client_filter(alias: str = "um") -> str:
 
 
 def _tracker_list_viewer_owner_sql() -> str:
-    """Мои тикеты: закреплённый оператор КС (assigned_to) или инженер на своей линии."""
-    return """(
+    """Мои тикеты: основной/соисполнитель КС или инженер на своей линии."""
+    co_exec = _support_co_executor_exists_sql(ticket_expr="q.id", user_param=":viewer_id")
+    return f"""(
         q.assigned_to = :viewer_id
+        OR {co_exec}
         OR (
             q.queue_line = 'engineers'::users.tracker_queue_line
             AND q.engineer_id = :viewer_id
@@ -885,10 +903,12 @@ def _tracker_list_cs_unassigned_sql() -> str:
 
 
 def _tracker_list_cs_other_assignee_sql() -> str:
-    return """(
+    co_exec = _support_co_executor_exists_sql(ticket_expr="q.id", user_param=":viewer_id")
+    return f"""(
         q.queue_line = 'cs'::users.tracker_queue_line
         AND q.assigned_to IS NOT NULL
         AND q.assigned_to <> :viewer_id
+        AND NOT {co_exec}
     )"""
 
 
@@ -1315,7 +1335,31 @@ async def fetch_tracker_list_page(
             stats["avg_rating"] = round(float(avg), 2) if avg is not None else None
             stats["avg_rating_mine"] = round(float(avg_mine), 2) if avg_mine is not None else None
 
-    return total, [dict(r) for r in rows], stats
+    dict_rows = [dict(r) for r in rows]
+    ticket_ids = [int(r["id"]) for r in dict_rows]
+    executor_map = await _fetch_ticket_executor_rows_by_ticket_ids(db, ticket_ids)
+    for row in dict_rows:
+        tid = int(row["id"])
+        assigned = int(row["assigned_to"]) if row.get("assigned_to") is not None else None
+        row.update(
+            assignee_display_fields(
+                assigned_to=assigned,
+                full_name=row.get("assignee_name"),
+                role=row.get("assignee_role"),
+                viewer_id=viewer_id,
+            )
+        )
+        participants = build_ticket_staff_participants(
+            assigned_to=assigned,
+            assignee_name=row.get("assignee_name"),
+            assignee_role=row.get("assignee_role"),
+            executor_rows=executor_map.get(tid, []),
+            viewer_id=viewer_id,
+        )
+        row["staff_participants"] = participants
+        row["assignee_is_viewer"] = any(p["is_viewer"] for p in participants)
+
+    return total, dict_rows, stats
 
 
 async def fetch_tracker_list_digest(
@@ -2225,6 +2269,21 @@ async def load_ticket_detail(
         d["action_since"] = qrow.get("action_since")
 
     owner_id = int(d["assigned_to"]) if d.get("assigned_to") is not None else None
+    assignee_disp = assignee_display_fields(
+        assigned_to=owner_id,
+        full_name=d.get("assignee_name"),
+        role=d.get("assignee_role"),
+        viewer_id=viewer_id,
+    )
+    executor_map = await _fetch_ticket_executor_rows_by_ticket_ids(db, [ticket_id])
+    staff_participants = build_ticket_staff_participants(
+        assigned_to=owner_id,
+        assignee_name=d.get("assignee_name"),
+        assignee_role=d.get("assignee_role"),
+        executor_rows=executor_map.get(ticket_id, []),
+        viewer_id=viewer_id,
+    )
+    assignee_disp["assignee_is_viewer"] = any(p["is_viewer"] for p in staff_participants)
 
     has_unread = await _ticket_detail_has_unread(db, ticket_id)
     queue_snap = {
@@ -2286,10 +2345,11 @@ async def load_ticket_detail(
         "subscriber_online": bool(d.get("subscriber_online")),
         "subscriber_is_juridical": sub_is_juridical,
         "subscriber_profile_user_id": int(d["user_id"]) if d.get("user_id") is not None else None,
-        "assignee_name": d.get("assignee_name"),
-        "assignee_role": d.get("assignee_role"),
-        "assignee_is_viewer": bool(owner_id is not None and owner_id == viewer_id),
-        "assigned_to": int(d["assigned_to"]) if d.get("assigned_to") is not None else None,
+        "assignee_label": assignee_disp["assignee_label"],
+        "assignee_role": assignee_disp["assignee_role"],
+        "assignee_is_viewer": assignee_disp["assignee_is_viewer"],
+        "assigned_to": assignee_disp["assigned_to"],
+        "staff_participants": staff_participants,
         "station_name": station,
         "station_id": int(d["station_id"]) if d.get("station_id") else None,
         "date_of_create": d["date_of_create"],
@@ -2601,15 +2661,160 @@ async def _assert_ticket_open_for_write(db: AsyncSession, ticket_id: int) -> Non
         raise HTTPException(status_code=400, detail="Тикет закрыт")
 
 
+async def register_ticket_co_executor(
+    db: AsyncSession,
+    ticket_id: int,
+    operator_id: int,
+) -> None:
+    """Зафиксировать участие оператора КС в переписке по тикету."""
+    await db.execute(
+        text(
+            """
+            INSERT INTO users.tracker_ticket_executors (ticket_id, abs_user_id)
+            VALUES (:ticket_id, :operator_id)
+            ON CONFLICT (ticket_id, abs_user_id) DO NOTHING
+            """
+        ),
+        {"ticket_id": ticket_id, "operator_id": operator_id},
+    )
+
+
+def assignee_display_fields(
+    *,
+    assigned_to: int | None,
+    full_name: str | None,
+    role: str | None,
+    viewer_id: int,
+) -> dict[str, Any]:
+    """Колонка «Исполнитель»: только assigned_to; ФИО — только для role=support."""
+    if assigned_to is None:
+        return {
+            "assigned_to": None,
+            "assignee_label": None,
+            "assignee_role": None,
+            "assignee_is_viewer": False,
+        }
+    uid = int(assigned_to)
+    is_viewer = uid == viewer_id
+    role_l = (role or "support").strip().lower()
+    if is_viewer:
+        label = "Вы"
+    elif role_l == "engineer":
+        label = "Инженер"
+    elif role_l == "manager":
+        label = "Менеджер"
+    else:
+        label = (full_name or "").strip() or f"#{uid}"
+    return {
+        "assigned_to": uid,
+        "assignee_label": label,
+        "assignee_role": role_l,
+        "assignee_is_viewer": is_viewer,
+    }
+
+
+def _staff_participant_label(
+    uid: int,
+    full_name: str | None,
+    role: str | None,
+    viewer_id: int,
+) -> str:
+    if uid == viewer_id:
+        return "Вы"
+    role_l = (role or "support").strip().lower()
+    if role_l == "engineer":
+        return "Инженер"
+    if role_l == "manager":
+        return "Менеджер"
+    return (full_name or "").strip() or f"#{uid}"
+
+
+def build_ticket_staff_participants(
+    *,
+    assigned_to: int | None,
+    assignee_name: str | None,
+    assignee_role: str | None,
+    executor_rows: list[dict[str, Any]],
+    viewer_id: int,
+) -> list[dict[str, Any]]:
+    """assigned_to (основной) + соисполнители support из tracker_ticket_executors."""
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def _append(
+        uid: int,
+        name: str | None,
+        role: str | None,
+        *,
+        is_primary: bool,
+    ) -> None:
+        if uid in seen:
+            return
+        seen.add(uid)
+        role_l = (role or "support").strip().lower()
+        out.append(
+            {
+                "id": uid,
+                "label": _staff_participant_label(uid, name, role_l, viewer_id),
+                "role": role_l,
+                "is_primary": is_primary,
+                "is_viewer": uid == viewer_id,
+            }
+        )
+
+    if assigned_to is not None:
+        _append(int(assigned_to), assignee_name, assignee_role, is_primary=True)
+
+    for row in executor_rows:
+        uid = int(row["abs_user_id"])
+        if uid in seen:
+            continue
+        role_l = (row.get("role") or "support").strip().lower()
+        if role_l != "support":
+            continue
+        _append(uid, row.get("full_name"), role_l, is_primary=False)
+
+    return out
+
+
+async def _fetch_ticket_executor_rows_by_ticket_ids(
+    db: AsyncSession,
+    ticket_ids: list[int],
+) -> dict[int, list[dict[str, Any]]]:
+    if not ticket_ids:
+        return {}
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT e.ticket_id, e.abs_user_id, su.full_name, su.role, e.created_at
+                FROM users.tracker_ticket_executors e
+                JOIN users.skystream_users su ON su.id = e.abs_user_id
+                WHERE e.ticket_id = ANY(:ids)
+                  AND su.role = 'support'
+                ORDER BY e.ticket_id, e.created_at, e.abs_user_id
+                """
+            ),
+            {"ids": ticket_ids},
+        )
+    ).mappings().all()
+    grouped: dict[int, list[dict[str, Any]]] = {tid: [] for tid in ticket_ids}
+    for row in rows:
+        tid = int(row["ticket_id"])
+        grouped.setdefault(tid, []).append(dict(row))
+    return grouped
+
+
 async def _maybe_claim_cs_assignee(
     db: AsyncSession,
     ticket_id: int,
     operator_id: int,
     operator_role: str | None,
 ) -> None:
-    """Первое сообщение оператора КС: закрепить тикет (assigned_to), если исполнитель не задан."""
+    """Сообщение оператора КС: соисполнитель в таблице; assigned_to — при первом ответе."""
     if (operator_role or "").strip().lower() != "support":
         return
+    await register_ticket_co_executor(db, ticket_id, operator_id)
     row = (
         await db.execute(
             text("SELECT assigned_to FROM users.tracker_tickets WHERE id = :id"),
@@ -2922,6 +3127,8 @@ async def reopen_ticket(db: AsyncSession, ticket_id: int, author_id: int) -> dic
         to_status=new_status,
         support_line=support_line,
     )
+    if queue_line == "cs":
+        await register_ticket_co_executor(db, ticket_id, author_id)
 
     await db.commit()
     return await load_ticket_detail(db, ticket_id, author_id)
@@ -2966,6 +3173,7 @@ async def take_ticket_back_to_ks(
     )
 
     to_line = queue_line_to_legacy_support_line(queue_snap["queue_line"])
+    await register_ticket_co_executor(db, ticket_id, author_id)
     await _change_ticket_support_line(
         db,
         ticket_id=ticket_id,

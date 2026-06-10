@@ -1,3 +1,5 @@
+import type { TicketStaffParticipant } from "@/api/tracker";
+
 export type TicketAttachment = {
   id: number;
   file_path: string;
@@ -101,10 +103,11 @@ export type TicketDetail = {
   subscriber_online?: boolean;
   subscriber_is_juridical: number;
   subscriber_profile_user_id?: number | null;
-  assignee_name?: string | null;
+  assignee_label?: string | null;
   assignee_role?: string | null;
   assignee_is_viewer: boolean;
   assigned_to?: number | null;
+  staff_participants?: TicketStaffParticipant[];
   station_name?: string | null;
   station_id?: number | null;
   date_of_create_iso?: string | null;

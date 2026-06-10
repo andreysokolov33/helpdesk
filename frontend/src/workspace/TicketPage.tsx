@@ -11,10 +11,8 @@ import TicketMessageReplyQuote from "@/components/TicketMessageReplyQuote";
 import { postDisconnect, type FastCheckResponse } from "@/api/userProfile";
 import TicketFastCheckDrawer from "@/workspace/TicketFastCheckDrawer";
 import { formatWorkDurationSince } from "@/utils/ticketFormat";
-import {
-  ticketListAssigneePill,
-  ticketListStatusColumn,
-} from "@/api/tracker";
+import TicketStaffParticipants from "@/components/TicketStaffParticipants";
+import { ticketListStatusColumn } from "@/api/tracker";
 import {
   isLkTicketSource,
   priorityBadgeClass,
@@ -1290,7 +1288,6 @@ export default function TicketPage() {
   })();
   const introBody = detail.body?.trim() || "";
   const statusColumn = ticketListStatusColumn(detail);
-  const assigneePill = ticketListAssigneePill(detail);
   const chatMessages = messages.filter((m) => !m.is_initial);
   const isLkTicket = isLkTicketSource(detail.source);
   const isCommentsPanel = isLkTicket && chatPanel === "comments";
@@ -2087,17 +2084,7 @@ export default function TicketPage() {
                     </span>
                   </span>
                 </div>
-                <div className="kv">
-                  <span className="kvk">Исполнитель</span>
-                  <span className="kvv">
-                    <span
-                      className={`ch-assignee-pill ch-assignee-pill--${assigneePill.variant}`}
-                      title={assigneePill.title}
-                    >
-                      {assigneePill.label}
-                    </span>
-                  </span>
-                </div>
+                <TicketStaffParticipants participants={detail.staff_participants ?? []} layout="sidebar" />
                 <div className="kv">
                   <span className="kvk">Приоритет</span>
                   <span className="kvv">

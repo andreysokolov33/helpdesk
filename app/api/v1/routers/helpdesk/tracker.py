@@ -219,8 +219,9 @@ async def list_tracker_tickets(
         jur_short = m.get("jur_short_name")
         cat_name = m.get("category_name")
         cat_parent = m.get("category_parent_name")
-        assignee_name = m.get("assignee_name")
+        assignee_label = m.get("assignee_label")
         assignee_role = m.get("assignee_role")
+        assignee_is_viewer = bool(m.get("assignee_is_viewer"))
         has_unread = bool(m.get("calc_has_unread"))
         queue_line = str(m.get("queue_line") or support_line_to_queue_line(int(m.get("support_line") or 1)))
         action_by = str(m.get("action_by") or "cs")
@@ -251,9 +252,6 @@ async def list_tracker_tickets(
             comm_label = (
                 COMMUNICATION_STATE_LABELS.get(comm_state) if comm_state else None
             )
-
-        owner_id = int(m["assigned_to"]) if m.get("assigned_to") is not None else None
-        assignee_is_viewer = bool(owner_id is not None and owner_id == viewer_skystream_id)
 
         if cat_name and cat_parent:
             category_label = f"{cat_parent} / {cat_name}"
@@ -299,10 +297,11 @@ async def list_tracker_tickets(
                 subscriber_is_juridical=sub_ij,
                 subscriber_name=sub_name or None,
                 subscriber_login=sub_login,
-                assignee_name=assignee_name,
+                assignee_label=assignee_label,
                 assignee_role=assignee_role,
                 assignee_is_viewer=assignee_is_viewer,
                 assigned_to=int(m["assigned_to"]) if m.get("assigned_to") is not None else None,
+                staff_participants=m.get("staff_participants") or [],
                 has_unread=has_unread,
                 communication_state=comm_state,
                 communication_label=comm_label,
@@ -499,6 +498,8 @@ async def register_call(
             },
         )
     )
+    if assigned_to is not None:
+        await ticket_svc.register_ticket_co_executor(db, int(ticket.id), author_id)
     await db.commit()
 
     return RegisterCallResponse(id=int(ticket.id))

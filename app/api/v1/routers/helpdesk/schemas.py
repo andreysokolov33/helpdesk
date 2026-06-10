@@ -9,6 +9,15 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.api.v1.routers.helpdesk.user_profile_schemas import TicketSubscriberAccountSummary
 
 
+class TicketStaffParticipant(BaseModel):
+    id: int
+    label: str
+    role: str = "support"
+    is_primary: bool = False
+    """Основной исполнитель (assigned_to)."""
+    is_viewer: bool = False
+
+
 class TrackerTicketListItem(BaseModel):
     id: int
     title: str
@@ -35,11 +44,14 @@ class TrackerTicketListItem(BaseModel):
     """0 — физлицо; 2 — юрлицо (золотой заголовок тикета в UI)."""
     subscriber_name: Optional[str] = None
     subscriber_login: Optional[str] = None
-    assignee_name: Optional[str] = None
+    assignee_label: Optional[str] = None
+    """Текст колонки «Исполнитель» (только assigned_to; без ФИО для engineer/manager)."""
     assignee_role: Optional[str] = None
     assignee_is_viewer: bool = False
-    """True, если тикет назначен на текущего оператора (users.skystream_users.id)."""
+    """True, если assigned_to — текущий оператор."""
     assigned_to: Optional[int] = None
+    staff_participants: list[TicketStaffParticipant] = Field(default_factory=list)
+    """assigned_to + соисполнители из tracker_ticket_executors (role=support)."""
     has_unread: bool = False
     """Есть сообщения абонента, которые ещё не прочитал ни один сотрудник."""
     communication_state: Optional[str] = None
@@ -304,10 +316,11 @@ class TicketDetailResponse(BaseModel):
     subscriber_online: bool = False
     subscriber_is_juridical: int = 0
     subscriber_profile_user_id: int | None = None
-    assignee_name: str | None = None
+    assignee_label: str | None = None
     assignee_role: str | None = None
     assignee_is_viewer: bool = False
     assigned_to: int | None = None
+    staff_participants: list[TicketStaffParticipant] = Field(default_factory=list)
     station_name: str | None = None
     station_id: int | None = None
     date_of_create_iso: str | None = None

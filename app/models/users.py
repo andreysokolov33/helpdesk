@@ -467,7 +467,7 @@ class TrackerTickets(Base):
     caller_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     engineer_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, nullable=True,
-        comment='Инженер (skystream_users.id) при эскалации. NULL — инженер не подключён.',
+        comment='Инженер (skystream_users.id) при эскалации. NULL — инженер не подключен.',
     )
     queue_line: Mapped[str] = mapped_column(
         ENUM('cs', 'engineers', 'partner', name='tracker_queue_line', schema='users', create_type=False),
@@ -1205,7 +1205,7 @@ class TrackerTicketLineHistory(Base):
 
 
 class TrackerTicketExecutors(Base):
-    """Исполнители-помощники по тикету (сопоставление ticket_id — abs_user_id)."""
+    """Участники тикета (соисполнители). Общая таблица; роль — в skystream_users."""
     __tablename__ = 'tracker_ticket_executors'
     __table_args__ = (
         ForeignKeyConstraint(['ticket_id'], ['users.tracker_tickets.id'],
