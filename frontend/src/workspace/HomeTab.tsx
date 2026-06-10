@@ -6,19 +6,19 @@ export default function HomeTab() {
   const navigate = useNavigate();
 
   return (
-    <div className="tp on">
+    <div className="tp on home-page">
       <div className="pg">
         <div style={{ textAlign: "center", padding: "8px 0 4px" }}>
-          <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 14 }}>
-            Найдите <span style={{ color: "var(--red)" }}>абонента</span> или ответ в{" "}
-            <span style={{ color: "var(--red)" }}>базе знаний</span>
+          <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 14, color: "var(--ink)" }}>
+            Найдите <span className="home-accent">абонента</span> или ответ в{" "}
+            <span className="home-accent">базе знаний</span>
           </div>
           <UniversalSearch />
         </div>
 
         <p style={{ fontSize: 12, color: "var(--i2)", textAlign: "center", marginTop: 8 }}>
           Сегодня <strong style={{ color: "var(--ink)" }}>10 заявок</strong> —{" "}
-          <span style={{ color: "var(--red)", fontWeight: 600 }}>2 ждут ответа</span>
+          <span className="home-stat-alert">2 ждут ответа</span>
         </p>
 
         <div>
@@ -42,17 +42,7 @@ export default function HomeTab() {
                 className="ug"
                 onClick={() => navigate(`/tickets/${t.id}`)}
               >
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: "var(--red)",
-                    marginBottom: 3,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                  }}
-                >
+                <div className="home-urgent-meta">
                   <span className="pulse" /> {t.time}
                   {t.urgentLabel ? (
                     <span className="tag thi" style={{ marginLeft: 3 }}>
@@ -62,20 +52,7 @@ export default function HomeTab() {
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{t.name}</div>
                 <div style={{ fontSize: 10, color: "var(--i2)" }}>{t.topic}</div>
-                <div
-                  style={{
-                    display: "inline-flex",
-                    marginTop: 7,
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: "var(--red)",
-                    background: "var(--rbg)",
-                    borderRadius: 4,
-                    padding: "2px 7px",
-                  }}
-                >
-                  Ответить →
-                </div>
+                <div className="home-reply-cta">Ответить →</div>
               </button>
             ))}
           </div>
@@ -104,11 +81,8 @@ export default function HomeTab() {
               >
                 <div className="tln">#{t.id}</div>
                 <div
-                  className="tld"
-                  style={{
-                    background:
-                      t.dot === "red" ? "var(--red)" : t.dot === "wn" ? "var(--wn)" : "var(--i2)",
-                  }}
+                  className={`tld${t.dot === "red" ? " home-list-dot--alert" : t.dot === "wn" ? " home-list-dot--warn" : ""}`}
+                  style={t.dot === "i2" ? { background: "var(--i2)" } : undefined}
                 />
                 <div className="tlnm">{t.name}</div>
                 <div className="tltp">{t.topic}</div>
@@ -143,7 +117,7 @@ export default function HomeTab() {
                     <strong>{r.name}</strong>
                   </td>
                   <td style={{ color: "var(--i2)" }}>{r.reason}</td>
-                  <td style={{ color: r.score === "1" ? "var(--red)" : "var(--wn)", fontWeight: 700 }}>
+                  <td className={r.score === "1" ? "home-score-critical" : undefined} style={r.score !== "1" ? { color: "var(--wn)", fontWeight: 700 } : undefined}>
                     {r.score}
                   </td>
                   <td style={{ color: "var(--i3)" }}>{r.date}</td>

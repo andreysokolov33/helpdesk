@@ -7,13 +7,14 @@
   position: relative;
   overflow: hidden;
   font-family: "Manrope", system-ui, sans-serif;
-  background: #060d16;
-  color: #e8edf2;
+  line-height: 1.6;
+  background: #0a1e36;
+  color: #cbd5e0;
 }
 
 .wrap[data-theme="light"] {
-  background: #f0f1ed;
-  color: #0a1e36;
+  background: #f5f5f3;
+  color: #3d5068;
 }
 
 /* Soft animated glow */
@@ -81,7 +82,7 @@
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
-  color: #e8edf2;
+  color: #cbd5e0;
   cursor: pointer;
   transition:
     background 0.2s ease,
@@ -99,7 +100,6 @@
   border-color: rgba(10, 30, 54, 0.12);
   background: rgba(255, 255, 255, 0.85);
   color: #0a1e36;
-  box-shadow: 0 4px 20px rgba(10, 30, 54, 0.08);
 }
 
 .wrap[data-theme="light"] .themeBtn:hover {
@@ -130,18 +130,13 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(155deg, rgba(18, 42, 68, 0.92) 0%, rgba(10, 28, 48, 0.88) 100%);
   backdrop-filter: blur(24px) saturate(140%);
-  box-shadow:
-    0 32px 80px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
-    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  box-shadow: none;
 }
 
 .wrap[data-theme="light"] .card {
   border-color: rgba(226, 226, 220, 0.95);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(248, 249, 246, 0.98) 100%);
-  box-shadow:
-    0 28px 70px rgba(10, 30, 54, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.9) inset;
+  box-shadow: none;
 }
 
 .logoBlock {
@@ -195,7 +190,7 @@
   text-align: center;
   font-size: 14px;
   line-height: 1.55;
-  color: rgba(232, 237, 242, 0.62);
+  color: #5e7b94;
   margin-bottom: 32px;
   max-width: 34em;
   margin-left: auto;
@@ -236,7 +231,7 @@
   border-radius: 14px;
   border: 1.5px solid rgba(255, 255, 255, 0.12);
   background: rgba(6, 16, 28, 0.45);
-  color: #e8edf2;
+  color: #cbd5e0;
   font-size: 15px;
   font-family: inherit;
   padding: 0 16px;
@@ -250,15 +245,15 @@
 .wrap[data-theme="light"] .input {
   border-color: #e2e2dc;
   background: #fff;
-  color: #0a1e36;
+  color: #3d5068;
 }
 
 .input::placeholder {
-  color: rgba(232, 237, 242, 0.32);
+  color: #5e7b94;
 }
 
 .wrap[data-theme="light"] .input::placeholder {
-  color: #9cb0c4;
+  color: #7a8b9a;
 }
 
 .input:hover:not(:disabled) {
@@ -312,12 +307,9 @@
   letter-spacing: 0.02em;
   color: #fff;
   background: linear-gradient(135deg, #ff3520 0%, #d41000 52%, #b30e00 100%);
-  box-shadow:
-    0 10px 32px rgba(255, 30, 10, 0.38),
-    0 1px 0 rgba(255, 255, 255, 0.2) inset;
+  box-shadow: none;
   transition:
     transform 0.18s ease,
-    box-shadow 0.18s ease,
     filter 0.18s ease;
   display: flex;
   align-items: center;
@@ -328,9 +320,6 @@
 .btn:hover:not(:disabled) {
   transform: translateY(-2px);
   filter: brightness(1.04);
-  box-shadow:
-    0 14px 40px rgba(255, 30, 10, 0.48),
-    0 1px 0 rgba(255, 255, 255, 0.25) inset;
 }
 
 .btn:active:not(:disabled) {

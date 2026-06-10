@@ -4,24 +4,6 @@ import { fetchDeskSearch, type SubscriberSearchHit } from "@/api/search";
 import HighlightText from "@/components/HighlightText";
 import { MOCK_KB, type KbArticle } from "@/data/mockCc";
 
-const SCOPE_STORAGE_KEY = "helpdesk.universal-search.scope";
-
-type SearchScope = { abon: boolean; kb: boolean };
-
-function loadSearchScope(): SearchScope {
-  try {
-    const raw = localStorage.getItem(SCOPE_STORAGE_KEY);
-    if (!raw) return { abon: true, kb: true };
-    const p = JSON.parse(raw) as Partial<SearchScope>;
-    const abon = p.abon !== false;
-    const kb = p.kb !== false;
-    if (!abon && !kb) return { abon: true, kb: true };
-    return { abon, kb };
-  } catch {
-    return { abon: true, kb: true };
-  }
-}
-
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "").slice(0, 80);
 }
@@ -77,7 +59,6 @@ function SubscriberRow({ hit, query, onPick }: SubscriberRowProps) {
 export default function UniversalSearch() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
-  const [scope, setScope] = useState<SearchScope>(loadSearchScope);
   const [openDrop, setOpenDrop] = useState(false);
   const [kbOpen, setKbOpen] = useState(false);
   const [kbTitle, setKbTitle] = useState("");
@@ -87,30 +68,15 @@ export default function UniversalSearch() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  function toggleScope(key: keyof SearchScope) {
-    setScope((prev) => {
-      const other = key === "abon" ? "kb" : "abon";
-      if (prev[key] && !prev[other]) return prev;
-      const next = { ...prev, [key]: !prev[key] };
-      try {
-        localStorage.setItem(SCOPE_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore quota / private mode */
-      }
-      return next;
-    });
-  }
-
   const kb = useMemo(() => {
-    if (!scope.kb) return [];
     const s = q.trim().toLowerCase();
     if (s.length < 2) return [];
     return MOCK_KB.filter((k) => k.t.toLowerCase().includes(s) || k.k.includes(s));
-  }, [q, scope.kb]);
+  }, [q]);
 
   useEffect(() => {
     const s = q.trim();
-    if (!scope.abon || s.length < 2) {
+    if (s.length < 2) {
       setSubs([]);
       setLoading(false);
       setSearchError(null);
@@ -141,7 +107,7 @@ export default function UniversalSearch() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [q, scope.abon]);
+  }, [q]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -152,11 +118,10 @@ export default function UniversalSearch() {
   }, []);
 
   const trimmed = q.trim();
-  const subsVisible = scope.abon && subs.length > 0;
-  const kbVisible = scope.kb && kb.length > 0;
+  const subsVisible = subs.length > 0;
+  const kbVisible = kb.length > 0;
   const hasResults = subsVisible || kbVisible;
   const showDrop = openDrop && trimmed.length >= 2;
-  const scopeActive = scope.abon || scope.kb;
 
   function onSearchInput(v: string) {
     setQ(v);
@@ -180,16 +145,14 @@ export default function UniversalSearch() {
 
   function onSearchEnter() {
     const s = trimmed.toLowerCase();
-    if (!s || !scopeActive) return;
+    if (!s) return;
     setOpenDrop(false);
-    if (scope.kb) {
-      const kh = MOCK_KB.filter((k) => k.t.toLowerCase().includes(s) || k.k.includes(s));
-      if (kh.length) {
-        showKbCard(kh[0]);
-        return;
-      }
+    const kh = MOCK_KB.filter((k) => k.t.toLowerCase().includes(s) || k.k.includes(s));
+    if (kh.length) {
+      showKbCard(kh[0]);
+      return;
     }
-    if (scope.abon && subs.length) pickSubscriber(subs[0]);
+    if (subs.length) pickSubscriber(subs[0]);
   }
 
   return (
@@ -212,38 +175,14 @@ export default function UniversalSearch() {
           <circle cx="9" cy="9" r="5.5" stroke="currentColor" strokeWidth="1.5" />
           <path d="M14 14l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
-        <div className="sr-scope" role="group" aria-label="Область поиска">
-          <button
-            type="button"
-            className={`sr-scope-btn sr-scope-btn--kb${scope.kb ? " on" : ""}`}
-            aria-pressed={scope.kb}
-            title={scope.kb ? "Искать в базе знаний" : "Не искать в базе знаний"}
-            onClick={() => toggleScope("kb")}
-          >
-            БД
-          </button>
-          <button
-            type="button"
-            className={`sr-scope-btn sr-scope-btn--ab${scope.abon ? " on" : ""}`}
-            aria-pressed={scope.abon}
-            title={scope.abon ? "Искать абонентов" : "Не искать абонентов"}
-            onClick={() => toggleScope("abon")}
-          >
-            Абон
-          </button>
-        </div>
         {loading ? <span className="sr-spinner" aria-hidden /> : null}
 
         <div className={`sd sr-drop ${showDrop ? "vis" : ""}`} role="listbox">
-          {!scopeActive ? <div className="sr-empty">Включите БД или Абон</div> : null}
+          {searchError ? <div className="sr-empty sr-error">{searchError}</div> : null}
 
-          {scopeActive && searchError ? <div className="sr-empty sr-error">{searchError}</div> : null}
+          {!searchError && loading && !hasResults ? <div className="sr-empty">Ищем…</div> : null}
 
-          {scopeActive && !searchError && loading && !hasResults ? (
-            <div className="sr-empty">Ищем…</div>
-          ) : null}
-
-          {scopeActive && !searchError && !loading && trimmed.length >= 2 && !hasResults ? (
+          {!searchError && !loading && trimmed.length >= 2 && !hasResults ? (
             <div className="sr-empty">Ничего не найдено</div>
           ) : null}
 

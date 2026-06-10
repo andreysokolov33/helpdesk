@@ -180,7 +180,7 @@ export default function CallTab() {
       setError("Укажите, планирует ли партнёр новую станцию");
       return;
     }
-    if (mode === "new_partner") {
+    if (mode === "new_partner" && lead.plans_new_station === true) {
       const count = lead.potential_subscribers;
       if (count == null || count < 0) {
         setError("Укажите число потенциальных абонентов");
@@ -197,7 +197,11 @@ export default function CallTab() {
           address,
           phone: phoneNorm,
           potential_subscribers:
-            mode === "new_partner" ? Math.max(0, lead.potential_subscribers ?? 0) : undefined,
+            mode === "new_partner" && lead.plans_new_station === true
+              ? Math.max(0, lead.potential_subscribers ?? 0)
+              : mode === "new_partner"
+                ? null
+                : undefined,
           sees_network: mode === "new_subscriber" ? lead.sees_network : undefined,
           plans_new_station: mode === "new_partner" ? lead.plans_new_station : undefined,
           notes: lead.notes?.trim() || null,
@@ -239,9 +243,7 @@ export default function CallTab() {
             </svg>
           </div>
           <div>
-            <h1 className="call-page__title">
-              Регистрация <span>звонка</span>
-            </h1>
+            <h1 className="call-page__title">Регистрация звонка</h1>
             <p className="call-page__lead">
               Входящие на 8-800. Выберите тип обращения — категорию и SLA укажете при завершении.
             </p>
@@ -355,37 +357,44 @@ export default function CallTab() {
                     />
                   </div>
                 ) : (
-                  <div className="call-lead-form__row call-lead-form__row--split">
+                  <div
+                    className={`call-lead-form__row call-lead-form__row--split${lead.plans_new_station === true ? "" : " call-lead-form__row--single"}`}
+                  >
                     <div className="call-field">
                       <span className="call-field__lbl">
                         Планирует новую станцию <span className="call-req">*</span>
                       </span>
                       <BoolToggle
                         value={lead.plans_new_station ?? null}
-                        onChange={(v) => patchLead("plans_new_station", v)}
-                      />
-                    </div>
-                    <div className="call-field">
-                      <label className="call-field__lbl" htmlFor="lead-count">
-                        Потенциальных абонентов <span className="call-req">*</span>
-                      </label>
-                      <input
-                        id="lead-count"
-                        className="call-input call-input--num"
-                        type="number"
-                        min={0}
-                        max={99999}
-                        value={lead.potential_subscribers ?? ""}
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          patchLead(
-                            "potential_subscribers",
-                            raw === "" ? null : Math.max(0, parseInt(raw, 10) || 0),
-                          );
+                        onChange={(v) => {
+                          patchLead("plans_new_station", v);
+                          if (!v) patchLead("potential_subscribers", null);
                         }}
-                        placeholder="0"
                       />
                     </div>
+                    {lead.plans_new_station === true ? (
+                      <div className="call-field">
+                        <label className="call-field__lbl" htmlFor="lead-count">
+                          Потенциальных абонентов <span className="call-req">*</span>
+                        </label>
+                        <input
+                          id="lead-count"
+                          className="call-input call-input--num"
+                          type="number"
+                          min={0}
+                          max={99999}
+                          value={lead.potential_subscribers ?? ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            patchLead(
+                              "potential_subscribers",
+                              raw === "" ? null : Math.max(0, parseInt(raw, 10) || 0),
+                            );
+                          }}
+                          placeholder="0"
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 )}
                 <div className="call-field">

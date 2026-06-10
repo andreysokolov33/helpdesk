@@ -1,0 +1,19 @@
+{
+  "project": "WiFiTochka_Final_Standard",
+  "contrast_ratio": "7:1_to_10:1",
+  "line_height": "1.6",
+  "border_radius": "12px",
+  "colors": {
+    "red": "#FF1300",
+    "dark_blue": "#0A1E36",
+    "success_light": "#1B5299",
+    "success_dark": "#F0A830",
+    "text_light": "#3D5068",
+    "text_dark": "#CBD5E0"
+  },
+  "rules": {
+    "shadows": "none",
+    "icons_in_badges": "none",
+    "success_indicator": "text + dot_marker"
+  }
+}

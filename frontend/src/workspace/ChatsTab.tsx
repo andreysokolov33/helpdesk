@@ -419,9 +419,6 @@ export default function ChatsTab() {
               </span>
             ) : null}
             <span className="ch-row-id">#{row.id}</span>
-            {!closedMode && ticketListNeedsAttention(row) ? (
-              <span className="ch-unread-dot" title="Нужен ответ" />
-            ) : null}
             <span className="ch-row-title" title={row.title}>
               {row.title}
             </span>

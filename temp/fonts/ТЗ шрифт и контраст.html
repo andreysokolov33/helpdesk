@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<title>WiFi Точка — Финальный Стандарт</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --brand-red: #FF1300;
+    --brand-dark: #0A1E36;
+    --bg-sys: #F5F5F3;
+    --bg-card: #FFFFFF;
+    --text-primary: #3D5068; /* Смягчен для 12-часовой смены */
+    --text-headers: #0A1E36;
+    --status-ok: #1B5299; /* Синий успех */
+    --status-ok-bg: #EAF2F9;
+    --status-err-bg: #FFF0EE;
+    --line: #E2E2DC;
+}
+
+[data-theme="dark"] {
+    --bg-sys: #0A1E36;
+    --bg-card: #11283F;
+    --text-primary: #CBD5E0; /* Приглушенный для исключения ореола */
+    --text-headers: #FFFFFF;
+    --status-ok: #F0A830; /* ЗОЛОТОЙ успех */
+    --status-ok-bg: rgba(240, 168, 48, 0.1);
+    --brand-red: #FF4433;
+    --status-err-bg: rgba(255, 68, 51, 0.15);
+    --line: #1E3A58;
+}
+
+* { box-sizing: border-box; transition: background 0.3s, color 0.2s; }
+
+body { 
+    font-family: 'Manrope', sans-serif; 
+    background-color: var(--bg-sys); 
+    color: var(--text-primary); 
+    line-height: 1.6; 
+    margin: 0; padding: 40px;
+    -webkit-font-smoothing: antialiased;
+}
+
+.container { max-width: 900px; margin: 0 auto; }
+
+/* КНОПКА ТЕМЫ (Интегрирована) */
+.theme-toggle {
+    position: fixed; top: 25px; right: 25px;
+    padding: 10px 24px; border-radius: 30px;
+    border: 2px solid var(--brand-red); background: var(--bg-card);
+    color: var(--brand-red); font-weight: 800; cursor: pointer;
+    font-size: 11px; text-transform: uppercase; z-index: 100;
+}
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: none;
+}
+
+h1 { font-size: 32px; font-weight: 800; color: var(--brand-red); margin-bottom: 20px; }
+
+/* КРИТИЧЕСКИЙ СТАТУС (PLATE) */
+.badge-alert {
+    background: var(--status-err-bg);
+    color: var(--brand-red);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-weight: 800;
+    font-size: 11px;
+    text-transform: uppercase;
+    display: inline-block;
+}
+
+/* ШТАТНЫЙ СТАТУС (TEXT + DOT) */
+.status-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--status-ok);
+    font-weight: 700;
+    font-size: 14px;
+}
+.status-ok::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background-color: var(--status-ok);
+    border-radius: 50%;
+}
+
+/* КНОПКА (Вес 800) */
+.btn-main {
+    background-color: var(--brand-red);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 32px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+}
+
+table { width: 100%; border-collapse: collapse; margin-top: 25px; }
+td { padding: 14px 0; border-bottom: 1px solid var(--line); font-weight: 600; }
+th { text-align: left; padding-bottom: 10px; color: #7A8B9A; font-size: 10px; text-transform: uppercase; border-bottom: 2px solid var(--line); }
+
+</style>
+</head>
+<body>
+
+<button class="theme-toggle" onclick="toggleTheme()">Переключить тему</button>
+
+<div class="container">
+    <h1>WIFI ТОЧКА</h1>
+    
+    <div class="card">
+        <h2 style="font-size: 20px; color: var(--text-headers); margin-bottom: 15px;">Финальный стандарт индикации</h2>
+        <p>Для штатных уведомлений мы используем <b>маркер-точку</b>. Это убирает визуальный шум. Для критических ошибок используется <b>плашка (plate)</b>, которая сразу привлекает внимание.</p>
+        
+        <div style="margin-top:25px; display: flex; gap: 20px; align-items: center;">
+            <span class="status-ok">Оборудование онлайн</span>
+            <span class="badge-alert">Лимит исчерпан</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <button class="btn-main">Запустить диагностику</button>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead>
+                <tr><th>Параметр</th><th>Данные</th><th>Результат</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>ID Абонента</td><td>#21091</td><td><span class="status-ok">Подтвержден</span></td></tr>
+                <tr><td>Баланс</td><td>3 200 ₽</td><td><span class="status-ok">Оплачено</span></td></tr>
+                <tr><td>Станция</td><td>Томтор</td><td><span class="badge-alert">Офлайн</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function toggleTheme() {
+    const root = document.documentElement;
+    root.setAttribute('data-theme', root.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+}
+</script>
+
+</body>
+</html>

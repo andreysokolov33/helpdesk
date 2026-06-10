@@ -78,6 +78,10 @@ export default function OperatorProfilePage() {
         })
       : "#";
 
+  const fullName = me?.full_name?.trim() || null;
+  const login = me?.login?.trim() || null;
+  const displayName = fullName || login || (loading ? "…" : "—");
+
   return (
     <div className="op-page">
       <div className="op-head">
@@ -86,9 +90,9 @@ export default function OperatorProfilePage() {
       </div>
 
       <div className="card op-card">
-        <div className="op-card-label">Логин</div>
-        <div className="op-card-value">{me?.login?.trim() || (loading ? "…" : "—")}</div>
-        {me?.full_name ? <div className="op-card-meta">{me.full_name}</div> : null}
+        <div className="op-card-label">Аккаунт</div>
+        <div className="op-card-value">{displayName}</div>
+        {fullName && login ? <div className="op-card-login">{login}</div> : null}
       </div>
 
       <div className="card op-card">

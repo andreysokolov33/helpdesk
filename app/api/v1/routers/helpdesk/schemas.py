@@ -186,7 +186,11 @@ class RegisterCallRequest(BaseModel):
             raise ValueError("Укажите, видит ли клиент сеть")
         if kind == "new_partner" and self.lead.plans_new_station is None:
             raise ValueError("Укажите, планирует ли партнёр новую станцию")
-        if kind == "new_partner" and self.lead.potential_subscribers is None:
+        if (
+            kind == "new_partner"
+            and self.lead.plans_new_station is True
+            and self.lead.potential_subscribers is None
+        ):
             raise ValueError("Укажите число потенциальных абонентов")
         return self
 

@@ -16,11 +16,6 @@
   border: 1px solid var(--ln);
   border-radius: 10px;
   background: var(--p);
-  box-shadow: 0 1px 4px rgba(10, 30, 54, 0.06);
-}
-
-[data-theme="dark"] #cs-page .cs-shell {
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
 }
 
 /* ----------------------------- Сайдбар со списком чатов ----------------------------- */
@@ -54,8 +49,9 @@
 #cs-page .cs-sidebar__count {
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  background: var(--red);
+  color: var(--rdk);
+  background: var(--rbg);
+  border: 1px solid var(--rsf);
   border-radius: 9px;
   padding: 1px 7px;
   line-height: 16px;
@@ -179,12 +175,13 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--lm);
+  background: var(--presence-off);
   border: 2px solid var(--p);
+  box-sizing: border-box;
 }
 
 #cs-page .cs-chat__dot.is-online {
-  background: var(--ok);
+  background: var(--presence-on);
 }
 
 #cs-page .cs-chat__name {
@@ -211,7 +208,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--red);
+  background: var(--rua);
 }
 
 #cs-page .cs-chat__time {
@@ -245,12 +242,25 @@
   height: 18px;
   padding: 0 6px;
   border-radius: 9px;
-  background: var(--red);
-  color: #fff;
+  background: var(--rbg);
+  color: var(--rdk);
+  border: 1px solid var(--rsf);
   font-size: 10px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 16px;
   text-align: center;
+  box-sizing: border-box;
+}
+
+[data-theme="dark"] #cs-page .cs-sidebar__count,
+[data-theme="dark"] #cs-page .cs-chat__badge {
+  background: var(--obg);
+  color: var(--ok);
+  border-color: var(--okln);
+}
+
+[data-theme="dark"] #cs-page .cs-chat.is-unread .cs-chat__name::before {
+  background: var(--ok);
 }
 
 #cs-page .cs-load-more {
@@ -352,7 +362,11 @@
   gap: 5px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--i3);
+  color: var(--presence-off);
+}
+
+#cs-page .cs-head__status:has(.is-online) {
+  color: var(--presence-on);
 }
 
 #cs-page .cs-head__status .cs-chat__dot {
@@ -360,6 +374,7 @@
   border: none;
   width: 8px;
   height: 8px;
+  flex-shrink: 0;
 }
 
 #cs-page .cs-head__profile {
@@ -407,17 +422,15 @@
   border: 1px solid var(--lm);
   background: var(--p);
   color: var(--ink);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--ink) 12%, transparent);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: transform 0.15s ease, background 0.15s ease;
 }
 
 #cs-page .cs-scroll-down:hover {
   background: color-mix(in srgb, var(--p) 88%, var(--ink));
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--ink) 16%, transparent);
   transform: translateY(-1px);
 }
 
@@ -435,7 +448,6 @@
   font-weight: 700;
   line-height: 18px;
   text-align: center;
-  box-shadow: 0 2px 6px rgba(61, 143, 212, 0.35);
 }
 
 #cs-page .cs-feed {
@@ -526,8 +538,7 @@
 [data-theme="light"] #cs-page .cs-bbl.cl {
   background: #fff;
   border: 1px solid #e2e6ec;
-  color: var(--ink);
-  box-shadow: 0 1px 2px rgba(10, 30, 54, 0.04);
+  color: var(--i2);
 }
 
 [data-theme="dark"] #cs-page .cs-bbl.cl {
