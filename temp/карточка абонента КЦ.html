@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Карточка абонента — WiFi Точка</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   ТЗ РАЗДЕЛ 1: ВИЗУАЛЬНЫЕ СТАНДАРТЫ И ЭРГОНОМИКА ЗРЕНИЯ
+   • Flat Design 2.0: нет теней, градиентов, размытия
+   • Контраст 7:1 – 10:1 (WCAG AAA)
+   • Красный #FF1300 — брендовый (не меняется в тёмной теме)
+   • Зелёный запрещён
+   • Штатный статус: текст + точка (без заливки)
+   • Критический статус: заливка (plate)
+   • Шрифт Manrope, line-height 1.6
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --brand-red: #FF1300;
+  --brand-dark: #0A1E36;
+  --bg-sys: #F5F5F3;
+  --bg-card: #FFFFFF;
+  --text-primary: #3D5068;
+  --text-headers: #0A1E36;
+  --text-secondary: #5C6E7E;
+  --status-ok: #1B5299;
+  --status-ok-bg: #EAF2F9;
+  --status-err-bg: #FFF0EE;
+  --line: #E2E2DC;
+  --muted: #7A8B9A;
+  --f: 'Manrope', sans-serif;
+}
+[data-theme="dark"] {
+  --bg-sys: #0A1E36;
+  --bg-card: #11283F;
+  --text-primary: #CBD5E0;
+  --text-headers: #FFFFFF;
+  --text-secondary: #8899AA;
+  --status-ok: #F0A830;
+  --status-ok-bg: rgba(240,168,48,.10);
+  --status-err-bg: rgba(255,19,0,0.12);
+  --line: #1E3A58;
+  --muted: #5A7A94;
+  --brand-red: #FF1300;  /* фиксировано — брендовый цвет */
+}
+
+*{box-sizing:border-box;margin:0;padding:0;transition:background .25s,color .2s,border-color .2s}
+body{font-family:var(--f);background:var(--bg-sys);color:var(--text-primary);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+
+.topbar{background:var(--bg-card);border-bottom:1px solid var(--line);padding:0 32px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.topbar-left{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.topbar-left a{color:var(--muted);text-decoration:none;cursor:pointer}
+.topbar-left a:hover{color:var(--text-headers)}
+.sep{color:var(--line)}
+.topbar-name{font-weight:700;color:var(--text-headers)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.btn-ghost{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 16px;font-family:var(--f);font-size:12px;font-weight:700;color:var(--text-primary);cursor:pointer}
+.btn-ghost:hover{border-color:var(--text-headers);color:var(--text-headers)}
+.btn-primary{background:var(--brand-red);border:none;border-radius:8px;padding:7px 18px;font-family:var(--f);font-size:12px;font-weight:800;color:#fff;cursor:pointer;text-transform:uppercase;letter-spacing:.4px}
+.btn-theme{background:none;border:1px solid var(--line);border-radius:20px;padding:5px 14px;font-family:var(--f);font-size:10px;font-weight:800;color:var(--muted);cursor:pointer;text-transform:uppercase}
+
+.page{max-width:1200px;margin:0 auto;padding:24px 32px 60px}
+
+.hero{margin-bottom:20px}
+.hero-name{font-size:26px;font-weight:800;color:var(--text-headers);margin-bottom:10px}
+.badges{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.badge{font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;border:1px solid var(--line);color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.badge-ok{border-color:var(--status-ok);background:var(--status-ok-bg);color:var(--status-ok)}
+.badge-err{background:var(--status-err-bg);color:var(--brand-red);border:none}
+.badge-warn{background:rgba(184,110,16,.12);color:#B86E10;border:none}
+
+.metric-strip{display:flex;gap:32px;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--line);border-radius:12px;padding:14px 24px;margin-bottom:20px;align-items:baseline}
+.metric-item{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.metric-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.metric-value{font-size:16px;font-weight:800;color:var(--text-headers)}
+.metric-value.balance{font-size:20px}
+.balance-positive{color:var(--status-ok)}
+.balance-warning{color:#B86E10}
+.balance-danger{color:var(--brand-red)}
+
+.rfm-strip{border:1px solid var(--line);border-radius:12px;padding:12px 18px;display:flex;align-items:center;gap:14px;margin-bottom:20px;background:var(--bg-card)}
+.rfm-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.rfm-label{font-size:13px;font-weight:800;color:var(--text-headers)}
+.rfm-desc{font-size:11px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.4}
+
+.s-ok{display:inline-flex;align-items:center;gap:7px;color:var(--status-ok);font-weight:700;font-size:13px}
+.s-ok::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--status-ok);flex-shrink:0}
+.s-muted{color:var(--muted);font-size:13px;font-weight:600}
+.plate-err{background:var(--status-err-bg);color:var(--brand-red);padding:3px 10px;border-radius:6px;font-size:10px;font-weight:800;text-transform:uppercase;display:inline-block}
+.plate-warn{background:rgba(184,110,16,.12);color:#B86E10;padding:3px 10px;border-radius:6px;font-size:10px;font-weight:800;text-transform:uppercase;display:inline-block}
+
+.grid-2col{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+
+.card{background:var(--bg-card);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.card-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:14px}
+
+.row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:none;padding-bottom:0}
+.row-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.row-val{font-size:13px;font-weight:600;color:var(--text-headers);text-align:right}
+
+.sess-item{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.sess-item:last-child{margin-bottom:0}
+.sess-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.sess-dev{font-size:12px;font-weight:700;color:var(--text-headers);display:flex;align-items:center;gap:8px}
+.sess-dot{width:7px;height:7px;border-radius:50%;background:var(--status-ok)}
+.sess-type{font-size:9px;font-weight:800;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.3px}
+.sess-pppoe{background:var(--status-ok-bg);color:var(--status-ok)}
+.sess-hot{background:var(--status-err-bg);color:var(--brand-red)}
+.sess-meta{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px}
+.sess-meta span{font-size:10px;color:var(--muted)}
+.sess-meta strong{color:var(--text-headers)}
+
+.action-buttons-wrap{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.action-btn{flex:1;min-width:120px;padding:10px;border:1px solid var(--line);border-radius:8px;background:none;font-family:var(--f);font-size:12px;font-weight:700;color:var(--text-primary);cursor:pointer}
+.action-btn:hover{border-color:var(--text-headers)}
+.action-btn.danger{border-color:var(--status-err-bg);color:var(--brand-red)}
+.action-btn.danger:hover{background:var(--status-err-bg)}
+.action-btn.success{border-color:var(--status-ok);color:var(--status-ok)}
+.action-btn.success:hover{background:var(--status-ok-bg)}
+
+.diag-idle{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:16px}
+.diag-btn{width:100%;padding:13px;background:var(--brand-red);border:none;border-radius:8px;font-family:var(--f);font-size:13px;font-weight:800;color:#fff;cursor:pointer;text-transform:uppercase;letter-spacing:.5px}
+.diag-btn:hover{opacity:.9}
+.diag-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+.diag-problem{background:var(--status-err-bg);border-radius:8px;padding:14px;font-size:12px;color:var(--text-headers);line-height:1.6}
+.diag-problem h4{font-size:12px;font-weight:800;color:var(--brand-red);margin-bottom:8px}
+.diag-problem ol{padding-left:16px}
+.diag-problem li{margin-bottom:4px}
+.diag-step{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.diag-step:last-child{border:none}
+.diag-step-icon{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;font-weight:800;color:var(--muted)}
+.diag-step-icon.ok{border-color:var(--status-ok);background:var(--status-ok-bg)}
+.diag-step-icon.err{border-color:var(--brand-red);background:var(--status-err-bg);color:var(--brand-red)}
+.diag-step-text{font-size:12px;color:var(--text-primary)}
+.diag-step-text strong{color:var(--text-headers);display:block;font-size:11px;margin-bottom:2px}
+.diag-footer{display:flex;align-items:center;gap:14px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.diag-footer-note{font-size:11px;color:var(--muted)}
+
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tab-btn{background:none;border:none;padding:8px 20px;font-family:var(--f);font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;margin-bottom:-1px}
+.tab-btn.active{color:var(--brand-red);border-bottom:2px solid var(--brand-red)}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+
+.stat-table{width:100%;border-collapse:collapse;font-size:12px}
+.stat-table th{text-align:left;padding:6px 10px 8px 0;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:2px solid var(--line)}
+.stat-table td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--text-primary)}
+.stat-table tr:last-child td{border:none}
+.stat-table .amount{font-weight:800;color:var(--text-headers);text-align:right}
+.appeal-status{font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;display:inline-block}
+.appeal-status.work{background:rgba(184,110,16,.12);color:#B86E10}
+.appeal-status.done{background:var(--status-ok-bg);color:var(--status-ok)}
+.appeal-status.engineer{background:var(--status-err-bg);color:var(--brand-red)}
+
+.pass-btn{font-size:11px;color:var(--brand-red);cursor:pointer;text-decoration:underline;background:none;border:none;font-family:var(--f);font-weight:700;padding:0}
+.pass-data{font-size:12px;color:var(--text-primary);margin-top:4px;display:none;line-height:1.5}
+
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center}
+.modal.active{display:flex}
+.modal-content{background:var(--bg-card);border-radius:16px;width:90%;max-width:500px}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.modal-header h2{font-size:20px;font-weight:800;color:var(--text-headers)}
+.modal-close{background:none;border:none;font-size:28px;cursor:pointer;color:var(--muted)}
+.modal-body{padding:24px}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:12px}
+.form-group{margin-bottom:20px}
+.form-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);display:block;margin-bottom:6px}
+.form-textarea{width:100%;padding:10px 12px;background:var(--bg-card);border:1px solid var(--line);border-radius:8px;font-family:var(--f);font-size:13px;color:var(--text-primary);resize:vertical;min-height:100px}
+.form-textarea:focus{outline:none;border-color:var(--brand-red)}
+.info-block{background:var(--bg-sys);border-radius:8px;padding:12px;margin-bottom:20px}
+.info-row{display:flex;margin-bottom:6px}
+.info-row:last-child{margin-bottom:0}
+.info-label{width:70px;font-size:11px;font-weight:800;color:var(--muted)}
+.info-value{font-size:13px;font-weight:600;color:var(--text-headers)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <a onclick="history.back()">← Поиск</a>
+    <span class="sep">/</span>
+    <span class="topbar-name" id="tb-name">Жаркова Мария Владимировна</span>
+  </div>
+  <div class="topbar-right">
+    <button class="btn-theme" onclick="toggleTheme()">Тема</button>
+    <button class="btn-ghost" onclick="openCallModal()">Регистрация звонка</button>
+    <button class="btn-primary" onclick="alert('Создать тикет')">Создать тикет</button>
+  </div>
+</div>
+
+<div class="page">
+  <div class="hero">
+    <div class="hero-name" id="pg-name">Жаркова Мария Владимировна</div>
+    <div class="badges">
+      <span class="badge badge-ok" id="b-status">АКТИВЕН</span>
+      <span class="badge" id="b-type">ФИЗИЧЕСКОЕ ЛИЦО</span>
+      <span class="badge" id="b-online">ОФЛАЙН</span>
+    </div>
+  </div>
+
+  <div class="metric-strip">
+    <div class="metric-item"><span class="metric-label">ID</span><span class="metric-value" id="c-id">—</span></div>
+    <div class="metric-item"><span class="metric-label">Логин</span><span class="metric-value" id="c-login">—</span></div>
+    <div class="metric-item"><span class="metric-label">Баланс</span><span class="metric-value balance" id="c-bal">—</span></div>
+    <div class="metric-item"><span class="metric-label">Страница авторизации</span><span class="metric-value" id="c-auth">—</span></div>
+  </div>
+
+  <div class="rfm-strip">
+    <div class="rfm-dot" id="rfm-dot" style="background:#1B5299"></div>
+    <div><div class="rfm-label" id="rfm-label">Лояльный</div></div>
+    <div class="rfm-desc" id="rfm-desc">Регулярные платежи · средний ARPU · без жалоб</div>
+  </div>
+
+  <div class="grid-2col">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="card">
+        <div class="card-title">Персональные данные</div>
+        <div class="row"><span class="row-lbl">Почта</span><span class="row-val" id="c-email">—</span></div>
+        <div class="row"><span class="row-lbl">Телефон</span><span class="row-val" id="c-phone">—</span></div>
+        <div class="row"><span class="row-lbl">Станция</span><span class="row-val" id="c-station">—</span></div>
+        <div class="row"><span class="row-lbl">Адрес</span><span class="row-val" id="c-addr">—</span></div>
+        <div style="padding-top:12px;border-top:1px solid var(--line);margin-top:4px">
+          <button class="pass-btn" id="pass-btn" onclick="togglePass()">Показать паспортные данные</button>
+          <div class="pass-data" id="pass-data"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Тарифный план</div>
+        <div class="row"><span class="row-lbl">Название</span><span class="row-val" id="c-tar">—</span></div>
+        <div class="row"><span class="row-lbl">Статус</span><span id="c-tar-status">—</span></div>
+        <div class="row"><span class="row-lbl">Трафик (остаток/всего)</span><span class="row-val" id="c-traffic">—</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Активные сессии</div>
+        <div id="c-sessions"><span class="s-muted">Нет активных сессий</span></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="card">
+        <div class="card-title">Диагностика</div>
+        <div id="diag-container">
+          <div class="diag-idle" id="diag-idle">
+            Запустите автоматическую проверку УЗ абонента — система проверит все параметры подключения и предложит алгоритм действий.
+          </div>
+          <button class="diag-btn" id="diag-btn" onclick="runDiag()">Запустить диагностику</button>
+          <div id="diag-result" style="display:none"></div>
+        </div>
+        <div id="action-buttons" class="action-buttons-wrap" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Статистика</div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="payments">История платежей</button>
+          <button class="tab-btn" data-tab="tariffs">История тарифов</button>
+          <button class="tab-btn" data-tab="appeals">Обращения</button>
+        </div>
+        <div id="tab-payments" class="tab-pane active"></div>
+        <div id="tab-tariffs" class="tab-pane"></div>
+        <div id="tab-appeals" class="tab-pane"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="callModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Регистрация звонка</h2>
+      <button class="modal-close" onclick="closeCallModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="info-block">
+        <div class="info-row"><span class="info-label">Абонент</span><span class="info-value" id="modal-abonent">—</span></div>
+        <div class="info-row"><span class="info-label">ID</span><span class="info-value" id="modal-id">—</span></div>
+        <div class="info-row"><span class="info-label">Логин</span><span class="info-value" id="modal-login">—</span></div>
+        <div class="info-row"><span class="info-label">Телефон</span><span class="info-value" id="modal-phone">—</span></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Что говорит абонент</label>
+        <textarea id="call-problem" class="form-textarea" placeholder="Опишите проблему словами абонента..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeCallModal()">Отмена</button>
+      <button class="btn-primary" onclick="saveCall()">Создать заявку</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleTheme(){
+  const r=document.documentElement;
+  r.setAttribute('data-theme',r.getAttribute('data-theme')==='light'?'dark':'light');
+}
+
+const SUBS=[
+  {n:'Жаркова Мария Владимировна',id:6784,station:'Москва-Центр',a:'ул.Тверская 15',s:'active',
+   t:'Безлимитный 250',tStatus:'Активен',traffic:'0 / 0 МБ',
+   phone:'+7 (965) 111-22-33',email:'zharkova@yandex.ru',login:'zharkova6784',
+   type:'Физическое лицо',online:'Онлайн',auth:'10.0.0.2',
+   passport:'Паспорт: 4510 123456, выдан 05.07.2012, ОВД Тверского р-на',
+   rfm:'blue',rfmLabel:'Лояльный',rfmDesc:'Регулярные платежи · средний ARPU · без жалоб',
+   bal:12400,
+   sessions:[{dev:'iPhone 14',mac:'F0:1D:BC:88:99:AA',type:'Hotspot',ip:'10.0.0.2',since:'сегодня 10:05',rx:'25',tx:'5',active:true}],
+   payments:[
+     {date:'27.03.2026 16:40',status:'ok',system:'Сбербанк',sum:'+800 ₽'},
+     {date:'22.02.2026 12:00',status:'ok',system:'Сбербанк',sum:'+800 ₽'},
+   ],
+   tariffs:[{connected:'22.03.2026 14:20',type:'Безлимитный 250',disconnected:'—',price:'800 ₽'}],
+   appeals:[]
+  },
+  {n:'Карекин Павел Аркадьевич',id:2201,station:'Томтор',a:'ул.Центральная 5',s:'active',
+   t:'Безлимитный 350',tStatus:'Активен',traffic:'0 / 0 МБ',
+   phone:'+7 (924) 888-00-11',email:'karekin@gmail.com',login:'karekin2201',
+   type:'Физическое лицо',online:'Онлайн',auth:'172.16.0.3',
+   passport:'Паспорт: 4522 334455, выдан 18.11.2020',
+   rfm:'yellow',rfmLabel:'Новый / растущий',rfmDesc:'Недавно подключился · хороший потенциал',
+   bal:3200,
+   sessions:[{dev:'Роутер TP-Link',mac:'C4:E9:84:11:BB:CC',type:'PPPoE',ip:'172.16.0.3',since:'сегодня 08:47',rx:'45',tx:'10',active:true}],
+   payments:[{date:'15.03.2026 09:00',status:'ok',system:'Сбербанк',sum:'+1 200 ₽'}],
+   tariffs:[{connected:'01.03.2026 09:00',type:'Безлимитный 350',disconnected:'—',price:'1 200 ₽'}],
+   appeals:[]
+  },
+  {n:'Максимов Алексей Владимирович',id:4421,station:'Нарьян-Мар',a:'ул.Полярная 11',s:'frozen',
+   t:'Безлимитный 250',tStatus:'Заморожен',traffic:'0 / 0 МБ',
+   phone:'Не привязан',email:'maksimov@mail.ru',login:'maksimov4421',
+   type:'Физическое лицо',online:'Офлайн',auth:'—',
+   passport:'Паспорт: 4515 778899, выдан 30.01.2017',
+   rfm:'red',rfmLabel:'Риск оттока',rfmDesc:'Нулевой баланс · тариф заморожен',
+   bal:0,
+   sessions:[],
+   payments:[{date:'20.03.2026 17:42',status:'err',system:'Сбербанк',sum:'Отклонён'}],
+   tariffs:[{connected:'01.02.2026 10:00',type:'Безлимитный 250',disconnected:'25.03.2026',price:'800 ₽'}],
+   appeals:[{date:'27.03.2026',topic:'Нет интернета',status:'В работе'}]
+  },
+  {n:'Оёгир Мария Ивановна',id:10093,station:'Чиринда',a:'ул.Лесная 7',s:'active',
+   t:'Безлимитный 200',tStatus:'Активен',traffic:'0 / 0 МБ',
+   phone:'+7 (391) 703-53-90',email:'natasafarkova2@gmail.com',login:'masha95',
+   type:'Физическое лицо',online:'Офлайн',auth:'192.168.111.3',
+   passport:'04-15 832277',
+   rfm:'yellow',rfmLabel:'Активный',rfmDesc:'Платежи регулярны',
+   bal:44,
+   sessions:[],
+   payments:[{date:'13.03.2024 17:49',status:'ok',system:'Сбербанк',sum:'+590 ₽'}],
+   tariffs:[{connected:'13.03.24 17:56',type:'Безлимитный 200',disconnected:'—',price:'590 ₽'}],
+   appeals:[]
+  },
+];
+
+let _sub = null;
+
+function loadSub(id){
+  const sub = SUBS.find(s=>s.id===id) || SUBS[0];
+  _sub = sub;
+  document.getElementById('tb-name').textContent = sub.n;
+  document.getElementById('pg-name').textContent = sub.n;
+  const bs = document.getElementById('b-status');
+  bs.textContent = sub.s==='active'?'АКТИВЕН':'ЗАМОРОЖЕН';
+  bs.className = 'badge '+(sub.s==='active'?'badge-ok':'badge-err');
+  document.getElementById('b-type').textContent = (sub.type||'ФИЗ. ЛИЦО').toUpperCase();
+  const bo = document.getElementById('b-online');
+  bo.textContent = (sub.online||'ОФЛАЙН').toUpperCase();
+  bo.className = 'badge'+(sub.online==='Онлайн'?' badge-ok':'');
+  document.getElementById('c-id').textContent = sub.id;
+  document.getElementById('c-login').textContent = sub.login||'—';
+  const bal = sub.bal||0;
+  const balSpan = document.getElementById('c-bal');
+  balSpan.textContent = bal.toLocaleString('ru')+' ₽';
+  balSpan.className = 'metric-value balance ' + (bal<=0?'balance-danger':bal<1000?'balance-warning':'balance-positive');
+  document.getElementById('c-auth').textContent = sub.auth||'—';
+  const rfmColors = {blue:'#1B5299', yellow:'#B86E10', red:'#C0392B'};
+  document.getElementById('rfm-dot').style.background = rfmColors[sub.rfm]||rfmColors.blue;
+  document.getElementById('rfm-label').textContent = sub.rfmLabel||'—';
+  document.getElementById('rfm-label').style.color = rfmColors[sub.rfm]||rfmColors.blue;
+  document.getElementById('rfm-desc').textContent = sub.rfmDesc||'—';
+  document.getElementById('c-email').textContent = sub.email||'—';
+  document.getElementById('c-phone').textContent = sub.phone||'—';
+  document.getElementById('c-station').textContent = sub.station||'—';
+  document.getElementById('c-addr').textContent = sub.a||'—';
+  document.getElementById('pass-data').textContent = sub.passport||'Нет данных';
+  document.getElementById('pass-data').style.display='none';
+  document.getElementById('pass-btn').textContent='Показать паспортные данные';
+  document.getElementById('c-tar').textContent = sub.t||'—';
+  const ts = document.getElementById('c-tar-status');
+  if(sub.s==='frozen') ts.innerHTML = '<span class="plate-err">Заморожен</span>';
+  else ts.innerHTML = '<span class="s-ok">'+sub.tStatus+'</span>';
+  document.getElementById('c-traffic').textContent = sub.traffic||'—';
+  renderSessions();
+  resetDiag();
+  renderTabs();
+}
+
+function renderSessions(){
+  const el = document.getElementById('c-sessions');
+  if(!_sub.sessions||!_sub.sessions.length){ el.innerHTML='<span class="s-muted">Нет активных сессий</span>'; return; }
+  el.innerHTML = _sub.sessions.map(s=>`<div class="sess-item"><div class="sess-top"><div class="sess-dev"><span class="sess-dot"></span>${s.dev}</div><span class="sess-type ${s.type==='PPPoE'?'sess-pppoe':'sess-hot'}">${s.type}</span></div><div class="sess-meta"><span>MAC: <strong>${s.mac}</strong></span><span>IP: <strong>${s.ip}</strong></span><span>С: <strong>${s.since}</strong></span><span>↓ ${s.rx} / ↑ ${s.tx} Мбит/с</span></div></div>`).join('');
+}
+
+function renderTabs(){
+  const elPay = document.getElementById('tab-payments');
+  if(!_sub.payments||!_sub.payments.length) elPay.innerHTML='<span class="s-muted">Нет данных</span>';
+  else elPay.innerHTML=`<table class="stat-table"><thead><tr><th>Дата</th><th>Статус</th><th>Система</th><th style="text-align:right">Сумма</th></tr></thead><tbody>${_sub.payments.map(p=>`<tr><td style="color:var(--muted);font-size:11px">${p.date}</td><td><span class="s-ok">Оплачено</span></td><td><span style="font-size:11px;background:var(--bg-sys);padding:2px 8px;border-radius:6px">${p.system}</span></td><td class="amount">${p.sum}</td></tr>`).join('')}</tbody></table>`;
+  const elTar = document.getElementById('tab-tariffs');
+  if(!_sub.tariffs||!_sub.tariffs.length) elTar.innerHTML='<span class="s-muted">Нет данных</span>';
+  else elTar.innerHTML=`<table class="stat-table"><thead><tr><th>Подключение</th><th>Тип</th><th>Отключение</th><th style="text-align:right">Цена</th></tr></thead><tbody>${_sub.tariffs.map(t=>`<tr><td style="color:var(--muted);font-size:11px">${t.connected}<td><td><span style="background:var(--status-ok-bg);color:var(--status-ok);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">${t.type}</span></td><td style="color:var(--muted);font-size:11px">${t.disconnected}</td><td class="amount">${t.price}</td></tr>`).join('')}</tbody></table>`;
+  const elApp = document.getElementById('tab-appeals');
+  if(!_sub.appeals||!_sub.appeals.length) elApp.innerHTML='<span class="s-muted">Обращений пока не было</span>';
+  else elApp.innerHTML=`<table class="stat-table"><thead><tr><th>Дата</th><th>Тема</th><th>Статус</th></tr></thead><tbody>${_sub.appeals.map(a=>`<tr><td style="color:var(--muted);font-size:11px">${a.date}</td><td>${a.topic}<td><span class="appeal-status ${a.status.includes('инженер')?'engineer':a.status.includes('Закрыто')?'done':'work'}">${a.status}</span></td></tr>`).join('')}</tbody></table>`;
+}
+
+function runDiag(){
+  const btn = document.getElementById('diag-btn');
+  const idleDiv = document.getElementById('diag-idle');
+  const resultDiv = document.getElementById('diag-result');
+  btn.disabled=true; btn.textContent='Проверяем...';
+  idleDiv.style.display='none';
+  resultDiv.style.display='block';
+  resultDiv.innerHTML='<div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:20px"><div style="width:20px;height:20px;border:2px solid var(--line);border-top-color:var(--brand-red);border-radius:50%;animation:spin 0.8s linear infinite"></div>Анализ состояния...</div>';
+  setTimeout(()=>{
+    const checks = [
+      {label:'Статус учётной записи', val:_sub.s==='active'?'Активна':'В архиве', ok:_sub.s==='active'},
+      {label:'Состояние тарифа', val:_sub.tStatus||'—', ok:!_sub.tStatus.includes('Замор')},
+      {label:'Баланс и платежи', val:_sub.bal>0?_sub.bal+' ₽':'0 ₽', ok:_sub.bal>0},
+      {label:'Станция', val:_sub.online||'Офлайн', ok:_sub.online==='Онлайн'},
+      {label:'Активные сессии', val:_sub.sessions&&_sub.sessions.length?_sub.sessions.length+' сессий':'Нет сессий', ok:_sub.sessions&&_sub.sessions.length>0},
+    ];
+    const failed = checks.filter(c=>!c.ok);
+    resultDiv.innerHTML = `<div class="diag-2col"><div class="diag-problem"><h4>${failed.length===0?'Всё в порядке':checks.find(c=>!c.ok)?.label.includes('тариф')?'Тариф не активен':checks.find(c=>!c.ok)?.label.includes('Баланс')?'Недостаточно средств':checks.find(c=>!c.ok)?.label.includes('Станция')?'Станция офлайн':'Требуется действие'}</h4><div><ol><li>${failed.length===0?'Параметры в норме. Если проблема сохраняется — создайте заявку инженерам.':checks.find(c=>!c.ok)?.label.includes('тариф')?'Объясните, что нет активного тарифа. Помогите зайти в ЛК → Тарифы.':checks.find(c=>!c.ok)?.label.includes('Баланс')?'Баланс '+_sub.bal+' ₽ недостаточен. Предложите способы пополнения.':checks.find(c=>!c.ok)?.label.includes('Станция')?'Проблема на стороне сети. Создайте заявку инженерам.':'Уточните тип подключения. Перезагрузите роутер.'}</li></ol></div></div><div class="diag-steps">${checks.map(ch=>`<div class="diag-step"><div class="diag-step-icon ${ch.ok?'ok':'err'}">${ch.ok?'✓':'✕'}</div><div><div class="diag-step-text"><strong>${ch.label}</strong>${ch.ok?`<span class="s-ok" style="font-size:11px;margin-left:8px">${ch.val}</span>`:`<span class="plate-err" style="font-size:10px;margin-left:8px">${ch.val}</span>`}</div></div></div>`).join('')}</div></div><div class="diag-footer"><button class="btn-ghost" onclick="resetDiag()" style="font-size:11px;padding:5px 14px">Повторить</button><span class="diag-footer-note">${failed.length>0?'Остановлено на: '+checks.find(c=>!c.ok)?.label:'Все проверки пройдены'}</span></div>`;
+    const actionDiv = document.getElementById('action-buttons');
+    if(failed.length>0){
+      const actions=[];
+      if(failed.some(c=>c.label.includes('тариф'))) actions.push({label:'Активировать тариф', action:'unfreeze', danger:false});
+      if(failed.some(c=>c.label.includes('Станция'))) actions.push({label:'Создать заявку инженерам', action:'engineer', danger:true});
+      if(failed.some(c=>c.label.includes('сессии'))) actions.push({label:'Сбросить сессии', action:'resetSessions', danger:true});
+      actionDiv.style.display='flex';
+      actionDiv.innerHTML=actions.map(a=>`<button class="action-btn ${a.danger?'danger':'success'}" onclick="performAction('${a.action}')">${a.label}</button>`).join('');
+    } else actionDiv.style.display='none';
+    btn.disabled=false; btn.textContent='Запустить диагностику';
+  }, 1000);
+}
+
+function performAction(a){
+  if(a==='unfreeze'){ _sub.s='active'; _sub.tStatus='Активен'; loadSub(_sub.id); alert('Тариф активирован.'); }
+  if(a==='engineer') alert('Заявка инженерам создана.');
+  if(a==='resetSessions'){ _sub.sessions=[]; renderSessions(); alert('Сессии сброшены.'); }
+}
+
+function resetDiag(){
+  document.getElementById('diag-idle').style.display='block';
+  document.getElementById('diag-result').style.display='none';
+  document.getElementById('action-buttons').style.display='none';
+}
+
+function togglePass(){
+  const d=document.getElementById('pass-data');
+  const b=document.getElementById('pass-btn');
+  if(d.style.display==='none'||!d.style.display){d.style.display='block';b.textContent='Скрыть';}
+  else{d.style.display='none';b.textContent='Показать паспортные данные';}
+}
+
+function openCallModal(){
+  if(!_sub) return;
+  document.getElementById('modal-abonent').textContent = _sub.n;
+  document.getElementById('modal-id').textContent = _sub.id;
+  document.getElementById('modal-login').textContent = _sub.login||'—';
+  document.getElementById('modal-phone').textContent = _sub.phone||'—';
+  document.getElementById('call-problem').value = '';
+  document.getElementById('callModal').classList.add('active');
+}
+function closeCallModal(){ document.getElementById('callModal').classList.remove('active'); }
+function saveCall(){
+  const problem = document.getElementById('call-problem').value;
+  if(!problem.trim()){ alert('Опишите, что говорит абонент'); return; }
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('ru-RU')+' '+now.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  if(!_sub.appeals) _sub.appeals = [];
+  _sub.appeals.unshift({date:dateStr,topic:'Звонок',status:'Новое',details:problem});
+  renderTabs();
+  closeCallModal();
+  alert('Заявка создана');
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+  });
+});
+
+loadSub(6784);
+const sw=document.createElement('div');
+sw.style.cssText='position:fixed;bottom:20px;right:20px;background:var(--bg-card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;z-index:200;font-size:11px';
+sw.innerHTML='<div style="font-size:9px;font-weight:800;margin-bottom:8px;color:var(--muted)">Демо — выбрать абонента</div>'+SUBS.map(s=>`<div onclick="loadSub(${s.id})" style="cursor:pointer;padding:5px 0;border-bottom:1px solid var(--line);font-weight:600">${s.n.split(' ').slice(0,2).join(' ')} <span style="color:var(--muted);font-weight:400">ID ${s.id}</span></div>`).join('');
+document.body.appendChild(sw);
+</script>
+<style>.diag-loading{display:flex;align-items:center;justify-content:center;gap:12px;padding:20px;color:var(--muted)}@keyframes spin{to{transform:rotate(360deg)}}</style>
+</body>
+</html>

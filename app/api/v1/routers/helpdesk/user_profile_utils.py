@@ -18,6 +18,7 @@ PAY_TYPE_LABELS: dict[str, str] = {
     "sberbank": "Сбербанк",
     "gazprom": "Газпромбанк",
     "alfa": "Альфа-Банк",
+    "rs": "Р/С",
 }
 
 PAY_STATE_LABELS: dict[str, str] = {
@@ -50,6 +51,34 @@ def format_seconds_remaining(seconds: int | None) -> str:
     if days:
         return f"{days} дн., {hours:02d}:{mins:02d}"
     return f"{hours:02d}:{mins:02d}"
+
+
+def format_session_duration(seconds: int | None) -> str:
+    if not seconds or seconds <= 0:
+        return "—"
+    days, rem = divmod(int(seconds), 86400)
+    hours, rem = divmod(rem, 3600)
+    mins = rem // 60
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days} дн.")
+    if hours:
+        parts.append(f"{hours} ч.")
+    if mins or not parts:
+        parts.append(f"{mins} мин.")
+    return " ".join(parts)
+
+
+def format_traffic_mb(mb: float | None) -> str:
+    if mb is None:
+        return "—"
+    value = max(0.0, float(mb))
+    if value >= 100:
+        return f"{value:,.0f}".replace(",", "\u202f") + " МБ"
+    text = f"{value:,.1f}".replace(",", "\u202f")
+    if text.endswith(",0"):
+        text = text[:-2]
+    return f"{text} МБ"
 
 
 def parse_speed_line(rate: str | None) -> tuple[str, str]:
@@ -309,3 +338,54 @@ def coalesce_int(*values: int | None) -> int:
         if v is not None:
             return int(v)
     return 0
+
+
+def _clean_part(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def _format_address_part(value: str | None, prefix: str) -> str | None:
+    raw = _clean_part(value)
+    if not raw:
+        return None
+    low = raw.lower()
+    if low.startswith(prefix.lower()):
+        return raw
+    return f"{prefix} {raw}"
+
+
+def format_residence_address(
+    is_juridical: int,
+    *,
+    address: str | None = None,
+    city: str | None = None,
+    street: str | None = None,
+    house: str | None = None,
+    flat: str | None = None,
+    addr_organization: str | None = None,
+) -> str | None:
+    """Адрес проживания: ФЛ — user_details; ЮЛ — jur_client_list."""
+    if is_juridical == 2:
+        parts: list[str] = []
+        for chunk in (_clean_part(city), _clean_part(street), _format_address_part(house, "д.")):
+            if chunk:
+                parts.append(chunk)
+        if parts:
+            return ", ".join(parts)
+        org = _clean_part(addr_organization)
+        return org or None
+
+    parts = []
+    for chunk in (_clean_part(city), _clean_part(street)):
+        if chunk:
+            parts.append(chunk)
+    house_part = _format_address_part(house, "д.")
+    if house_part:
+        parts.append(house_part)
+    flat_part = _format_address_part(flat, "кв.")
+    if flat_part:
+        parts.append(flat_part)
+    if parts:
+        return ", ".join(parts)
+    legacy = _clean_part(address)
+    return legacy or None

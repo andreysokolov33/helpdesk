@@ -11,7 +11,7 @@ from app.config import BASE_DIR
 router = APIRouter()
 
 _REACT_INDEX = BASE_DIR / "app" / "static" / "helpdesk" / "index.html"
-_FAVICON = BASE_DIR / "app" / "static" / "images" / "Logo_dark.svg"
+_FAVICON = BASE_DIR / "app" / "static" / "images" / "favicon_red.ico"
 
 
 def _react_shell(title: str) -> HTMLResponse:
@@ -51,7 +51,7 @@ async def login_page():
 @router.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     if _FAVICON.is_file():
-        return FileResponse(_FAVICON, media_type="image/svg+xml")
+        return FileResponse(_FAVICON, media_type="image/x-icon")
     return Response(status_code=204)
 
 

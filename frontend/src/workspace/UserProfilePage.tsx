@@ -1,29 +1,37 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   deleteFreezePlan,
   fetchUserProfile,
-  fetchUserProfileTickets,
   postDisconnect,
   postFreeze,
   postRemoveEndedTariff,
   postUnarchive,
   postUnfreeze,
+  type ProfilePersonal,
   type TariffBlockResponse,
   type ProfileTariff,
-  type ProfileTicket,
   type UserProfileResponse,
 } from "@/api/userProfile";
+import type { SubscriberSearchHit } from "@/api/search";
 import { copyPhone, formatPhoneDisplay } from "@/utils/phone";
 import { AuthPageHelp } from "@/components/AuthPageHelp";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import PaymentsHistoryPanel from "@/components/PaymentsHistoryPanel";
 import TariffsHistoryPanel from "@/components/TariffsHistoryPanel";
-import TrafficDetailPanel from "@/components/TrafficDetailPanel";
+import TicketsHistoryPanel from "@/components/TicketsHistoryPanel";
+import OpenSessionsCard from "@/components/OpenSessionsCard";
 import DatePickerField, { dateYmdToIso } from "@/components/DatePickerField";
 import { PasswordResetModal } from "@/components/PasswordResetModal";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
-import { categoryBadgeClass, supportLineBadgeClass, supportLineLabel } from "@/utils/ticketLabels";
+
+type StatsTab = "payments" | "tariffs" | "appeals";
+
+const STATS_TABS: { id: StatsTab; label: string }[] = [
+  { id: "payments", label: "История платежей" },
+  { id: "tariffs", label: "История тарифов" },
+  { id: "appeals", label: "Обращения" },
+];
 
 type ModalKind =
   | "unfreeze"
@@ -37,25 +45,8 @@ type ModalKind =
   | "password_reset"
   | null;
 
-const REPORTS = [
-  { id: "check", label: "Быстрая проверка пользователя" },
-  { id: "payments", label: "История платежей" },
-  { id: "tariffs", label: "История подключенных тарифов" },
-  { id: "traffic_detail", label: "Детализация трафика" },
-] as const;
-
 function fmtMoney(n: number) {
   return `${n.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽`;
-}
-
-function fmtDt(iso: string) {
-  return new Date(iso).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function fmtTrafficMb(n: number) {
@@ -64,6 +55,36 @@ function fmtTrafficMb(n: number) {
 
 function hasJurDopPacket(mb: number | null | undefined): boolean {
   return mb != null && mb > 0;
+}
+
+function JurDopOverrunBlock({
+  overrunMb,
+  dopPacketMb,
+}: {
+  overrunMb: number;
+  dopPacketMb: number | null | undefined;
+}) {
+  return (
+    <div className="up-jur-overrun" role="status">
+      <div className="up-jur-overrun__icon" aria-hidden>
+        ↗
+      </div>
+      <div className="up-jur-overrun__body">
+        <div className="up-jur-overrun__title">Перерасход трафика</div>
+        <p className="up-jur-overrun__main">
+          <span className="up-jur-overrun__value">{fmtTrafficMb(overrunMb)} МБ</span>
+          {hasJurDopPacket(dopPacketMb) ? (
+            <>
+              {" из "}
+              <span className="up-jur-overrun__source">
+                {dopPacketMb!.toLocaleString("ru-RU")} МБ
+              </span>
+            </>
+          ) : null}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function statusClass(us: number | null) {
@@ -115,20 +136,90 @@ function PhoneValue({ phone }: { phone: string | null }) {
   );
 }
 
-
-function TariffSideColumn({ balance, authPage }: { balance: number; authPage: string | null }) {
+function PassportSpoiler({ passport }: { passport: string | null }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="up-tariff-side">
-      <div className="card up-card up-metric-cell up-balance-cell">
-        <div className="ct">Баланс</div>
-        <div className={`up-metric-val up-balance-val ${balance < 0 ? "bad" : ""}`}>{fmtMoney(balance)}</div>
+    <div className="up-pass-spoiler">
+      <button type="button" className="up-pass-btn" onClick={() => setOpen((v) => !v)}>
+        {open ? "Скрыть" : "Показать паспортные данные"}
+      </button>
+      {open ? <div className="up-pass-data">{passport ?? "—"}</div> : null}
+    </div>
+  );
+}
+
+
+function profileToSearchHit(p: ProfilePersonal): SubscriberSearchHit {
+  return {
+    id: p.user_id,
+    login: p.login,
+    name: p.name,
+    email: p.email,
+    phone: p.phone,
+    id_doc: p.id_doc,
+    is_juridical: p.is_juridical,
+  };
+}
+
+function canShowOpenSessions(
+  userStatus: number | null,
+  tariff: ProfileTariff | null,
+  netflowTariff: string | null,
+): boolean {
+  if (userStatus === 3 || userStatus === 2) return false;
+  if (!tariff && !netflowTariff) return false;
+  if (tariff?.state === "frozen" || tariff?.state === "planned_freeze") return false;
+  return true;
+}
+
+function balanceTone(balance: number): "ok" | "warn" | "bad" {
+  if (balance <= 0) return "bad";
+  if (balance < 1000) return "warn";
+  return "ok";
+}
+
+function ProfileMetricStrip({
+  userId,
+  login,
+  balance,
+  authPage,
+  stationName,
+}: {
+  userId: number;
+  login: string;
+  balance: number;
+  authPage: string | null;
+  stationName: string | null;
+}) {
+  const balanceClass = balanceTone(balance);
+  return (
+    <div className="card up-card up-metric-strip">
+      <div className="up-metric-strip__cell">
+        <span className="up-metric-strip__lbl">ID</span>
+        <span className="up-metric-strip__val">{userId}</span>
       </div>
-      <div className="card up-card up-metric-cell up-auth-cell">
-        <div className="up-metric-head">
-          <span className="ct">Страница авторизации</span>
+      <div className="up-metric-strip__cell">
+        <span className="up-metric-strip__lbl">Логин</span>
+        <span className="up-metric-strip__val up-metric-strip__val--login" title={login || undefined}>
+          {login || "—"}
+        </span>
+      </div>
+      <div className="up-metric-strip__cell">
+        <span className="up-metric-strip__lbl">Баланс</span>
+        <span className={`up-metric-strip__val up-metric-strip__val--balance ${balanceClass}`}>
+          {fmtMoney(balance)}
+        </span>
+      </div>
+      <div className="up-metric-strip__cell">
+        <span className="up-metric-strip__lbl up-metric-strip__lbl--auth">
+          Страница авторизации
           <AuthPageHelp hotspotAddress={authPage} />
-        </div>
-        <div className="up-metric-val up-auth-val">{authPage ?? "—"}</div>
+        </span>
+        <span className="up-metric-strip__val up-metric-strip__val--mono">{authPage ?? "—"}</span>
+      </div>
+      <div className="up-metric-strip__cell">
+        <span className="up-metric-strip__lbl">Станция</span>
+        <span className="up-metric-strip__val">{stationName ?? "—"}</span>
       </div>
     </div>
   );
@@ -345,12 +436,10 @@ function TariffCard({
                 </div>
               ) : null}
               {tariff.overrun_mb != null && tariff.overrun_mb > 0 ? (
-                <div className="up-kv">
-                  <span className="up-k">Использовано доп. трафика</span>
-                  <span className="up-v up-frozen-traffic-val">
-                    {fmtTrafficMb(tariff.overrun_mb)} МБ
-                  </span>
-                </div>
+                <JurDopOverrunBlock
+                  overrunMb={tariff.overrun_mb}
+                  dopPacketMb={tariff.jur_dop_packet_mb}
+                />
               ) : null}
             </>
           ) : (
@@ -425,7 +514,16 @@ function TariffCard({
             </div>
           ) : null}
           {tariff.overrun_mb != null && tariff.overrun_mb > 0 ? (
-            <div className="up-alert bad">Перерасход трафика: ~{tariff.overrun_mb.toFixed(1)} МБ</div>
+            isJuridical === 2 ? (
+              <JurDopOverrunBlock
+                overrunMb={tariff.overrun_mb}
+                dopPacketMb={tariff.jur_dop_packet_mb}
+              />
+            ) : (
+              <div className="up-alert bad">
+                Перерасход трафика: ~{tariff.overrun_mb.toFixed(1)} МБ
+              </div>
+            )
           ) : null}
           {tariff.speed_unlimited && tariff.msk_reset ? (
             <>
@@ -464,54 +562,24 @@ export default function UserProfilePage() {
   const [data, setData] = useState<UserProfileResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [report, setReport] = useState<(typeof REPORTS)[number]["id"]>("check");
+  const [statsTab, setStatsTab] = useState<StatsTab>("payments");
   const [modal, setModal] = useState<ModalKind>(null);
   const [freezeDate, setFreezeDate] = useState("");
   const [unfreezeDate, setUnfreezeDate] = useState("");
   const [showUnfreezeDate, setShowUnfreezeDate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant: ToastVariant } | null>(null);
-  const [ticketsPage, setTicketsPage] = useState(1);
-  const [tickets, setTickets] = useState<ProfileTicket[]>([]);
-  const [ticketsTotal, setTicketsTotal] = useState(0);
-  const [ticketsLoading, setTicketsLoading] = useState(false);
-  const [ticketsErr, setTicketsErr] = useState<string | null>(null);
-  const profileWrapRef = useRef<HTMLDivElement>(null);
-  const [statsHeight, setStatsHeight] = useState<number | null>(null);
-
-  const ticketsPerPage = 10;
-  const ticketsTotalPages = Math.max(1, Math.ceil(ticketsTotal / ticketsPerPage));
-
   const reload = useCallback(() => {
     if (!Number.isFinite(uid)) return;
     setLoading(true);
-    setTicketsLoading(true);
-    setTicketsErr(null);
-    setTicketsPage(1);
-    fetchUserProfile(uid, 1, ticketsPerPage, false)
+    fetchUserProfile(uid, 1, 10, false)
       .then((r) => {
         setData(r);
-        setLoading(false);
-        return fetchUserProfileTickets(uid, 1, ticketsPerPage).catch((e: unknown) => {
-          setTicketsErr(e instanceof Error ? e.message : "Не удалось загрузить обращения");
-          setTickets([]);
-          setTicketsTotal(0);
-          return null;
-        });
-      })
-      .then((t) => {
-        if (t) {
-          setTickets(t.items);
-          setTicketsTotal(t.total);
-          setTicketsErr(null);
-        }
+        setErr(null);
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Ошибка"))
-      .finally(() => {
-        setLoading(false);
-        setTicketsLoading(false);
-      });
-  }, [uid, ticketsPerPage]);
+      .finally(() => setLoading(false));
+  }, [uid]);
 
   useEffect(() => {
     reload();
@@ -525,46 +593,6 @@ export default function UserProfilePage() {
       document.title = prev;
     };
   }, [uid]);
-
-  useEffect(() => {
-    const el = profileWrapRef.current;
-    if (!el) return;
-
-    const sync = () => {
-      const h = el.getBoundingClientRect().height;
-      if (h > 0) setStatsHeight(Math.round(h));
-    };
-
-    sync();
-    const ro = new ResizeObserver(sync);
-    ro.observe(el);
-    window.addEventListener("resize", sync);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", sync);
-    };
-  }, [data, loading]);
-
-  const loadTicketsPage = useCallback(
-    (page: number) => {
-      if (!Number.isFinite(uid)) return;
-      setTicketsPage(page);
-      setTicketsLoading(true);
-      setTicketsErr(null);
-      fetchUserProfileTickets(uid, page, ticketsPerPage)
-        .then((r) => {
-          setTickets(r.items);
-          setTicketsTotal(r.total);
-        })
-        .catch((e: unknown) => {
-          setTickets([]);
-          setTicketsTotal(0);
-          setTicketsErr(e instanceof Error ? e.message : "Не удалось загрузить обращения");
-        })
-        .finally(() => setTicketsLoading(false));
-    },
-    [uid, ticketsPerPage],
-  );
 
   async function runAction(fn: () => Promise<{ message: string }>) {
     setBusy(true);
@@ -638,6 +666,7 @@ export default function UserProfilePage() {
 
   const p = data.personal;
   const idDocLabel = p.is_juridical === 2 ? "ИНН" : "Паспорт";
+  const showOpenSessions = canShowOpenSessions(p.user_status, data.tariff, data.netflow_tariff);
 
   return (
     <div className="tp on up-page">
@@ -646,7 +675,23 @@ export default function UserProfilePage() {
           <Link to="/" className="up-back">
             ← Поиск
           </Link>
-          <h1 className="up-title">{p.name}</h1>
+          <div className="up-top-head">
+            <h1 className="up-title">{p.name}</h1>
+            <button
+              type="button"
+              className="up-btn sec up-call-register"
+              onClick={() =>
+                navigate("/call", {
+                  state: {
+                    returnTo: `/users/${uid}`,
+                    prefillSubscriber: profileToSearchHit(p),
+                  },
+                })
+              }
+            >
+              Регистрация звонка
+            </button>
+          </div>
           <div className="up-top-meta">
             <span className={statusClass(p.user_status)}>{p.status_label}</span>
             <span className={entityClass(p.is_juridical)}>{p.entity_label}</span>
@@ -659,9 +704,17 @@ export default function UserProfilePage() {
           </div>
         </div>
 
+        <ProfileMetricStrip
+          userId={p.user_id}
+          login={p.login}
+          balance={data.balance}
+          authPage={p.auth_page}
+          stationName={p.station_name}
+        />
+
         <div className="up-stack">
         <div className="up-grid">
-            <div ref={profileWrapRef} className="up-profile-wrap">
+            <div className="up-profile-wrap">
               <div className="card up-card up-personal">
                 <div className="ct">Персональные данные</div>
                 <div className="up-personal-details">
@@ -675,10 +728,18 @@ export default function UserProfilePage() {
                     <span className="up-k">Телефон</span>
                     <PhoneValue phone={p.phone} />
                   </div>
-                  <div className="up-kv">
-                    <span className="up-k">{idDocLabel}</span>
-                    <span className="up-v">{p.id_doc ?? "—"}</span>
+                  <div className="up-kv up-kv--multiline">
+                    <span className="up-k">Адрес</span>
+                    <span className="up-v">{p.residence_address ?? "—"}</span>
                   </div>
+                  {p.is_juridical === 2 ? (
+                    <div className="up-kv">
+                      <span className="up-k">{idDocLabel}</span>
+                      <span className="up-v">{p.id_doc ?? "—"}</span>
+                    </div>
+                  ) : (
+                    <PassportSpoiler passport={p.id_doc} />
+                  )}
                   {p.is_juridical === 2 ? (
                     <div className="up-kv">
                       <span className="up-k">Договор</span>
@@ -691,10 +752,17 @@ export default function UserProfilePage() {
                       </span>
                     </div>
                   ) : null}
-                  <div className="up-kv">
-                    <span className="up-k">Станция</span>
-                    <span className="up-v">{p.station_name ?? "—"}</span>
-                  </div>
+                </div>
+                <div className="up-personal-actions">
+                  {p.user_status !== 3 ? (
+                    <button
+                      type="button"
+                      className="up-btn sec up-reset-pwd"
+                      onClick={() => setModal("password_reset")}
+                    >
+                      Сменить пароль
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <TariffCard
@@ -737,176 +805,51 @@ export default function UserProfilePage() {
                   setModal("disconnect");
                 }}
               />
-              <div className="up-aside-top">
-                <div className="card up-card up-metric-cell up-personal-metric">
-                  <div className="ct">ID</div>
-                  <div className="up-metric-val up-personal-id-val">{p.user_id}</div>
-                </div>
-                <div className="card up-card up-metric-cell up-personal-metric">
-                  <div className="ct">Логин</div>
-                  <div className="up-metric-val up-personal-login-val" title={p.login || undefined}>
-                    {p.login || "—"}
-                  </div>
-                </div>
-              </div>
-              <div className="up-aside-bottom">
-                {p.user_status === 3 && p.is_juridical === 0 ? (
-                  <button
-                    type="button"
-                    className="up-btn up-btn-restore up-reset-pwd"
-                    onClick={() => setModal("unarchive")}
-                  >
-                    Восстановить УЗ
-                  </button>
-                ) : p.user_status !== 3 ? (
-                  <button
-                    type="button"
-                    className="up-btn sec up-reset-pwd"
-                    onClick={() => setModal("password_reset")}
-                  >
-                    Сменить пароль
-                  </button>
-                ) : null}
-                <TariffSideColumn balance={data.balance} authPage={p.auth_page} />
-              </div>
+              {showOpenSessions ? <OpenSessionsCard sessions={data.open_sessions} /> : null}
             </div>
-            <div
-              className="card up-card up-stats"
-              style={statsHeight ? { height: statsHeight, maxHeight: statsHeight } : undefined}
-            >
-              <div className="ct">Статистика</div>
-              <select
-                className="up-select"
-                value={report}
-                onChange={(e) => setReport(e.target.value as (typeof REPORTS)[number]["id"])}
-              >
-                {REPORTS.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-              <div className="up-stub">
-                {report === "check" ? (
-                  <FastCheckPanel
-                    userId={p.user_id}
-                    onDisconnect={() => postDisconnect(p.user_id).then(() => reload())}
-                  />
-                ) : report === "payments" ? (
-                  <PaymentsHistoryPanel userId={p.user_id} />
-                ) : report === "tariffs" ? (
-                  <TariffsHistoryPanel userId={p.user_id} />
-                ) : report === "traffic_detail" ? (
-                  <TrafficDetailPanel
-                    userId={p.user_id}
-                    email={p.email}
-                    isJuridical={p.is_juridical}
-                    onSuccess={(msg) => setToast({ message: msg, variant: "success" })}
-                    onError={(msg) => setToast({ message: msg, variant: "error" })}
-                  />
-                ) : (
-                  <p className="up-muted">Раздел «{REPORTS.find((x) => x.id === report)?.label}» — скоро</p>
-                )}
+            <div className="up-right-col">
+              <div className="card up-card up-diag-card">
+                <div className="ct">Диагностика</div>
+                <FastCheckPanel
+                  userId={p.user_id}
+                  introText="Запустите автоматическую проверку УЗ абонента — система проверит все параметры подключения и предложит алгоритм действий."
+                  runButtonLabel="Запустить диагностику"
+                  onDisconnect={() => postDisconnect(p.user_id).then(() => reload())}
+                  onUnarchive={
+                    p.user_status === 3 && p.is_juridical === 0
+                      ? () => setModal("unarchive")
+                      : undefined
+                  }
+                />
               </div>
-            </div>
-        </div>
-        </div>
-
-        <div className="card up-card">
-          <div className="up-card-head">
-            <div className="ct">История обращений</div>
-            <button
-              type="button"
-              className="up-btn sec"
-              onClick={() => navigate("/call", { state: { returnTo: `/users/${uid}` } })}
-            >
-              Регистрация звонка
-            </button>
-          </div>
-          {ticketsLoading ? (
-            <p className="up-muted">Загрузка…</p>
-          ) : ticketsErr ? (
-            <p className="up-muted up-error">{ticketsErr}</p>
-          ) : ticketsTotal === 0 ? (
-            <div className="up-tickets-empty" role="status">
-              <div className="up-tickets-empty__title">Обращений пока не было</div>
-              <p className="up-tickets-empty__text">
-                У этого абонента ещё не создавались обращения в техническую поддержку. Новое
-                обращение можно зарегистрировать по кнопке «Регистрация звонка» выше.
-              </p>
-            </div>
-          ) : (
-            <>
-              <table className="dt up-tickets">
-                <thead>
-                  <tr>
-                    <th>Дата</th>
-                    <th>Тема</th>
-                    <th>Категория</th>
-                    <th>Линия</th>
-                    <th>Статус</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tickets.map((t) => (
-                    <tr
-                      key={t.id}
-                      className="up-ticket-row"
-                      onClick={() => navigate(`/tickets/${t.id}`)}
+              <div className="card up-card up-stats-card">
+                <div className="ct">Статистика последних действий</div>
+                <div className="up-stats-tabs" role="tablist" aria-label="Статистика последних действий абонента">
+                  {STATS_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={statsTab === tab.id}
+                      className={`up-stats-tab${statsTab === tab.id ? " active" : ""}`}
+                      onClick={() => setStatsTab(tab.id)}
                     >
-                      <td>{fmtDt(t.date_of_create)}</td>
-                      <td>
-                        <strong>{t.title}</strong>
-                      </td>
-                      <td>
-                        {t.category ? (
-                          <span
-                            className={`ch-cat ch-cat--${categoryBadgeClass(t.category_theme, t.category)}`}
-                            title={t.category}
-                          >
-                            {t.category}
-                          </span>
-                        ) : (
-                          <span className="ch-cat ch-cat--empty">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className={`ch-line ch-line--${supportLineBadgeClass(t.support_line)}`}>
-                          {supportLineLabel(t.support_line, t.support_line_label)}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`ch-status ch-status--${t.status}`}>{t.status_label}</span>
-                      </td>
-                    </tr>
+                      {tab.label}
+                    </button>
                   ))}
-                </tbody>
-              </table>
-              {ticketsTotal > ticketsPerPage ? (
-                <div className="ch-pager">
-                  <button
-                    type="button"
-                    className="ch-page-btn"
-                    disabled={ticketsPage <= 1 || ticketsLoading}
-                    onClick={() => loadTicketsPage(Math.max(1, ticketsPage - 1))}
-                  >
-                    Назад
-                  </button>
-                  <span className="ch-page-info">
-                    Стр. {ticketsPage} / {ticketsTotalPages} · всего {ticketsTotal}
-                  </span>
-                  <button
-                    type="button"
-                    className="ch-page-btn"
-                    disabled={ticketsPage >= ticketsTotalPages || ticketsLoading}
-                    onClick={() => loadTicketsPage(ticketsPage + 1)}
-                  >
-                    Вперёд
-                  </button>
                 </div>
-              ) : null}
-            </>
-          )}
+                <div className="up-stats-pane">
+                  {statsTab === "payments" ? (
+                    <PaymentsHistoryPanel userId={p.user_id} />
+                  ) : statsTab === "tariffs" ? (
+                    <TariffsHistoryPanel userId={p.user_id} />
+                  ) : (
+                    <TicketsHistoryPanel userId={p.user_id} />
+                  )}
+                </div>
+              </div>
+            </div>
+        </div>
         </div>
       </div>
 

@@ -18,6 +18,7 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
     TariffHistoryListResponse,
     ProfileHealthCheck,
     ProfileOnline,
+    ProfileOpenSession,
     ProfilePersonal,
     ProfileTariffActive,
     ProfileTicket,
@@ -41,6 +42,9 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     format_valid_date_countdown,
     format_valid_date_remaining,
     format_jur_active_contract,
+    format_residence_address,
+    format_session_duration,
+    format_traffic_mb,
     jur_frozen_traffic_mb,
     jur_traffic_overrun_mb,
     parse_speed_line,
@@ -157,15 +161,25 @@ async def _load_personal_with_balance(
                     ud.patronymic AS ud_patronymic,
                     ud.pas_series AS ud_pas_series,
                     ud.pas_number AS ud_pas_number,
+                    ud.address AS ud_address,
+                    ud.city AS ud_city,
+                    ud.street AS ud_street,
+                    ud.house AS ud_house,
+                    ud.flat AS ud_flat,
                     jcl.short_name_organization,
                     jcl.email_organization,
                     jcl.phone_organization,
                     jcl.inn,
+                    jcl.city AS jur_city,
+                    jcl.street AS jur_street,
+                    jcl.house AS jur_house,
+                    jcl.addr_organization,
                     coalesce(sf.station_name, ig.name) AS station_name,
                     h.ip AS auth_page
                 FROM users."user" u
                 LEFT JOIN LATERAL (
-                    SELECT ud.surname, ud.name, ud.patronymic, ud.pas_series, ud.pas_number
+                    SELECT ud.surname, ud.name, ud.patronymic, ud.pas_series, ud.pas_number,
+                        ud.address, ud.city, ud.street, ud.house, ud.flat
                     FROM users.user_details ud
                     WHERE ud.user_id = u.id
                     ORDER BY ud.is_actual DESC NULLS LAST, ud.id DESC
@@ -185,6 +199,7 @@ async def _load_personal_with_balance(
 
     is_jur = int(row["is_juridical"] or 0)
     active_contract: str | None = None
+    residence_address: str | None = None
     if is_jur == 2:
         name = (row["short_name_organization"] or row["full_name"] or "").strip()
         email = row["email_organization"]
@@ -192,12 +207,27 @@ async def _load_personal_with_balance(
         id_doc = (row["inn"] or "").strip() or None
         contract_label = await _load_active_jur_contract(session, user_id)
         active_contract = contract_label or "Не удалось найти договор"
+        residence_address = format_residence_address(
+            2,
+            city=row.get("jur_city"),
+            street=row.get("jur_street"),
+            house=row.get("jur_house"),
+            addr_organization=row.get("addr_organization"),
+        )
     else:
         parts = [row["ud_surname"], row["ud_name"], row["ud_patronymic"]]
         name = " ".join(p for p in parts if p and str(p).strip()).strip() or (row["full_name"] or "")
         email = row["email"]
         phone = row["mob_tel"]
-        id_doc = _format_passport(row["ud_pas_series"], row["ud_pas_number"], row["passport"])
+        id_doc = _format_passport(row["ud_pas_series"], row["ud_pas_number"], None)
+        residence_address = format_residence_address(
+            0,
+            address=row.get("ud_address"),
+            city=row.get("ud_city"),
+            street=row.get("ud_street"),
+            house=row.get("ud_house"),
+            flat=row.get("ud_flat"),
+        )
 
     us = int(row["user_status"]) if row["user_status"] is not None else 1
     personal = ProfilePersonal(
@@ -214,6 +244,7 @@ async def _load_personal_with_balance(
         status_label=_STATUS.get(us, "Неизвестно"),
         station_name=row["station_name"],
         auth_page=row["auth_page"],
+        residence_address=residence_address,
     )
     return personal, float(row["balanse"] or 0)
 
@@ -525,6 +556,9 @@ def _build_tariff(
 
 _TICKETS_BASE_WHERE = "tt.user_id = :uid"
 
+_PROFILE_TARIFFS_LIMIT = 10
+_PROFILE_PAYMENTS_SUCCESS_LIMIT = 10
+
 _TICKETS_SELECT = """
     SELECT tt.id, tt.title, tc.name AS category_name, tc.theme::text AS category_theme,
         tt.date_of_create, tt.date_of_close,
@@ -539,9 +573,159 @@ _TICKETS_SELECT = """
     LEFT JOIN users.ticket_categories tc ON tc.id = tt.category_id
     LEFT JOIN users.skystream_users su ON su.id = tt.assigned_to
     WHERE """ + _TICKETS_BASE_WHERE + """
-    ORDER BY
-        CASE WHEN tt.status::text IN ('open', 'in_progress') THEN 0 ELSE 1 END,
-        tt.date_of_create DESC
+    ORDER BY tt.date_of_create DESC
+    LIMIT :limit OFFSET :offset
+"""
+
+_PAYMENTS_FILTERED = """
+    WITH dated AS (
+        SELECT
+            p.id,
+            COALESCE(
+                CASE WHEN p.date_in > 0
+                    THEN timezone('Europe/Moscow', to_timestamp(p.date_in))
+                    ELSE NULL
+                END,
+                p.date_in_tz
+            ) AS msk_date,
+            p.state::text AS state,
+            p.type AS payment_type,
+            p.amount AS amount
+        FROM payments.pays p
+        WHERE p.uid = :uid
+    ),
+    payed_top AS (
+        SELECT id, msk_date,
+            ROW_NUMBER() OVER (ORDER BY msk_date DESC NULLS LAST) AS payed_rn
+        FROM dated
+        WHERE state = 'payed'
+    ),
+    bounds AS (
+        SELECT
+            MIN(msk_date) FILTER (WHERE payed_rn <= :payed_limit) AS t_min,
+            MAX(msk_date) FILTER (WHERE payed_rn <= :payed_limit) AS t_max
+        FROM payed_top
+    ),
+    filtered AS (
+        SELECT d.msk_date, d.state, d.payment_type, d.amount
+        FROM dated d
+        CROSS JOIN bounds b
+        WHERE (
+            d.state = 'payed'
+            AND d.id IN (SELECT id FROM payed_top WHERE payed_rn <= :payed_limit)
+        )
+        OR (
+            d.state <> 'payed'
+            AND b.t_min IS NOT NULL
+            AND b.t_max IS NOT NULL
+            AND d.msk_date >= b.t_min
+            AND d.msk_date <= b.t_max
+        )
+    )
+"""
+
+_PAYMENTS_COUNT = _PAYMENTS_FILTERED + " SELECT count(*)::int FROM filtered"
+
+_PAYMENTS_PAGE = _PAYMENTS_FILTERED + """
+    SELECT msk_date, state, payment_type, amount
+    FROM filtered
+    ORDER BY msk_date DESC NULLS LAST
+    LIMIT :limit OFFSET :offset
+"""
+
+_JUR_PAYMENTS_COUNT = """
+    SELECT count(*)::int
+    FROM payments.pays_bills pb
+    WHERE pb.system = 'contract'
+      AND pb.id_user = :uid
+"""
+
+_JUR_PAYMENTS_PAGE = """
+    SELECT
+        pb.amount,
+        COALESCE(
+            CASE WHEN pb.date > 0
+                THEN timezone('Europe/Moscow', to_timestamp(pb.date))
+                ELSE NULL
+            END,
+            timezone('Europe/Moscow', pb.datum)
+        ) AS msk_date,
+        'rs' AS payment_type,
+        'payed' AS state
+    FROM payments.pays_bills pb
+    WHERE pb.system = 'contract'
+      AND pb.id_user = :uid
+    ORDER BY pb.datum DESC
+    LIMIT :limit OFFSET :offset
+"""
+
+_TARIFF_HISTORY_FILTERED = """
+    WITH ranked_tariffs AS (
+        SELECT
+            t.activation_timestamp,
+            t.deactivation_date,
+            t.packet_size,
+            t.days,
+            t.price,
+            t.sname,
+            s.real_type::text AS real_type,
+            ROW_NUMBER() OVER (ORDER BY t.activation_timestamp DESC) AS rn_desc,
+            LEAD(t.activation_timestamp) OVER (ORDER BY t.activation_timestamp ASC) AS next_activation
+        FROM service.activated_services t
+        LEFT JOIN service.service s ON s.sname = t.sname
+        WHERE t.uid = :uid
+    ),
+    top_tariffs AS (
+        SELECT *,
+            COALESCE(deactivation_date, next_activation, now()) AS period_end
+        FROM ranked_tariffs
+        WHERE rn_desc <= :tariff_limit
+    ),
+    tariff_rows AS (
+        SELECT
+            activation_timestamp AS activated_at,
+            'tariff'::text AS row_kind,
+            real_type,
+            deactivation_date,
+            packet_size,
+            days,
+            price,
+            NULL::text AS dop_name,
+            sname
+        FROM top_tariffs
+    ),
+    dop_rows AS (
+        SELECT
+            ad.activation_timestamp::timestamptz AS activated_at,
+            'dop'::text AS row_kind,
+            NULL::text AS real_type,
+            NULL::timestamptz AS deactivation_date,
+            NULL::bigint AS packet_size,
+            NULL::int AS days,
+            ad.price,
+            ad.dop_name,
+            NULL::text AS sname
+        FROM service.activated_dops ad
+        WHERE ad.uid = :uid
+          AND EXISTS (
+              SELECT 1
+              FROM top_tariffs tt
+              WHERE ad.activation_timestamp::timestamptz >= tt.activation_timestamp
+                AND ad.activation_timestamp::timestamptz < tt.period_end
+          )
+    ),
+    filtered AS (
+        SELECT * FROM tariff_rows
+        UNION ALL
+        SELECT * FROM dop_rows
+    )
+"""
+
+_TARIFF_HISTORY_COUNT = _TARIFF_HISTORY_FILTERED + " SELECT count(*)::int FROM filtered"
+
+_TARIFF_HISTORY_PAGE = _TARIFF_HISTORY_FILTERED + """
+    SELECT * FROM filtered
+    ORDER BY activated_at DESC NULLS LAST
     LIMIT :limit OFFSET :offset
 """
 
@@ -591,7 +775,12 @@ async def load_user_tickets_page(
         {"uid": user_id, "limit": per_page, "offset": offset},
     )
     items = [_row_to_profile_ticket(row) for row in r.mappings().all()]
-    return ProfileTicketListResponse(total=total, page=page, per_page=per_page, items=items)
+    return ProfileTicketListResponse(
+        total=total,
+        page=page,
+        per_page=per_page,
+        items=items,
+    )
 
 
 def _row_to_payment_item(row: Any) -> PaymentHistoryItem:
@@ -618,88 +807,65 @@ async def load_user_payments_page(
     page: int = 1,
     per_page: int = 10,
 ) -> PaymentHistoryListResponse:
+    is_jur = (
+        await session.execute(
+            text('SELECT is_juridical FROM users."user" WHERE id = :uid'),
+            {"uid": user_id},
+        )
+    ).scalar_one_or_none()
+    if is_jur is None:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
+
+    offset = (page - 1) * per_page
+    if int(is_jur or 0) == 2:
+        total = int(
+            (await session.execute(text(_JUR_PAYMENTS_COUNT), {"uid": user_id})).scalar_one() or 0
+        )
+        r = await session.execute(
+            text(_JUR_PAYMENTS_PAGE),
+            {"uid": user_id, "limit": per_page, "offset": offset},
+        )
+    else:
+        params = {"uid": user_id, "payed_limit": _PROFILE_PAYMENTS_SUCCESS_LIMIT}
+        total = int(
+            (await session.execute(text(_PAYMENTS_COUNT), params)).scalar_one() or 0
+        )
+        r = await session.execute(
+            text(_PAYMENTS_PAGE),
+            {**params, "limit": per_page, "offset": offset},
+        )
+
+    items = [_row_to_payment_item(row) for row in r.mappings().all()]
+    return PaymentHistoryListResponse(
+        total=total,
+        page=page,
+        per_page=per_page,
+        items=items,
+    )
+
+
+async def load_user_tariff_history_page(
+    session: AsyncSession,
+    user_id: int,
+    page: int = 1,
+    per_page: int = 10,
+) -> TariffHistoryListResponse:
+    params = {"uid": user_id, "tariff_limit": _PROFILE_TARIFFS_LIMIT}
     total = int(
-        (
-            await session.execute(
-                text(
-                    """
-                    SELECT count(*)::int
-                    FROM payments.pays p
-                    WHERE p.uid = :uid
-                    """
-                ),
-                {"uid": user_id},
-            )
-        ).scalar_one()
-        or 0
+        (await session.execute(text(_TARIFF_HISTORY_COUNT), params)).scalar_one() or 0
     )
     offset = (page - 1) * per_page
     r = await session.execute(
-        text(
-            """
-            SELECT
-                COALESCE(
-                    CASE WHEN p.date_in > 0
-                        THEN timezone('Europe/Moscow', to_timestamp(p.date_in))
-                        ELSE NULL
-                    END,
-                    p.date_in_tz
-                ) AS msk_date,
-                p.state::text AS state,
-                p.type AS payment_type,
-                p.amount AS amount
-            FROM payments.pays p
-            WHERE p.uid = :uid
-            ORDER BY msk_date DESC NULLS LAST
-            LIMIT :limit OFFSET :offset
-            """
-        ),
-        {"uid": user_id, "limit": per_page, "offset": offset},
+        text(_TARIFF_HISTORY_PAGE),
+        {**params, "limit": per_page, "offset": offset},
     )
-    items = [_row_to_payment_item(row) for row in r.mappings().all()]
-    return PaymentHistoryListResponse(total=total, page=page, per_page=per_page, items=items)
-
-
-_TARIFF_HISTORY_COUNT = """
-    SELECT (
-        (SELECT count(*)::int FROM service.activated_services WHERE uid = :uid)
-        + (SELECT count(*)::int FROM service.activated_dops WHERE uid = :uid)
-    ) AS total
-"""
-
-_TARIFF_HISTORY_PAGE = """
-    WITH combined AS (
-        SELECT
-            t.activation_timestamp AS activated_at,
-            'tariff'::text AS row_kind,
-            s.real_type::text AS real_type,
-            t.deactivation_date,
-            t.packet_size,
-            t.days,
-            t.price,
-            NULL::text AS dop_name,
-            t.sname
-        FROM service.activated_services t
-        LEFT JOIN service.service s ON s.sname = t.sname
-        WHERE t.uid = :uid
-        UNION ALL
-        SELECT
-            ad.activation_timestamp::timestamptz AS activated_at,
-            'dop'::text AS row_kind,
-            NULL::text AS real_type,
-            NULL::timestamptz AS deactivation_date,
-            NULL::bigint AS packet_size,
-            NULL::int AS days,
-            ad.price,
-            ad.dop_name,
-            NULL::text AS sname
-        FROM service.activated_dops ad
-        WHERE ad.uid = :uid
+    items = [_row_to_tariff_history_item(row) for row in r.mappings().all()]
+    return TariffHistoryListResponse(
+        total=total,
+        page=page,
+        per_page=per_page,
+        items=items,
     )
-    SELECT * FROM combined
-    ORDER BY activated_at DESC NULLS LAST
-    LIMIT :limit OFFSET :offset
-"""
 
 
 def _tariff_type_label(real_type: Optional[str]) -> str:
@@ -743,25 +909,6 @@ def _row_to_tariff_history_item(row: Any) -> TariffHistoryItem:
         price=price,
         price_label=format_money_ru(price),
     )
-
-
-async def load_user_tariff_history_page(
-    session: AsyncSession,
-    user_id: int,
-    page: int = 1,
-    per_page: int = 10,
-) -> TariffHistoryListResponse:
-    total = int(
-        (await session.execute(text(_TARIFF_HISTORY_COUNT), {"uid": user_id})).scalar_one()
-        or 0
-    )
-    offset = (page - 1) * per_page
-    r = await session.execute(
-        text(_TARIFF_HISTORY_PAGE),
-        {"uid": user_id, "limit": per_page, "offset": offset},
-    )
-    items = [_row_to_tariff_history_item(row) for row in r.mappings().all()]
-    return TariffHistoryListResponse(total=total, page=page, per_page=per_page, items=items)
 
 
 def _build_health_check(personal: ProfilePersonal, online: ProfileOnline, tariff: Optional[ProfileTariffActive], balance: float) -> ProfileHealthCheck:
@@ -926,6 +1073,7 @@ async def get_user_profile(
     is_online, open_sessions, last_end = await RadacctDAO.get_session_summary(
         session, personal.login
     )
+    open_session_items = await load_open_sessions(session, personal.login)
 
     if include_tickets and tickets_per_page > 0:
         tariff_res, tickets = await asyncio.gather(
@@ -947,6 +1095,7 @@ async def get_user_profile(
         personal=personal,
         online=online,
         open_sessions_count=open_sessions,
+        open_sessions=open_session_items,
         balance=balance,
         tariff=tariff,
         netflow_note=netflow_note,
@@ -1039,6 +1188,68 @@ async def unarchive_user(session: AsyncSession, user_id: int) -> ActionMessage:
 async def count_open_sessions(session: AsyncSession, login: str) -> int:
     _online, open_count, _last = await RadacctDAO.get_session_summary(session, login)
     return open_count
+
+
+_OPEN_SESSIONS_SQL = """
+    SELECT
+        r.acctstarttime,
+        CASE
+            WHEN r.framedprotocol = 'PPP' THEN 'PPPoE'
+            ELSE 'Hotspot'
+        END AS protocol,
+        host(r.framedipaddress)::text AS ip_address,
+        st.station_name,
+        coalesce(r.acctinputoctets, 0)::float / 1048576 AS traffic_in_mb,
+        coalesce(r.acctoutputoctets, 0)::float / 1048576 AS traffic_out_mb
+    FROM radius.radacct r
+    LEFT JOIN LATERAL (
+        SELECT coalesce(sf.station_name, ig.name) AS station_name
+        FROM wifitochka.ip_group ig
+        LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
+        WHERE ig.network_hotspot >> r.framedipaddress
+           OR ig.network_pppoe >> r.framedipaddress
+        ORDER BY ig.id
+        LIMIT 1
+    ) st ON true
+    WHERE lower(r.username) = lower(:login)
+      AND r.acctstoptime IS NULL
+    ORDER BY r.acctstarttime DESC
+"""
+
+
+def _row_to_open_session(row: Any, *, now: datetime) -> ProfileOpenSession:
+    started = row["acctstarttime"]
+    if started is not None and started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    protocol = str(row["protocol"] or "Hotspot")
+    if protocol not in ("PPPoE", "Hotspot"):
+        protocol = "Hotspot"
+    duration_sec = 0
+    if started is not None:
+        duration_sec = max(0, int((now - started.astimezone(timezone.utc)).total_seconds()))
+    traffic_in = float(row["traffic_in_mb"] or 0)
+    traffic_out = float(row["traffic_out_mb"] or 0)
+    return ProfileOpenSession(
+        started_at=started,
+        started_at_label=format_dt_msk(started, time_sep=" ") or "—",
+        duration_label=format_session_duration(duration_sec),
+        protocol=protocol,  # type: ignore[arg-type]
+        ip_address=(row["ip_address"] or "—").strip(),
+        station_name=(row["station_name"] or "").strip() or None,
+        traffic_in_mb=traffic_in,
+        traffic_out_mb=traffic_out,
+        traffic_in_label=format_traffic_mb(traffic_in),
+        traffic_out_label=format_traffic_mb(traffic_out),
+    )
+
+
+async def load_open_sessions(session: AsyncSession, login: str) -> list[ProfileOpenSession]:
+    login = (login or "").strip()
+    if not login:
+        return []
+    now = datetime.now(timezone.utc)
+    r = await session.execute(text(_OPEN_SESSIONS_SQL), {"login": login})
+    return [_row_to_open_session(row, now=now) for row in r.mappings().all()]
 
 
 async def _call_radius_proc(session: AsyncSession, sql: str, params: dict[str, Any]) -> None:

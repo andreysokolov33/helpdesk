@@ -12,6 +12,20 @@ export type ProfilePersonal = {
   status_label: string;
   station_name: string | null;
   auth_page: string | null;
+  residence_address: string | null;
+};
+
+export type ProfileOpenSession = {
+  started_at: string;
+  started_at_label: string;
+  duration_label: string;
+  protocol: "PPPoE" | "Hotspot";
+  ip_address: string;
+  station_name: string | null;
+  traffic_in_mb: number;
+  traffic_out_mb: number;
+  traffic_in_label: string;
+  traffic_out_label: string;
 };
 
 export type ProfileOnline = {
@@ -73,6 +87,7 @@ export type UserProfileResponse = {
   personal: ProfilePersonal;
   online: ProfileOnline;
   open_sessions_count: number;
+  open_sessions: ProfileOpenSession[];
   balance: number;
   tariff: ProfileTariff | null;
   netflow_note: string | null;

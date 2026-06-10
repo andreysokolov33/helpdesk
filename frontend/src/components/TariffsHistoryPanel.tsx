@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  fetchUserTariffHistory,
-  type TariffHistoryItem,
-} from "@/api/userProfile";
+import { fetchUserTariffHistory, type TariffHistoryItem } from "@/api/userProfile";
 
 const PER_PAGE = 10;
 

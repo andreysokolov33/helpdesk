@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  fetchUserPayments,
-  type PaymentHistoryItem,
-} from "@/api/userProfile";
+import { fetchUserPayments, type PaymentHistoryItem } from "@/api/userProfile";
 import { fmtMoneyRu } from "@/utils/money";
 
 const PER_PAGE = 10;

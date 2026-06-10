@@ -70,10 +70,13 @@ function buildFastCheckSummary(steps: FastCheckStep[]): SummaryRow[] {
 type Props = {
   userId: number;
   onDisconnect?: () => void;
+  onUnarchive?: () => void;
   /** split — как в профиле; stacked — шаги сверху, решение снизу (тикет). */
   layout?: "split" | "stacked";
   /** Скрыть intro и кнопку запуска (запуск снаружи). */
   hideIdleUI?: boolean;
+  introText?: string;
+  runButtonLabel?: string;
   /** Кэш результата при повторном открытии панели. */
   initialData?: FastCheckResponse | null;
   onResult?: (data: FastCheckResponse) => void;
@@ -148,8 +151,11 @@ function applyResultState(
 export default function FastCheckPanel({
   userId,
   onDisconnect,
+  onUnarchive,
   layout = "split",
   hideIdleUI = false,
+  introText = INTRO,
+  runButtonLabel = "Проверить абонента",
   initialData = null,
   onResult,
   autoRun = false,
@@ -265,11 +271,11 @@ export default function FastCheckPanel({
     <div
       className={`up-fast-check${panelScroll ? " up-fast-check--panel-scroll" : " up-fast-check--page-scroll"}`}
     >
-      {showIdle ? <p className="up-fc-intro">{INTRO}</p> : null}
+      {showIdle ? <p className="up-fc-intro">{introText}</p> : null}
 
       {showIdle ? (
         <button type="button" className="up-fc-run-btn" onClick={() => void runCheck()}>
-          Проверить абонента
+          {runButtonLabel}
         </button>
       ) : null}
 
@@ -315,6 +321,13 @@ export default function FastCheckPanel({
             {activeStep?.test_code === "session_limit" && activeStep.status === "fail" && onDisconnect ? (
               <button type="button" className="up-btn sec up-fc-disconnect" onClick={onDisconnect}>
                 Закрыть сессии
+              </button>
+            ) : null}
+            {activeStep?.test_code === "account_status" &&
+            activeStep.status === "fail" &&
+            onUnarchive ? (
+              <button type="button" className="up-btn up-btn-restore up-fc-unarchive" onClick={onUnarchive}>
+                Восстановить УЗ
               </button>
             ) : null}
           </div>

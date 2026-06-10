@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import SubscriberSearchField from "@/components/SubscriberSearchField";
 import PartnerTicketSuccessModal from "@/components/PartnerTicketSuccessModal";
@@ -6,7 +6,10 @@ import type { SubscriberSearchHit } from "@/api/search";
 import { registerCall, type CallConnectionKind, type ConnectionLeadPayload } from "@/api/tracker";
 import { maskRuPhoneInput, normalizeRuPhone } from "@/utils/phone";
 
-type CallLocationState = { returnTo?: string };
+type CallLocationState = {
+  returnTo?: string;
+  prefillSubscriber?: SubscriberSearchHit;
+};
 
 const EMPTY_LEAD: ConnectionLeadPayload = {
   full_name: "",
@@ -76,6 +79,8 @@ function BoolToggle({
 export default function CallTab() {
   const navigate = useNavigate();
   const location = useLocation();
+  const locState = (location.state as CallLocationState | null) ?? null;
+  const prefillAppliedRef = useRef(false);
 
   function cancel() {
     const returnTo = (location.state as CallLocationState | null)?.returnTo;
@@ -90,9 +95,13 @@ export default function CallTab() {
     navigate("/");
   }
 
-  const [mode, setMode] = useState<CallConnectionKind>("existing");
+  const [mode, setMode] = useState<CallConnectionKind>(
+    locState?.prefillSubscriber ? "existing" : "existing",
+  );
   const [desc, setDesc] = useState("");
-  const [subscriber, setSubscriber] = useState<SubscriberSearchHit | null>(null);
+  const [subscriber, setSubscriber] = useState<SubscriberSearchHit | null>(
+    locState?.prefillSubscriber ?? null,
+  );
   const [lead, setLead] = useState<ConnectionLeadPayload>({ ...EMPTY_LEAD });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +111,14 @@ export default function CallTab() {
     setPartnerTicketId(null);
     navigate("/");
   }, [navigate]);
+
+  useEffect(() => {
+    if (!locState?.prefillSubscriber || prefillAppliedRef.current) return;
+    prefillAppliedRef.current = true;
+    window.setTimeout(() => {
+      document.getElementById("call-desc")?.focus();
+    }, 0);
+  }, [locState?.prefillSubscriber]);
 
   function switchMode(next: CallConnectionKind) {
     setMode(next);

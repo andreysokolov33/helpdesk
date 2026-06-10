@@ -20,12 +20,26 @@ class ProfilePersonal(BaseModel):
     status_label: str
     station_name: Optional[str] = None
     auth_page: Optional[str] = None
+    residence_address: Optional[str] = None
 
 
 class ProfileOnline(BaseModel):
     is_online: bool
     last_session_end: Optional[datetime] = None
     last_session_end_label: Optional[str] = None
+
+
+class ProfileOpenSession(BaseModel):
+    started_at: datetime
+    started_at_label: str
+    duration_label: str
+    protocol: Literal["PPPoE", "Hotspot"]
+    ip_address: str
+    station_name: Optional[str] = None
+    traffic_in_mb: float
+    traffic_out_mb: float
+    traffic_in_label: str
+    traffic_out_label: str
 
 
 class ProfileTariffActive(BaseModel):
@@ -160,6 +174,7 @@ class UserProfileResponse(BaseModel):
     personal: ProfilePersonal
     online: ProfileOnline
     open_sessions_count: int = 0
+    open_sessions: list[ProfileOpenSession] = Field(default_factory=list)
     balance: float
     tariff: Optional[ProfileTariffActive] = None
     netflow_note: Optional[str] = None
