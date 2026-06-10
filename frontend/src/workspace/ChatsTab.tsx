@@ -136,6 +136,9 @@ export default function ChatsTab() {
   const closedMode = params.get("closed") === "true";
   const dateFrom = params.get("date_from") ?? "";
   const dateTo = params.get("date_to") ?? "";
+  const assignedToParam = params.get("assigned_to") ?? "";
+  const assignedTo = assignedToParam && /^\d+$/.test(assignedToParam) ? Number(assignedToParam) : undefined;
+  const periodFilterActive = Boolean(dateFrom && dateTo);
   const [subscriberInput, setSubscriberInput] = useState(() => params.get("subscriber_q") ?? "");
   const subscriberQ = params.get("subscriber_q") ?? "";
 
@@ -192,13 +195,15 @@ export default function ChatsTab() {
         setListPolling(true);
       }
       try {
+        const useDateFilter = (closedMode || assignedTo != null) && periodFilterActive;
         const data = await fetchOpenTrackerTickets({
           page: listPage,
           per_page: perPage,
           closed: closedMode,
           subscriber_q: subscriberQ || undefined,
-          date_from: closedMode && dateFrom ? dateFrom : undefined,
-          date_to: closedMode && dateTo ? dateTo : undefined,
+          date_from: useDateFilter && dateFrom ? dateFrom : undefined,
+          date_to: useDateFilter && dateTo ? dateTo : undefined,
+          assigned_to: assignedTo,
         });
         if (gen !== listLoadGenRef.current) return;
         const applyRows = (items: TrackerTicketListItem[]) => {
@@ -232,8 +237,9 @@ export default function ChatsTab() {
             per_page: perPage,
             closed: closedMode,
             subscriber_q: subscriberQ || undefined,
-            date_from: closedMode && dateFrom ? dateFrom : undefined,
-            date_to: closedMode && dateTo ? dateTo : undefined,
+            date_from: useDateFilter && dateFrom ? dateFrom : undefined,
+            date_to: useDateFilter && dateTo ? dateTo : undefined,
+            assigned_to: assignedTo,
           });
           if (gen === listLoadGenRef.current) {
             listDigestRef.current = dig.digest;
@@ -252,12 +258,12 @@ export default function ChatsTab() {
         else setListPolling(false);
       }
     },
-    [listPrefsReady, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo],
+    [listPrefsReady, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo, assignedTo, periodFilterActive],
   );
 
   useEffect(() => {
     listDigestRef.current = null;
-  }, [listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo]);
+  }, [listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo, assignedTo]);
 
   useEffect(() => {
     if (!listMode || !listPrefsReady) return;
@@ -268,13 +274,15 @@ export default function ChatsTab() {
     if (!listPrefsReady || document.visibilityState === "hidden") return;
     setListPolling(true);
     try {
+      const useDateFilter = (closedMode || assignedTo != null) && periodFilterActive;
       const dig = await fetchTrackerListDigest({
         page: listPage,
         per_page: perPage,
         closed: closedMode,
         subscriber_q: subscriberQ || undefined,
-        date_from: closedMode && dateFrom ? dateFrom : undefined,
-        date_to: closedMode && dateTo ? dateTo : undefined,
+        date_from: useDateFilter && dateFrom ? dateFrom : undefined,
+        date_to: useDateFilter && dateTo ? dateTo : undefined,
+        assigned_to: assignedTo,
         digest: listDigestRef.current ?? undefined,
       });
       listDigestRef.current = dig.digest;
@@ -296,6 +304,8 @@ export default function ChatsTab() {
     subscriberQ,
     dateFrom,
     dateTo,
+    assignedTo,
+    periodFilterActive,
     loadTicketsList,
   ]);
 

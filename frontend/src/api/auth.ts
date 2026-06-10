@@ -14,6 +14,8 @@ export async function logoutRequest(): Promise<void> {
 export type AuthMe = {
   user_id: number;
   role: string | null;
+  login?: string | null;
+  full_name?: string | null;
 };
 
 export async function fetchAuthMe(): Promise<AuthMe> {
@@ -24,5 +26,10 @@ export async function fetchAuthMe(): Promise<AuthMe> {
     throw new Error(msg);
   }
   if (data.user_id == null) throw new Error("Некорректный ответ сервера");
-  return { user_id: data.user_id, role: data.role ?? null };
+  return {
+    user_id: data.user_id,
+    role: data.role ?? null,
+    login: data.login ?? null,
+    full_name: data.full_name ?? null,
+  };
 }

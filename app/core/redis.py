@@ -2,7 +2,6 @@ from datetime import date, datetime
 from decimal import Decimal
 from ipaddress import IPv4Address, IPv4Network
 import json
-import asyncio
 import logging
 from typing import Optional, Any
 from app.database import redis_client
@@ -18,14 +17,18 @@ class RedisCache:
         return f"{self.prefix}:{key}"
 
     async def get(self, key: Any) -> Optional[dict]:
+        if hasattr(self.redis, "available") and not self.redis.available:
+            return None
         try:
-            data = await asyncio.wait_for(self.redis.get(self._get_key(key)), timeout=0.3)
+            data = await self.redis.get(self._get_key(key))
             return json.loads(data) if data else None
         except Exception:
             logger.error("Redis GET error", exc_info=True)
             return None
 
     async def set(self, key: Any, value: dict, ttl: int = 3600 * 24):
+        if hasattr(self.redis, "available") and not self.redis.available:
+            return
         try:
             # Кастомный энкодер для сложных типов
             def default_converter(obj):
@@ -51,6 +54,8 @@ class RedisCache:
 
     async def delete(self, key: Any):
         """Удалить один ключ."""
+        if hasattr(self.redis, "available") and not self.redis.available:
+            return
         try:
             await self.redis.delete(self._get_key(key))
         except Exception:
@@ -63,6 +68,8 @@ class RedisCache:
         """
         target_pattern = pattern or f"{self.prefix}:*"
         count = 0
+        if hasattr(self.redis, "available") and not self.redis.available:
+            return count
         try:
             async for key in self.redis.scan_iter(match=target_pattern):
                 await self.redis.unlink(key)

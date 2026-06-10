@@ -18,7 +18,7 @@ from app.core.auth_utils import (
     _resolve_cookie_secure,
 )
 from app.api.v1.routers.auth.dao import (
-    OssUserTokensDAO as AbsUserTokensDAO,
+    HelpdeskTokensDAO,
     SkystreamUserProjectAccessDAO,
     SkystreamUsersDAO,
 )
@@ -27,7 +27,7 @@ from app.database import redis_client, async_session_maker
 
 logger = logging.getLogger("auth_middleware")
 
-_REDIS_KEY_SAFE_PREFIXES = ("grace_tokens:", "revoked_acc:", "operator:")
+_REDIS_KEY_SAFE_PREFIXES = ("helpdesk:grace_tokens:", "helpdesk:revoked_acc:", "operator:")
 
 
 def _redis_key_log_label(key: str) -> str:
@@ -212,12 +212,12 @@ class AuthMiddleware:
                 jti = payload.get("jti")
                 # Быстрая проверка: отозванные access кэшируем в Redis (TTL = срок жизни access)
                 if jti:
-                    rev_key = f"revoked_acc:{jti}"
+                    rev_key = f"helpdesk:revoked_acc:{jti}"
                     if await self._redis_get(rev_key):
                         pass  # отозван — пробуем refresh или 401
                     else:
                         async with async_session_maker() as db:
-                            token_record = await AbsUserTokensDAO.find_by_access_jti(db, jti)
+                            token_record = await HelpdeskTokensDAO.find_by_access_jti(db, jti)
                             if token_record and token_record.get("is_revoked"):
                                 await self._redis_set(rev_key, "1", ex=max(60, settings.JWT_ACCESS_EXPIRE_MINUTES * 60))
                                 pass
@@ -251,7 +251,7 @@ class AuthMiddleware:
 
                 # 2. Ищем запись в базе данных
                 # ВАЖНО: Метод find_by_refresh_jti НЕ ДОЛЖЕН фильтровать по is_revoked!
-                token_record = await AbsUserTokensDAO.find_by_refresh_jti(db, jti)
+                token_record = await HelpdeskTokensDAO.find_by_refresh_jti(db, jti)
                 
                 if not token_record:
                     logger.warning("REFRESH: Token record not found in database")
@@ -284,7 +284,7 @@ class AuthMiddleware:
                         
                         # А. Grace Period: возвращаем кэшированные токены от первой вкладки
                         if diff < 60:
-                            grace_key = f"grace_tokens:{jti}"
+                            grace_key = f"helpdesk:grace_tokens:{jti}"
                             try:
                                 cached = await self._redis_get(grace_key)
                                 if cached:
@@ -308,7 +308,7 @@ class AuthMiddleware:
                         
                         # Б. Аварийное восстановление (если токен отозван давно, но браузер застрял)
                         # Проверяем, есть ли у пользователя НОВЫЕ активные сессии
-                        latest_active = await AbsUserTokensDAO.find_latest_active_session(db, user_id)
+                        latest_active = await HelpdeskTokensDAO.find_latest_active_session(db, user_id)
                         if latest_active and latest_active['refresh_jti'] != token_record['refresh_jti']:
                             # Если у пользователя уже есть более новая сессия, значит прошлая ротация 
                             # прошла успешно в БД, но не в браузере. 
@@ -332,7 +332,7 @@ class AuthMiddleware:
                 new_refresh, exp_refresh, jti_refresh = await create_token(user, "refresh")
 
                 # Атомарно обновляем токены в БД
-                await AbsUserTokensDAO.rotate_refresh(
+                await HelpdeskTokensDAO.rotate_refresh(
                     db,
                     old_refresh_jti=jti,
                     new_access_jti=jti_access,
@@ -354,7 +354,7 @@ class AuthMiddleware:
                         k: {"value": v["value"], "expires": v["expires"].isoformat()}
                         for k, v in new_cookies.items()
                     })
-                    await self._redis_set(f"grace_tokens:{jti}", cache_val, ex=60)
+                    await self._redis_set(f"helpdesk:grace_tokens:{jti}", cache_val, ex=60)
                 except Exception as e:
                     logger.warning(f"REFRESH: Grace cache write failed: {e}")
 
@@ -383,6 +383,7 @@ class AuthMiddleware:
                         "role": user.get("role"),
                         "admin": user.get("is_superuser", False),
                         "full_name": user.get("full_name"),
+                        "login": user.get("login"),
                     }
                     await self._redis_set(cache_key, json.dumps(data), ex=600)
                     return data

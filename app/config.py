@@ -78,8 +78,9 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = Field(1800, description="Pool recycle (сек.)")
     DB_POOL_PRE_PING: bool = Field(True, description="Pool pre-ping")
 
-    REDIS_HOST: str = Field(..., description="Redis host")
-    REDIS_PORT: int = Field(..., ge=1, le=65535, description="Redis port")
+    REDIS_ENABLED: bool = Field(True, description="Использовать Redis; при false — только БД")
+    REDIS_HOST: str = Field("127.0.0.1", description="Redis host")
+    REDIS_PORT: int = Field(6379, ge=1, le=65535, description="Redis port")
     REDIS_DB: int = Field(0, ge=0, description="Redis DB index")
     REDIS_PASSWORD: Optional[str] = Field(default=None, description="Redis AUTH (если включён)")
 
@@ -110,6 +111,8 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def compute_celery_urls(cls, values: dict) -> dict:
+        if not values.get("REDIS_ENABLED", True):
+            return values
         if not values.get("CELERY_BROKER_URL"):
             host = values.get("REDIS_HOST")
             port = values.get("REDIS_PORT")

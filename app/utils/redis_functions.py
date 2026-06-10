@@ -16,9 +16,11 @@ BLOCK_TIME = 300  # 5 минут
 
 
 async def _redis_available(redis) -> bool:
-    """Проверка доступности Redis без проброса исключений."""
+    """Проверка доступности Redis без лишних ping при уже известном статусе."""
+    if hasattr(redis, "available"):
+        return bool(redis.available)
     try:
-        await redis.ping()
+        await asyncio.wait_for(redis.ping(), timeout=0.5)
         return True
     except Exception as e:
         logger.error(f"Redis недоступен: {e}")

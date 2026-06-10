@@ -5,7 +5,10 @@ from sqlalchemy import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.config import settings
+from app.core.redis_resilience import ResilientRedis
 from redis.asyncio import Redis
+from redis.asyncio.retry import Retry
+from redis.backoff import NoBackoff
 from typing import AsyncGenerator
 
 logger = logging.getLogger("oss")
@@ -36,7 +39,7 @@ async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit
 class Base(DeclarativeBase):
     pass
 
-# ── Redis (ошибки подключения не падают при старте — обрабатываются lazy) ──
+# ── Redis (при недоступности — no-op, запросы идут в БД) ──
 _redis_kw: dict = {
     "host": settings.REDIS_HOST,
     "port": settings.REDIS_PORT,
@@ -44,14 +47,15 @@ _redis_kw: dict = {
     "decode_responses": True,
     "socket_timeout": 0.5,
     "socket_connect_timeout": 0.3,
-    "retry_on_timeout": True,
-    "health_check_interval": 30,
+    "retry": Retry(NoBackoff(), 0),
+    "health_check_interval": 0,
     "max_connections": 200,
 }
 if settings.REDIS_PASSWORD:
     _redis_kw["password"] = settings.REDIS_PASSWORD
 
-redis_client = Redis(**_redis_kw)
+_redis_raw = Redis(**_redis_kw)
+redis_client = ResilientRedis(_redis_raw, enabled=settings.REDIS_ENABLED)
 
 
 @asynccontextmanager

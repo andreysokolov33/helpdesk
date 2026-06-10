@@ -7,11 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dao.base import BaseDAO
-from app.models.oss import OssUserTokens
-from app.models.users import SkystreamProjects
-from app.models.users import SkystreamUserProjectAccess
-from app.models.users import SkystreamUsers
-from app.models.users import User as AbsSubscriber
+from app.models.users import (
+    SkystreamHelpdeskTokens,
+    SkystreamProjects,
+    SkystreamUserProjectAccess,
+    SkystreamUsers,
+    User as AbsSubscriber,
+)
 from app.utils.model_utils import _model_to_dict
 
 
@@ -77,20 +79,24 @@ class SubscriberDAO(BaseDAO[AbsSubscriber]):
         return _model_to_dict(result.scalar_one_or_none())
 
 
-class OssUserTokensDAO(BaseDAO[OssUserTokens]):
-    """DAO для таблицы oss.oss_user_tokens."""
+class HelpdeskTokensDAO(BaseDAO[SkystreamHelpdeskTokens]):
+    """DAO для JWT-сессий helpdesk (users.skystream_helpdesk_tokens)."""
 
-    model = OssUserTokens
+    model = SkystreamHelpdeskTokens
+
+    @classmethod
+    def _uuid(cls, value: str | UUID) -> UUID:
+        return value if isinstance(value, UUID) else UUID(str(value))
 
     @classmethod
     async def find_by_access_jti(cls, session: AsyncSession, jti: str) -> Optional[Dict[str, Any]]:
-        stmt = select(cls.model).where(cls.model.access_jti == UUID(jti))
+        stmt = select(cls.model).where(cls.model.access_jti == cls._uuid(jti))
         result = await session.execute(stmt)
         return _model_to_dict(result.scalar_one_or_none())
 
     @classmethod
     async def find_by_refresh_jti(cls, session: AsyncSession, jti: str) -> Optional[Dict[str, Any]]:
-        stmt = select(cls.model).where(cls.model.refresh_jti == UUID(jti))
+        stmt = select(cls.model).where(cls.model.refresh_jti == cls._uuid(jti))
         result = await session.execute(stmt)
         return _model_to_dict(result.scalar_one_or_none())
 
@@ -114,9 +120,14 @@ class OssUserTokensDAO(BaseDAO[OssUserTokens]):
         filter_by: dict,
         auto_commit: bool = True,
     ) -> int:
+        normalized = dict(filter_by)
+        for key in ("access_jti", "refresh_jti"):
+            if key in normalized and normalized[key] is not None:
+                normalized[key] = cls._uuid(normalized[key])
+
         stmt = (
             update(cls.model)
-            .filter_by(**filter_by)
+            .filter_by(**normalized)
             .values(is_revoked=True, revoked_at=datetime.now(timezone.utc))
             .execution_options(synchronize_session="fetch")
         )
@@ -135,10 +146,11 @@ class OssUserTokensDAO(BaseDAO[OssUserTokens]):
         access_expires_at: datetime,
         refresh_expires_at: datetime,
     ) -> None:
-        """Атомарно отзывает старый токен и создаёт новую запись."""
+        """Отзывает старую сессию и создаёт новую запись (ротация refresh-токена)."""
         now = datetime.now(timezone.utc)
+        old_uuid = cls._uuid(old_refresh_jti)
 
-        old_stmt = select(cls.model).where(cls.model.refresh_jti == UUID(old_refresh_jti))
+        old_stmt = select(cls.model).where(cls.model.refresh_jti == old_uuid)
         old_result = await session.execute(old_stmt)
         old_record = old_result.scalar_one_or_none()
         if not old_record:
@@ -146,18 +158,19 @@ class OssUserTokensDAO(BaseDAO[OssUserTokens]):
 
         await session.execute(
             update(cls.model)
-            .where(cls.model.refresh_jti == UUID(old_refresh_jti))
+            .where(cls.model.refresh_jti == old_uuid)
             .values(is_revoked=True, revoked_at=now)
         )
 
-        new_token = OssUserTokens(
-            user_id=old_record.user_id,
-            access_jti=UUID(new_access_jti),
-            refresh_jti=UUID(new_refresh_jti),
-            ip_address=old_record.ip_address,
-            user_agent=old_record.user_agent,
-            device_info=old_record.device_info,
-            access_expires_at=access_expires_at,
-            refresh_expires_at=refresh_expires_at,
+        session.add(
+            SkystreamHelpdeskTokens(
+                user_id=old_record.user_id,
+                access_jti=cls._uuid(new_access_jti),
+                refresh_jti=cls._uuid(new_refresh_jti),
+                ip_address=old_record.ip_address,
+                user_agent=old_record.user_agent,
+                device_info=old_record.device_info,
+                access_expires_at=access_expires_at,
+                refresh_expires_at=refresh_expires_at,
+            )
         )
-        session.add(new_token)

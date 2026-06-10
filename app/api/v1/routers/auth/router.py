@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from user_agents import parse as parse_ua
 
 from app.api.v1.routers.auth.dao import (
-    OssUserTokensDAO,
+    HelpdeskTokensDAO,
     SkystreamUserProjectAccessDAO,
     SkystreamUsersDAO,
     SubscriberDAO,
@@ -174,12 +174,12 @@ async def login(
 
     device_info = _get_device_info(request)
 
-    await OssUserTokensDAO.revoke_sessions(
+    await HelpdeskTokensDAO.revoke_sessions(
         db,
         filter_by={"user_id": user_id, "device_info": device_info, "is_revoked": False},
     )
 
-    await OssUserTokensDAO.add(
+    await HelpdeskTokensDAO.add(
         db,
         user_id=user_id,
         access_jti=access_jti,
@@ -210,7 +210,7 @@ async def logout(
         payload = await decode_jwt_token(ref_token, token_type="refresh")
         refresh_jti = payload.get("jti") if payload else None
         if refresh_jti:
-            await OssUserTokensDAO.revoke_sessions(
+            await HelpdeskTokensDAO.revoke_sessions(
                 db, filter_by={"refresh_jti": refresh_jti, "is_revoked": False}
             )
 
@@ -222,9 +222,25 @@ async def logout(
 
 
 @router.get("/me", response_model=AuthMeResponse)
-async def auth_me(request: Request) -> AuthMeResponse:
+async def auth_me(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AuthMeResponse:
     """Текущий оператор helpdesk (из AuthMiddleware)."""
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    return AuthMeResponse(user_id=int(user["user_id"]), role=user.get("role"))
+    uid = int(user["user_id"])
+    login = user.get("login")
+    full_name = user.get("full_name")
+    if login is None or full_name is None:
+        row = await SkystreamUsersDAO.find_one_or_none(db, id=uid)
+        if row:
+            login = login or row.get("login")
+            full_name = full_name or row.get("full_name")
+    return AuthMeResponse(
+        user_id=uid,
+        role=user.get("role"),
+        login=login,
+        full_name=full_name,
+    )

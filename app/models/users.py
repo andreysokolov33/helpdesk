@@ -1006,6 +1006,42 @@ class AbsUserTokens(Base):
     revoked_at = mapped_column(DateTime(True))
 
 
+class SkystreamHelpdeskTokens(Base):
+    """JWT-сессии портала helpdesk (users.skystream_helpdesk_tokens)."""
+
+    __tablename__ = 'skystream_helpdesk_tokens'
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ['user_id'], ['users.skystream_users.id'],
+            ondelete='CASCADE',
+            name='skystream_helpdesk_tokens_user_id_fkey',
+        ),
+        PrimaryKeyConstraint('id', name='skystream_helpdesk_tokens_pkey'),
+        UniqueConstraint('refresh_jti', 'is_revoked', name='unique_helpdesk_active_refresh'),
+        UniqueConstraint('refresh_jti', name='skystream_helpdesk_tokens_refresh_jti_key'),
+        Index('ix_skystream_helpdesk_tokens_cleanup', 'refresh_expires_at'),
+        Index('ix_skystream_helpdesk_tokens_refresh_jti', 'refresh_jti'),
+        Index('ix_skystream_helpdesk_tokens_access_jti', 'access_jti'),
+        Index('ix_skystream_helpdesk_tokens_user_active', 'user_id'),
+        {'schema': 'users'},
+    )
+
+    id = mapped_column(BigInteger)
+    user_id = mapped_column(BigInteger, nullable=False)
+    access_jti = mapped_column(Uuid, nullable=False)
+    refresh_jti = mapped_column(Uuid, nullable=False)
+    created_at = mapped_column(
+        DateTime(True), nullable=False, server_default=text('now()'))
+    access_expires_at = mapped_column(DateTime(True), nullable=False)
+    refresh_expires_at = mapped_column(DateTime(True), nullable=False)
+    is_revoked = mapped_column(
+        Boolean, nullable=False, server_default=text('false'))
+    device_info = mapped_column(Text)
+    ip_address = mapped_column(INET)
+    user_agent = mapped_column(Text)
+    revoked_at = mapped_column(DateTime(True))
+
+
 class FaqAnswers(Base):
     __tablename__ = 'faq_answers'
     __table_args__ = (

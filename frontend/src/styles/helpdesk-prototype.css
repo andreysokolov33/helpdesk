@@ -65,6 +65,20 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 .nav-bell-btn{color:var(--red)}
 .nav-exit-btn{color:var(--i2)}
 .nav-exit-btn:hover{color:var(--red);border-color:var(--rsf)}
+.nav-user-btn{color:var(--i2)}
+.nav-user-btn:hover{color:var(--ink);border-color:var(--lm)}
+.nav-user-dd{width:220px}
+.nav-user-item{width:100%;text-align:left;border:none;background:transparent;font:inherit}
+.nav-user-logout{
+  width:100%;
+  text-align:left;
+  border:none;
+  background:transparent;
+  font:inherit;
+  color:var(--red)!important;
+  font-weight:700;
+}
+.nav-user-logout:hover{background:rgba(255,45,26,.08)!important}
 .nav-counter{
   position:absolute;
   top:2px;
@@ -1764,3 +1778,28 @@ button,input,select,textarea{font-family:var(--f);color:var(--ink)}
 .up-label{display:block;font-size:11px;font-weight:600;color:var(--i2);margin-bottom:10px}
 .up-input{width:100%;height:36px;border:1.5px solid var(--ln);border-radius:8px;padding:0 10px;margin-top:4px;font-size:12px}
 .up-link{border:none;background:none;color:var(--red);font-size:12px;font-weight:600;cursor:pointer;padding:0;margin-bottom:10px}
+
+/* OPERATOR PROFILE */
+.op-page{max-width:720px;margin:0 auto;padding:20px 16px 32px}
+.op-head{margin-bottom:16px}
+.op-title{margin:0;font-size:22px;font-weight:800;color:var(--ink)}
+.op-sub{margin:6px 0 0;font-size:13px;color:var(--i3)}
+.op-card{margin-bottom:14px;padding:16px 18px}
+.op-card-label{font-size:11px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.op-card-value{font-size:20px;font-weight:800;color:var(--ink)}
+.op-card-meta{margin-top:4px;font-size:13px;color:var(--i2)}
+.op-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.op-section-title{margin:0;font-size:15px;font-weight:800;color:var(--ink)}
+.op-period-selects{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.op-month-label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--i3);font-weight:600}
+.op-month-select{min-width:120px;height:34px;border:1.5px solid var(--ln);border-radius:8px;background:var(--p);color:var(--ink);font-size:12px;padding:0 10px}
+.op-month-select:disabled{opacity:.55;cursor:not-allowed}
+.op-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.op-stats-grid{grid-template-columns:1fr}}
+.op-stat-card{border:1.5px solid var(--ln);border-radius:10px;padding:14px;background:var(--bg)}
+.op-stat-label{font-size:11px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.35px}
+.op-stat-value{margin-top:8px;font-size:28px;font-weight:800;color:var(--ink);line-height:1}
+.op-stat-hint{margin-top:6px;font-size:11px;color:var(--i3)}
+.op-stat-link{display:inline-block;margin-top:10px;font-size:12px;font-weight:700;color:var(--red);text-decoration:none}
+.op-stat-link:hover{text-decoration:underline}
+.op-error{margin-bottom:10px;padding:10px 12px;border-radius:8px;background:rgba(255,45,26,.08);color:var(--red);font-size:12px}

@@ -27,6 +27,7 @@ from app.api.v1.routers.auth.router import router as auth_router
 from app.api.v1.routers.helpdesk.search import router as helpdesk_search_router
 from app.api.v1.routers.helpdesk.user_profile import router as helpdesk_user_profile_router
 from app.api.v1.routers.helpdesk.tickets_nav import router as helpdesk_tickets_nav_router
+from app.api.v1.routers.helpdesk.operator_profile import router as helpdesk_operator_profile_router
 from app.api.v1.routers.helpdesk.tracker import router as helpdesk_tracker_router
 from app.api.v1.routers.helpdesk.chats import router as helpdesk_chats_router
 from app.config import BASE_DIR, settings
@@ -81,14 +82,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.error(f"Main database connection failed: {e}", exc_info=True)
 
-    try:
-        await redis_client.ping()
+    if await redis_client.check_connection():
         logger.info("Redis connected successfully")
-    except Exception as e:
-        logger.warning(
-            "Redis unavailable: %s — app will work without cache/brute-force protection",
-            e,
-        )
+    else:
+        logger.warning("Redis unavailable — app will work without cache, DB only")
 
     yield
 
@@ -208,15 +205,14 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Readiness check failed: {e}")
             raise HTTPException(status_code=503, detail="Service Unavailable") from e
-        try:
-            await redis_client.ping()
-        except Exception as e:
-            logger.warning(f"Redis degraded: {e}")
+        if not redis_client.available:
+            logger.warning("Redis degraded: unavailable")
         return "ready"
 
     app.include_router(auth_router, prefix="/api", tags=["Auth"])
     app.include_router(helpdesk_tickets_nav_router, prefix="/api")
     app.include_router(helpdesk_tracker_router, prefix="/api")
+    app.include_router(helpdesk_operator_profile_router, prefix="/api")
     app.include_router(helpdesk_chats_router, prefix="/api")
     app.include_router(helpdesk_search_router, prefix="/api")
     app.include_router(helpdesk_user_profile_router, prefix="/api")

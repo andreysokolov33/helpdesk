@@ -56,6 +56,15 @@ class UnreadTicketsResponse(BaseModel):
     unread_count: int = 0
 
 
+class OperatorTicketMonthStatsResponse(BaseModel):
+    year: int
+    month: int = Field(ge=1, le=12)
+    date_from: str
+    date_to: str
+    open_count: int = 0
+    closed_count: int = 0
+
+
 class TrackerTicketListStats(BaseModel):
     avg_rating: Optional[float] = None
     avg_rating_mine: Optional[float] = None

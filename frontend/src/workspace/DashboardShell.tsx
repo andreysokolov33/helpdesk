@@ -1,7 +1,7 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useId, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
-import { logoutRequest } from "@/api/auth";
+import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
 import { fetchChatUnread } from "@/api/chat";
 import { getBellUnreadCount, MOCK_NOTIFS } from "@/data/mockCc";
@@ -24,10 +24,11 @@ const tabs: TabDef[] = [
   { to: "/kb", label: "База знаний" },
 ];
 
-function IconExit() {
+function IconUser() {
   return (
-    <svg className="nav-svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+    <svg className="nav-svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" aria-hidden>
+      <circle cx="12" cy="8" r="4" />
+      <path strokeLinecap="round" d="M5 20c0-3.3 3.1-6 7-6s7 2.7 7 6" />
     </svg>
   );
 }
@@ -87,11 +88,15 @@ function IconSunsetScene({ skyId, glowId }: { skyId: string; glowId: string }) {
 
 export default function DashboardShell() {
   const [notifOpen, setNotifOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [ticketsUnread, setTicketsUnread] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
   const location = useLocation();
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const bellRef = useRef<HTMLButtonElement>(null);
+  const userMenuRef = useRef<HTMLButtonElement>(null);
   const themeGradId = useId().replace(/:/g, "");
   const sunsetSkyId = `${themeGradId}-sky`;
   const sunsetGlowId = `${themeGradId}-glow`;
@@ -101,13 +106,27 @@ export default function DashboardShell() {
 
   useEffect(() => {
     function close(e: MouseEvent) {
-      if (!notifOpen) return;
-      if (bellRef.current?.contains(e.target as Node)) return;
-      setNotifOpen(false);
+      const target = e.target as Node;
+      if (notifOpen && !bellRef.current?.contains(target)) setNotifOpen(false);
+      if (userMenuOpen && !userMenuRef.current?.contains(target)) setUserMenuOpen(false);
     }
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
-  }, [notifOpen]);
+  }, [notifOpen, userMenuOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthMe()
+      .then((me) => {
+        if (!cancelled) setAuthMe(me);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthMe(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -246,12 +265,39 @@ export default function DashboardShell() {
 
           <button
             type="button"
-            className="nav-icon-btn nav-exit-btn"
-            onClick={requestLogout}
-            title="Выйти"
-            aria-label="Выйти из системы"
+            className="nav-icon-btn nav-user-btn"
+            ref={userMenuRef}
+            aria-expanded={userMenuOpen}
+            aria-label="Меню пользователя"
+            title={authMe?.login?.trim() || "Аккаунт"}
+            onClick={() => setUserMenuOpen((v) => !v)}
           >
-            <IconExit />
+            <IconUser />
+            <div className={`ndd nav-user-dd ${userMenuOpen ? "open" : ""}`}>
+              <div className="ndh">
+                {authMe?.login?.trim() || "Оператор"}
+              </div>
+              <button
+                type="button"
+                className="ndi nav-user-item"
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  navigate("/account");
+                }}
+              >
+                Профиль
+              </button>
+              <button
+                type="button"
+                className="ndi nav-user-logout"
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  requestLogout();
+                }}
+              >
+                Выход
+              </button>
+            </div>
           </button>
         </div>
       </nav>

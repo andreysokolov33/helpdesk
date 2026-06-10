@@ -276,6 +276,7 @@ export async function fetchTrackerListDigest(params: {
   subscriber_q?: string;
   date_from?: string;
   date_to?: string;
+  assigned_to?: number;
   digest?: string;
 }): Promise<TrackerTicketListDigest> {
   const sp = new URLSearchParams({
@@ -287,6 +288,7 @@ export async function fetchTrackerListDigest(params: {
   if (q) sp.set("subscriber_q", q);
   if (params.date_from) sp.set("date_from", params.date_from);
   if (params.date_to) sp.set("date_to", params.date_to);
+  if (params.assigned_to != null) sp.set("assigned_to", String(params.assigned_to));
   if (params.digest) sp.set("digest", params.digest);
   const res = await fetch(`/api/v1/helpdesk/tracker/list/digest?${sp.toString()}`, {
     method: "GET",
@@ -307,6 +309,7 @@ export async function fetchOpenTrackerTickets(params: {
   subscriber_q?: string;
   date_from?: string;
   date_to?: string;
+  assigned_to?: number;
 }): Promise<TrackerTicketListResponse> {
   const sp = new URLSearchParams({
     page: String(params.page),
@@ -317,6 +320,7 @@ export async function fetchOpenTrackerTickets(params: {
   if (q) sp.set("subscriber_q", q);
   if (params.date_from) sp.set("date_from", params.date_from);
   if (params.date_to) sp.set("date_to", params.date_to);
+  if (params.assigned_to != null) sp.set("assigned_to", String(params.assigned_to));
   const res = await fetch(`/api/v1/helpdesk/tracker/list?${sp.toString()}`, {
     method: "GET",
     credentials: "include",

@@ -797,6 +797,12 @@ def _tracker_date_filter_sql(
     return f"AND {' AND '.join(clauses)}", params
 
 
+def _tracker_assignee_filter_sql(assigned_to: int | None) -> tuple[str, dict[str, Any]]:
+    if assigned_to is None:
+        return "", {}
+    return "AND tt.assigned_to = :list_assigned_to", {"list_assigned_to": assigned_to}
+
+
 def _tracker_list_filter_sql(
     *,
     closed: bool,
@@ -804,15 +810,17 @@ def _tracker_list_filter_sql(
     date_from: date | None,
     date_to: date | None,
     hide_manager_line: bool = False,
+    assigned_to: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     base = _tracker_list_status_sources_sql(closed=closed)
     sub_sql, sub_params = _tracker_subscriber_filter_sql(subscriber_q)
     date_sql, date_params = _tracker_date_filter_sql(
         closed=closed, date_from=date_from, date_to=date_to
     )
+    assignee_sql, assignee_params = _tracker_assignee_filter_sql(assigned_to)
     manager_sql = "AND tt.support_line <> 4" if hide_manager_line else ""
-    sql = f"{base}\n          {sub_sql}\n          {date_sql}\n          {manager_sql}"
-    params = {**sub_params, **date_params}
+    sql = f"{base}\n          {sub_sql}\n          {date_sql}\n          {manager_sql}\n          {assignee_sql}"
+    params = {**sub_params, **date_params, **assignee_params}
     return sql, params
 
 
@@ -1064,6 +1072,7 @@ def _tracker_list_digest_cache_key(
     subscriber_q: str | None,
     date_from: date | None,
     date_to: date | None,
+    assigned_to: int | None = None,
 ) -> str:
     payload = json.dumps(
         {
@@ -1074,6 +1083,7 @@ def _tracker_list_digest_cache_key(
             "q": (subscriber_q or "").strip(),
             "df": date_from.isoformat() if date_from else "",
             "dt": date_to.isoformat() if date_to else "",
+            "a": assigned_to,
         },
         sort_keys=True,
         ensure_ascii=True,
@@ -1188,6 +1198,55 @@ def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
     """
 
 
+async def fetch_operator_ticket_month_stats(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    year: int,
+    month: int,
+) -> dict[str, int | str]:
+    """Открытые (созданные в месяце) и закрытые (закрытые в месяце) тикеты оператора."""
+    from calendar import monthrange
+
+    date_from = date(year, month, 1)
+    date_to = date(year, month, monthrange(year, month)[1])
+    hide_manager = await _viewer_hides_manager_line(db, user_id)
+
+    async def _count(*, closed: bool) -> int:
+        filter_sql, filter_params = _tracker_list_filter_sql(
+            closed=closed,
+            subscriber_q=None,
+            date_from=date_from,
+            date_to=date_to,
+            hide_manager_line=hide_manager,
+            assigned_to=user_id,
+        )
+        row = (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*) AS total
+                    FROM users.tracker_tickets tt
+                    WHERE {filter_sql}
+                    """
+                ),
+                filter_params,
+            )
+        ).mappings().first()
+        return int(row["total"] if row else 0)
+
+    open_count = await _count(closed=False)
+    closed_count = await _count(closed=True)
+    return {
+        "year": year,
+        "month": month,
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "open_count": open_count,
+        "closed_count": closed_count,
+    }
+
+
 async def fetch_tracker_list_page(
     db: AsyncSession,
     *,
@@ -1198,6 +1257,7 @@ async def fetch_tracker_list_page(
     subscriber_q: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    assigned_to: int | None = None,
 ) -> tuple[int, list[dict[str, Any]], dict[str, float | None]]:
     hide_manager = await _viewer_hides_manager_line(db, viewer_id)
     filter_sql, filter_params = _tracker_list_filter_sql(
@@ -1206,6 +1266,7 @@ async def fetch_tracker_list_page(
         date_from=date_from,
         date_to=date_to,
         hide_manager_line=hide_manager,
+        assigned_to=assigned_to,
     )
     params = {**filter_params, "viewer_id": viewer_id, "per_page": per_page, "offset": (page - 1) * per_page}
 
@@ -1267,6 +1328,7 @@ async def fetch_tracker_list_digest(
     subscriber_q: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    assigned_to: int | None = None,
     client_digest: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -1281,6 +1343,7 @@ async def fetch_tracker_list_digest(
         subscriber_q=subscriber_q,
         date_from=date_from,
         date_to=date_to,
+        assigned_to=assigned_to,
     )
     try:
         cached_raw = await redis_client.get(cache_key)
@@ -1301,6 +1364,7 @@ async def fetch_tracker_list_digest(
         date_from=date_from,
         date_to=date_to,
         hide_manager_line=hide_manager,
+        assigned_to=assigned_to,
     )
     params = {
         **filter_params,

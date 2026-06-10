@@ -163,12 +163,21 @@ async def list_tracker_tickets(
         None,
         description="Дата по включительно",
     ),
+    assigned_to: Optional[int] = Query(
+        None,
+        description="Фильтр по исполнителю (assigned_to); только свой id",
+    ),
 ) -> TrackerTicketListResponse:
     """
     Список тикетов `users.tracker_tickets` с пагинацией и tier-сортировкой (персонально по viewer_id).
     По умолчанию только незакрытые (`closed=false`), источники lk / call_center / abs.
     """
     viewer_skystream_id = int(user["user_id"])
+    eff_assigned_to: int | None = None
+    if assigned_to is not None:
+        if int(assigned_to) != viewer_skystream_id:
+            raise HTTPException(status_code=403, detail="Можно фильтровать только свои тикеты")
+        eff_assigned_to = viewer_skystream_id
 
     def _is_stale_prepared_cache(exc: BaseException) -> bool:
         cur: BaseException | None = exc
@@ -192,6 +201,7 @@ async def list_tracker_tickets(
                 subscriber_q=subscriber_q,
                 date_from=date_from,
                 date_to=date_to,
+                assigned_to=eff_assigned_to,
             )
             break
         except NotSupportedError as exc:
@@ -330,6 +340,7 @@ async def list_tracker_tickets_digest(
     subscriber_q: Optional[str] = Query(None),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
+    assigned_to: Optional[int] = Query(None),
     digest: Optional[str] = Query(
         None,
         description="Отпечаток с прошлого поллинга; при совпадении changed=false",
@@ -339,15 +350,23 @@ async def list_tracker_tickets_digest(
     Лёгкий поллинг списка /tickets: без join абонентов и категорий.
     При changed=false клиент не вызывает GET /list.
     """
+    viewer_id = int(user["user_id"])
+    eff_assigned_to: int | None = None
+    if assigned_to is not None:
+        if int(assigned_to) != viewer_id:
+            raise HTTPException(status_code=403, detail="Можно фильтровать только свои тикеты")
+        eff_assigned_to = viewer_id
+
     data = await ticket_svc.fetch_tracker_list_digest(
         db,
-        viewer_id=int(user["user_id"]),
+        viewer_id=viewer_id,
         closed=closed,
         page=page,
         per_page=per_page,
         subscriber_q=subscriber_q,
         date_from=date_from,
         date_to=date_to,
+        assigned_to=eff_assigned_to,
         client_digest=(digest or "").strip() or None,
     )
     return TrackerTicketListDigestResponse(**data)
