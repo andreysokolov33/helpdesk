@@ -544,11 +544,41 @@
   gap: 10px;
   flex: 1 1 280px;
   min-width: 0;
-  align-self: stretch;
+  align-self: start;
 }
 
 .stats-metrics--admin {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-self: stretch;
+  flex: 1 1 0;
+  max-width: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: column;
+  min-height: 0;
+}
+
+.stats-metrics--admin .stats-m-card,
+.stats-metrics--admin .stats-m-card--link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.stats-metrics--admin .stats-m-label {
+  margin-bottom: 6px;
+}
+
+.stats-metrics--admin .stats-m-val {
+  font-size: clamp(18px, 2.2vw, 22px);
+}
+
+.stats-metrics--admin .stats-m-card--skeleton {
+  min-height: 0;
+  height: 100%;
 }
 
 .stats-metrics--placeholder {
@@ -724,11 +754,25 @@
     max-width: none;
   }
 
-  .stats-metrics,
-  .stats-metrics--admin {
+  .stats-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     flex: 1 1 auto;
     width: 100%;
+    max-width: none;
+  }
+
+  .stats-metrics--admin {
+    align-self: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    grid-auto-flow: row;
+    max-width: none;
+  }
+
+  .stats-metrics--admin .stats-m-card,
+  .stats-metrics--admin .stats-m-card--link {
+    height: auto;
+    min-height: 56px;
   }
 }
 

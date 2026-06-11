@@ -268,7 +268,10 @@ export default function StatsTab() {
           </div>
 
           {loading ? (
-            <div className="stats-metrics stats-metrics--placeholder" aria-busy="true">
+            <div
+              className={`stats-metrics stats-metrics--placeholder${adminAllView ? " stats-metrics--admin" : ""}`}
+              aria-busy="true"
+            >
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="stats-m-card stats-m-card--skeleton" />
               ))}
