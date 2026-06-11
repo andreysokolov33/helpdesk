@@ -1,4 +1,5 @@
 import type { TicketRow } from "@/data/mockCc";
+import { formatStaffNameShort } from "@/utils/personName";
 
 export type TrackerQueueLine = "cs" | "engineers" | "partner";
 export type TrackerActionBy = "cs" | "engineers" | "partner" | "subscriber" | "external";
@@ -175,8 +176,16 @@ export function staffParticipantPill(p: TicketStaffParticipant): AssigneePillDis
   return { label, variant: "support", title: label };
 }
 
+export type AssigneePillOptions = {
+  /** Для админа в списке /tickets: фамилия полностью, имя и отчество — инициалы. */
+  shortAssigneeName?: boolean;
+};
+
 /** Исполнитель: assigned_to; ФИО только для support. */
-export function ticketListAssigneePill(row: AssigneePillRow): AssigneePillDisplay {
+export function ticketListAssigneePill(
+  row: AssigneePillRow,
+  options?: AssigneePillOptions,
+): AssigneePillDisplay {
   if (row.assigned_to == null) {
     return { label: "Нет исполнителя", variant: "unassigned" };
   }
@@ -190,8 +199,16 @@ export function ticketListAssigneePill(row: AssigneePillRow): AssigneePillDispla
   if (role === "manager") {
     return { label: "Менеджер", variant: "manager" };
   }
-  const label = row.assignee_label?.trim() || "—";
-  return { label, variant: assigneePillVariant(role), title: label };
+  const full = row.assignee_label?.trim() || "—";
+  const label =
+    options?.shortAssigneeName && full !== "—"
+      ? formatStaffNameShort(full)
+      : full;
+  return {
+    label,
+    variant: assigneePillVariant(role),
+    title: full !== "—" && full !== label ? full : undefined,
+  };
 }
 
 /** @deprecated используйте ticketListAssigneePill */
