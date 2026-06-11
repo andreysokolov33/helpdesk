@@ -496,7 +496,7 @@
   font-weight: 700;
 }
 
-[data-theme="light"] #cs-page .cs-mav.cl {
+[data-theme="light"] #cs-page .cs-mav.cl, [data-theme="comfort"] #cs-page .cs-mav.cl {
   background: #eef1f5;
   color: #5a6d82;
 }
@@ -506,7 +506,7 @@
   color: var(--i2);
 }
 
-[data-theme="light"] #cs-page .cs-mav.ag {
+[data-theme="light"] #cs-page .cs-mav.ag, [data-theme="comfort"] #cs-page .cs-mav.ag {
   background: #3d5f8a;
   color: #fff;
 }
@@ -535,7 +535,7 @@
   position: relative;
 }
 
-[data-theme="light"] #cs-page .cs-bbl.cl {
+[data-theme="light"] #cs-page .cs-bbl.cl, [data-theme="comfort"] #cs-page .cs-bbl.cl {
   background: #fff;
   border: 1px solid #e2e6ec;
   color: var(--i2);
@@ -547,7 +547,7 @@
   color: var(--ink);
 }
 
-[data-theme="light"] #cs-page .cs-bbl.ag {
+[data-theme="light"] #cs-page .cs-bbl.ag, [data-theme="comfort"] #cs-page .cs-bbl.ag {
   background: #e4ecf4;
   color: #1a3352;
   border: 1px solid #c8d4e4;
@@ -560,7 +560,7 @@
 }
 
 /* Цветовая дифференциация авторов исходящих сообщений */
-[data-theme="light"] #cs-page .cs-bbl.ag.k-engineer {
+[data-theme="light"] #cs-page .cs-bbl.ag.k-engineer, [data-theme="comfort"] #cs-page .cs-bbl.ag.k-engineer {
   background: #e4f0ec;
   color: #1d473c;
   border: 1px solid #c4ddd3;
@@ -572,7 +572,7 @@
   border: 1px solid #25504490;
 }
 
-[data-theme="light"] #cs-page .cs-bbl.ag.k-partner {
+[data-theme="light"] #cs-page .cs-bbl.ag.k-partner, [data-theme="comfort"] #cs-page .cs-bbl.ag.k-partner {
   background: #ece8f5;
   color: #392b5f;
   border: 1px solid #d6cdea;
@@ -584,7 +584,7 @@
   border: 1px solid #3d3560;
 }
 
-[data-theme="light"] #cs-page .cs-mav.ag.k-engineer {
+[data-theme="light"] #cs-page .cs-mav.ag.k-engineer, [data-theme="comfort"] #cs-page .cs-mav.ag.k-engineer {
   background: #2f7a66;
 }
 
@@ -593,7 +593,7 @@
   color: #eaf6f1;
 }
 
-[data-theme="light"] #cs-page .cs-mav.ag.k-partner {
+[data-theme="light"] #cs-page .cs-mav.ag.k-partner, [data-theme="comfort"] #cs-page .cs-mav.ag.k-partner {
   background: #6a52a3;
 }
 

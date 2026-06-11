@@ -470,7 +470,10 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
         if ctx.is_jur == 2:
             managers = await _load_jur_managers(session)
             extra = _managers_html(managers)
-        detail = "Тариф закончился" if tariff_ended and ctx.is_jur == 0 else None
+        if tariff_ended and ctx.is_jur == 0:
+            detail = "Тариф закончился"
+        else:
+            detail = "Не подключен"
         steps.append(
             _step(
                 "tariff_state",

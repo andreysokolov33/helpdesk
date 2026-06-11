@@ -229,6 +229,22 @@ export function ticketListStatusColumn(
     return { kind: "workflow", status: row.status, label: row.status_label };
   }
 
+  if (row.communication_state === "needs_reply") {
+    return {
+      kind: "comm",
+      state: "needs_reply",
+      label: row.communication_label?.trim() || COMMUNICATION_LABELS.needs_reply,
+    };
+  }
+
+  if (row.communication_state === "awaiting_subscriber") {
+    return {
+      kind: "comm",
+      state: "awaiting_subscriber",
+      label: row.communication_label?.trim() || COMMUNICATION_LABELS.awaiting_subscriber,
+    };
+  }
+
   const src = (row.source || "call_center").toLowerCase();
   const internalStaffChat = INTERNAL_STAFF_CHAT_SOURCES.has(src);
 

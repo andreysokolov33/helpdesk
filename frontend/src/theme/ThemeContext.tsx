@@ -1,20 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { nextTheme, parseStoredTheme, type AppTheme } from "@/theme/themeMeta";
 
-type Theme = "light" | "dark";
+export type { AppTheme };
 
 const ThemeContext = createContext<{
-  theme: Theme;
+  theme: AppTheme;
   toggleTheme: () => void;
-  setTheme: (t: Theme) => void;
+  setTheme: (t: AppTheme) => void;
 } | null>(null);
 
 const STORAGE_KEY = "helpdesk-theme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
+  const [theme, setThemeState] = useState<AppTheme>(() => {
     if (typeof localStorage === "undefined") return "light";
-    const s = localStorage.getItem(STORAGE_KEY);
-    return s === "dark" ? "dark" : "light";
+    return parseStoredTheme(localStorage.getItem(STORAGE_KEY));
   });
 
   useEffect(() => {
@@ -22,11 +22,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
-  const setTheme = useCallback((t: Theme) => setThemeState(t), []);
-  const toggleTheme = useCallback(
-    () => setThemeState((prev) => (prev === "light" ? "dark" : "light")),
-    [],
-  );
+  const setTheme = useCallback((t: AppTheme) => setThemeState(t), []);
+  const toggleTheme = useCallback(() => setThemeState((prev) => nextTheme(prev)), []);
 
   const value = useMemo(() => ({ theme, toggleTheme, setTheme }), [theme, toggleTheme, setTheme]);
 

@@ -3,6 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { loginRequest } from "@/api/auth";
 import { brandLogoSrc } from "@/brandLogos";
 import { useTheme } from "@/theme/ThemeContext";
+import { themeComfortIcon } from "@/themeIcons";
+import { nextTheme, themeToggleHint, type AppTheme } from "@/theme/themeMeta";
 import styles from "./LoginPage.module.css";
 
 function IconMoon() {
@@ -28,6 +30,15 @@ function IconSun() {
       />
     </svg>
   );
+}
+
+function ThemeCycleIcon({ theme }: { theme: AppTheme }) {
+  const next = nextTheme(theme);
+  if (next === "dark") return <IconMoon />;
+  if (next === "comfort") {
+    return <img className={styles.themeGlyph} src={themeComfortIcon} width={22} height={22} alt="" />;
+  }
+  return <IconSun />;
 }
 
 function IconLock() {
@@ -97,10 +108,10 @@ export default function LoginPage() {
           type="button"
           className={styles.themeBtn}
           onClick={toggleTheme}
-          title={theme === "light" ? "Тёмная тема" : "Светлая тема"}
-          aria-label={theme === "light" ? "Включить тёмную тему" : "Включить светлую тему"}
+          title={themeToggleHint(theme)}
+          aria-label={themeToggleHint(theme)}
         >
-          {theme === "light" ? <IconMoon /> : <IconSun />}
+          <ThemeCycleIcon theme={theme} />
         </button>
       </header>
 

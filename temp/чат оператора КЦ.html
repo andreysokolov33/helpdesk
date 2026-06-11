@@ -1,0 +1,2116 @@
+<!-- START OF FILE оператор_чат_эргономичный.html -->
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiFi Точка — Пульт оператора КЦ</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   ЦВЕТОВАЯ ПАЛИТРА И СТАНДАРТЫ ОФОРМЛЕНИЯ ПО ТЗ (Flat Design 2.0)
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+    --brand-red: #FF1300;
+    --brand-dark: #0A1E36;
+    --bg-sys: #F5F5F3;
+    --bg-card: #FFFFFF;
+    --text-primary: #3D5068;
+    --text-headers: #0A1E36;
+    --text-secondary: #5C6E7E;
+    --status-ok: #1B5299; /* Синий успех */
+    --status-ok-bg: #EAF2F9;
+    --status-err-bg: #FFF0EE;
+    --line: #E2E2DC;
+    --muted: #7A8B9A;
+    --f: 'Manrope', sans-serif;
+
+    --status-work-bg: #EAF2F9;
+    --status-work-text: #1B5299;
+    --status-wait-bg: #FDF3E0;
+    --status-wait-text: #B86E10;
+}
+
+[data-theme="dark"] {
+    --bg-sys: #0A1E36;
+    --bg-card: #11283F;
+    --text-primary: #CBD5E0;
+    --text-headers: #FFFFFF;
+    --text-secondary: #8899AA;
+    --status-ok: #F0A830; /* Золотой успех */
+    --status-ok-bg: rgba(240, 168, 48, 0.1);
+    --status-err-bg: rgba(255, 19, 0, 0.15);
+    --line: #1E3A58;
+    --muted: #5A7A94;
+    --brand-red: #FF1300;
+
+    --status-work-bg: rgba(240, 168, 48, 0.1);
+    --status-work-text: #F0A830;
+    --status-wait-bg: rgba(240, 160, 80, 0.1);
+    --status-wait-text: #F0A050;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    transition: background 0.15s, color 0.1s, border-color 0.15s;
+    box-shadow: none !important; /* Строгий запрет теней по ТЗ */
+}
+
+body {
+    font-family: var(--f);
+    background-color: var(--bg-sys);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.6;
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* КАРКАС ПАНЕЛЕЙ */
+.main-viewport {
+    display: flex;
+    flex: 1;
+    height: 100vh;
+    position: relative;
+    overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   КОЛОНКА 1: ОЧЕРЕДЬ ЧАТОВ (СТАТИЧНАЯ - ИЗ СКРИНШОТА)
+   ═══════════════════════════════════════════════════════════════ */
+.static-queue-column {
+    width: 280px;
+    background: var(--bg-card);
+    border-right: 1.5px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    z-index: 5;
+}
+
+.queue-title-bar {
+    padding: 18px 16px;
+    border-bottom: 1.5px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.queue-title-text {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--text-headers);
+}
+
+.queue-badge-counter {
+    background: var(--brand-red);
+    color: #FFFFFF;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.queue-list-scroll {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.queue-item {
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    position: relative;
+}
+
+.queue-item:hover {
+    background: var(--bg-sys);
+}
+
+.queue-item.active {
+    background: var(--bg-sys);
+}
+
+.queue-item.unread {
+    background: var(--status-err-bg);
+}
+
+.queue-item.unread::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background-color: var(--brand-red);
+}
+
+.queue-item-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+}
+
+.queue-item-name {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text-headers);
+}
+
+.queue-item-time {
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.queue-item-preview {
+    font-size: 12px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 8px;
+}
+
+.badge-status {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.badge-status.new {
+    color: var(--brand-red);
+    font-weight: 800;
+    background: none;
+    padding: 0;
+}
+
+.badge-status.work {
+    background: var(--status-work-bg);
+    color: var(--status-work-text);
+}
+
+.badge-status.wait {
+    background: var(--status-wait-bg);
+    color: var(--status-wait-text);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   КОЛОНКА 2: СКРЫВАЕМАЯ ПАНЕЛЬ С АНИМАЦИЕЙ И РАЗДЕЛИТЕЛЬНЫМ ЗАЦЕПОМ
+   ═══════════════════════════════════════════════════════════════ */
+.collapsible-container {
+    display: flex;
+    position: relative;
+    height: 100%;
+    z-index: 4;
+}
+
+.collapsible-helper-column {
+    width: 360px;
+    background: var(--bg-card);
+    border-right: 1.5px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
+    /* Плавная планарная анимация сворачивания */
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 1;
+}
+
+/* Свернутое состояние панели */
+.collapsible-helper-column.collapsed {
+    width: 0px;
+    opacity: 0;
+    border-right: none;
+    pointer-events: none;
+}
+
+/* Интерактивная разделительная кнопка-зацеп (Split-Border Pill) */
+.split-toggle-handle {
+    position: absolute;
+    right: -13px; /* Центрирование строго по линии границы */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 48px;
+    background: var(--bg-card);
+    border: 1.5px solid var(--line);
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    user-select: none;
+}
+
+.split-toggle-handle:hover {
+    border-color: var(--brand-red);
+}
+
+.split-toggle-handle span {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.split-toggle-handle:hover span {
+    color: var(--brand-red);
+}
+
+.column-header-actions {
+    padding: 16px;
+    border-bottom: 1.5px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 360px; /* Фиксирует ширину контента при сворачивании */
+}
+
+.logo-text {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-headers);
+    letter-spacing: 0.5px;
+}
+
+.logo-text span {
+    color: var(--brand-red);
+}
+
+.helper-card-section {
+    padding: 16px;
+    border-bottom: 1.5px solid var(--line);
+    width: 360px; /* Предотвращает деформацию блоков при сжатии */
+}
+
+.helper-card-title {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    margin-bottom: 12px;
+}
+
+/* Карточка абонента */
+.subscriber-info-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sub-display-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text-headers);
+    cursor: pointer;
+    display: inline-block;
+}
+
+.sub-display-name:hover {
+    color: var(--brand-red);
+    text-decoration: underline;
+    text-decoration-color: var(--brand-red);
+}
+
+.sub-data-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.data-cell {
+    background: var(--bg-sys);
+    padding: 6px 8px;
+    border-radius: 6px;
+}
+
+.data-cell-label {
+    font-size: 8px;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: var(--muted);
+}
+
+.data-cell-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-headers);
+}
+
+/* Кнопки действий */
+.action-buttons-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.btn-panel-action {
+    padding: 10px;
+    font-family: var(--f);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-panel-action:hover {
+    border-color: var(--text-headers);
+    color: var(--text-headers);
+}
+
+.btn-panel-action.btn-red-accent {
+    background: var(--brand-red);
+    color: #FFFFFF;
+    border: none;
+}
+
+.btn-panel-action.btn-red-accent:hover {
+    opacity: 0.95;
+}
+
+/* Результаты автодиагностики */
+.diagnostics-log-box {
+    background: var(--bg-sys);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+    display: none;
+}
+
+.diag-log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 800;
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+.diag-log-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.diag-log-row:last-child {
+    border: none;
+}
+
+.status-indicator-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--status-ok);
+}
+
+.status-indicator-ok::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    background-color: var(--status-ok);
+    border-radius: 50%;
+}
+
+.status-indicator-error {
+    background: var(--status-err-bg);
+    color: var(--brand-red);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+/* База знаний */
+.kb-widget-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.kb-widget-search {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid var(--line);
+    background: var(--bg-sys);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    outline: none;
+}
+
+.kb-widget-search:focus {
+    border-color: var(--brand-red);
+    background: var(--bg-card);
+}
+
+.kb-cards-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.kb-card-item {
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+}
+
+.kb-card-item:hover {
+    border-color: var(--brand-red);
+}
+
+.kb-card-item-title {
+    font-weight: 700;
+    color: var(--text-headers);
+}
+
+.kb-card-item-body {
+    font-size: 11px;
+    color: var(--text-primary);
+    line-height: 1.4;
+    display: none;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--line);
+}
+
+.kb-card-item.open .kb-card-item-body {
+    display: block;
+}
+
+.kb-card-action-bar {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.kb-btn-paste {
+    background: var(--status-ok-bg);
+    color: var(--status-ok);
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   КОЛОНКА 3: РАБОЧАЯ ОБЛАСТЬ ЧАТА (ЭРГОНОМИЧНОЕ РАСШИРЕНИЕ)
+   ═══════════════════════════════════════════════════════════════ */
+.right-chat-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-sys);
+    z-index: 3;
+}
+
+.chat-column-header {
+    height: 56px;
+    background: var(--bg-card);
+    border-bottom: 1.5px solid var(--line);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.chat-column-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.chat-column-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.theme-toggle-btn {
+    background: none;
+    border: 1.5px solid var(--line);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-family: var(--f);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.theme-toggle-btn:hover {
+    border-color: var(--brand-red);
+    color: var(--brand-red);
+}
+
+.chat-select-dropdown {
+    background: var(--bg-sys);
+    border: 1.5px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-family: var(--f);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-headers);
+    outline: none;
+    cursor: pointer;
+}
+
+.chat-select-dropdown:focus {
+    border-color: var(--brand-red);
+}
+
+.chat-subscriber-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text-headers);
+}
+
+.chat-messages-container {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.chat-bubble-wrapper {
+    display: flex;
+    flex-direction: column;
+    max-width: 70%;
+}
+
+.chat-bubble-wrapper.incoming {
+    align-self: flex-start;
+}
+
+.chat-bubble-wrapper.outgoing {
+    align-self: flex-end;
+}
+
+.chat-bubble-info {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 2px;
+    padding: 0 4px;
+}
+
+.chat-bubble-text {
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.incoming .chat-bubble-text {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1.5px solid var(--line);
+    border-top-left-radius: 0;
+}
+
+.outgoing .chat-bubble-text {
+    background: var(--brand-dark);
+    color: #FFFFFF;
+    border-top-right-radius: 0;
+}
+
+/* Панель ввода сообщений и автоответов */
+.chat-bottom-input-area {
+    background: var(--bg-card);
+    border-top: 1.5px solid var(--line);
+    padding: 14px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.auto-replies-container {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+.auto-reply-btn {
+    background: var(--bg-sys);
+    border: 1px solid var(--line);
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-family: var(--f);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.auto-reply-btn:hover {
+    border-color: var(--brand-red);
+    color: var(--brand-red);
+}
+
+.chat-input-layout {
+    display: flex;
+    gap: 12px;
+}
+
+.chat-text-input {
+    flex: 1;
+    height: 64px;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: var(--f);
+    font-size: 13px;
+    color: var(--text-primary);
+    resize: none;
+    outline: none;
+    background: var(--bg-sys);
+}
+
+.chat-text-input:focus {
+    border-color: var(--brand-red);
+    background: var(--bg-card);
+}
+
+.chat-submit-btn {
+    background: var(--brand-red);
+    border: none;
+    border-radius: 8px;
+    width: 64px;
+    height: 64px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #FFFFFF;
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.chat-submit-btn:hover {
+    opacity: 0.95;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   ПОЛНОРАЗМЕРНОЕ МОДАЛЬНОЕ ОКНО КАРТОЧКИ АБОНЕНТА (CRM) ИЗ ВЛОЖЕНИЯ
+   ═══════════════════════════════════════════════════════════════ */
+.crm-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 30, 54, 0.5);
+    display: none;
+    z-index: 1000;
+    overflow-y: auto;
+    padding: 40px 20px;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.crm-modal-overlay.active {
+    display: flex;
+}
+
+.crm-container {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 1000px;
+    position: relative;
+    padding: 32px;
+}
+
+.crm-close-btn {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 16px;
+    font-family: var(--f);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.crm-close-btn:hover {
+    border-color: var(--text-headers);
+    color: var(--text-headers);
+}
+
+.crm-hero {
+    margin-bottom: 20px;
+}
+
+.crm-hero-name {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text-headers);
+    margin-bottom: 10px;
+    max-width: 80%;
+}
+
+.crm-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.crm-badge {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .4px;
+}
+
+.crm-badge-ok {
+    border-color: var(--status-ok);
+    background: var(--status-ok-bg);
+    color: var(--status-ok);
+}
+
+.crm-badge-err {
+    background: var(--status-err-bg);
+    color: var(--brand-red);
+    border: none;
+}
+
+.crm-metric-strip {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 24px;
+    margin-bottom: 20px;
+    align-items: baseline;
+}
+
+.crm-metric-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.crm-metric-label {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+}
+
+.crm-metric-value {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text-headers);
+}
+
+.crm-metric-value.balance {
+    font-size: 20px;
+}
+
+.crm-balance-positive {
+    color: var(--status-ok);
+}
+
+.crm-balance-warning {
+    color: #B86E10;
+}
+
+.crm-balance-danger {
+    color: var(--brand-red);
+}
+
+.crm-rfm-strip {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+    background: var(--bg-card);
+}
+
+.crm-rfm-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.crm-rfm-label {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-headers);
+}
+
+.crm-rfm-desc {
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: auto;
+    text-align: right;
+    line-height: 1.4;
+}
+
+.crm-grid-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+.crm-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+}
+
+.crm-card-title {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--muted);
+    margin-bottom: 14px;
+}
+
+.crm-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.crm-row:last-child {
+    border: none;
+    padding-bottom: 0;
+}
+
+.crm-row-lbl {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+}
+
+.crm-row-val {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-headers);
+    text-align: right;
+}
+
+.crm-sess-item {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+}
+
+.crm-sess-item:last-child {
+    margin-bottom: 0;
+}
+
+.crm-sess-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.crm-sess-dev {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-headers);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.crm-sess-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--status-ok);
+}
+
+.crm-sess-type {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+}
+
+.crm-sess-pppoe {
+    background: var(--status-ok-bg);
+    color: var(--status-ok);
+}
+
+.crm-sess-hot {
+    background: var(--status-err-bg);
+    color: var(--brand-red);
+}
+
+.crm-sess-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 12px;
+}
+
+.crm-sess-meta span {
+    font-size: 10px;
+    color: var(--muted);
+}
+
+.crm-sess-meta strong {
+    color: var(--text-headers);
+}
+
+.crm-action-buttons-wrap {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.crm-action-btn {
+    flex: 1;
+    min-width: 120px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: none;
+    font-family: var(--f);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.crm-action-btn:hover {
+    border-color: var(--text-headers);
+}
+
+.crm-action-btn.danger {
+    border-color: var(--status-err-bg);
+    color: var(--brand-red);
+}
+
+.crm-action-btn.danger:hover {
+    background: var(--status-err-bg);
+}
+
+.crm-action-btn.success {
+    border-color: var(--status-ok);
+    color: var(--status-ok);
+}
+
+.crm-action-btn.success:hover {
+    background: var(--status-ok-bg);
+}
+
+.crm-diag-idle {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+
+.crm-diag-btn {
+    width: 100%;
+    padding: 13px;
+    background: var(--brand-red);
+    border: none;
+    border-radius: 8px;
+    font-family: var(--f);
+    font-size: 13px;
+    font-weight: 800;
+    color: #fff;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+
+.crm-diag-btn:hover {
+    opacity: .9;
+}
+
+.crm-diag-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.crm-diag-problem {
+    background: var(--status-err-bg);
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 12px;
+    color: var(--text-headers);
+    line-height: 1.6;
+}
+
+.crm-diag-problem h4 {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--brand-red);
+    margin-bottom: 8px;
+}
+
+.crm-diag-problem ol {
+    padding-left: 16px;
+}
+
+.crm-diag-problem li {
+    margin-bottom: 4px;
+}
+
+.crm-diag-step {
+    display: flex;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.crm-diag-step:last-child {
+    border: none;
+}
+
+.crm-diag-step-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--muted);
+}
+
+.crm-diag-step-icon.ok {
+    border-color: var(--status-ok);
+    background: var(--status-ok-bg);
+}
+
+.crm-diag-step-icon.err {
+    border-color: var(--brand-red);
+    background: var(--status-err-bg);
+    color: var(--brand-red);
+}
+
+.crm-diag-step-text {
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.crm-diag-step-text strong {
+    color: var(--text-headers);
+    display: block;
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+
+.crm-diag-footer {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+}
+
+.crm-diag-footer-note {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.crm-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 16px;
+}
+
+.crm-tab-btn {
+    background: none;
+    border: none;
+    padding: 8px 16px;
+    font-family: var(--f);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+    margin-bottom: -1px;
+}
+
+.crm-tab-btn.active {
+    color: var(--brand-red);
+    border-bottom: 2px solid var(--brand-red);
+}
+
+.crm-tab-pane {
+    display: none;
+}
+
+.crm-tab-pane.active {
+    display: block;
+}
+
+.crm-stat-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.crm-stat-table th {
+    text-align: left;
+    padding: 6px 10px 8px 0;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+    border-bottom: 2px solid var(--line);
+}
+
+.crm-stat-table td {
+    padding: 8px 10px 8px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+    color: var(--text-primary);
+}
+
+.crm-stat-table tr:last-child td {
+    border: none;
+}
+
+.crm-stat-table .amount {
+    font-weight: 800;
+    color: var(--text-headers);
+    text-align: right;
+}
+
+.crm-pass-btn {
+    font-size: 11px;
+    color: var(--brand-red);
+    cursor: pointer;
+    text-decoration: underline;
+    background: none;
+    border: none;
+    font-family: var(--f);
+    font-weight: 700;
+    padding: 0;
+}
+
+.crm-pass-data {
+    font-size: 12px;
+    color: var(--text-primary);
+    margin-top: 4px;
+    display: none;
+    line-height: 1.5;
+}
+
+
+/* ЭСКАЛАЦИОННОЕ ОКНО */
+.escalate-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 30, 54, 0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.escalate-modal-overlay.active {
+    display: flex;
+}
+
+.escalate-modal-card {
+    background: var(--bg-card);
+    width: 420px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line);
+    padding: 24px;
+}
+
+.escalate-modal-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text-headers);
+    margin-bottom: 12px;
+}
+
+.escalate-modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.escalate-field-label {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+
+.escalate-select-input, .escalate-textarea-input {
+    width: 100%;
+    padding: 8px;
+    border: 1.5px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg-sys);
+    color: var(--text-primary);
+    font-family: var(--f);
+    outline: none;
+}
+
+.escalate-textarea-input {
+    height: 80px;
+    resize: none;
+}
+
+.escalate-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+</style>
+</head>
+<body>
+
+<div class="main-viewport">
+    
+    <!-- КОЛОНКА 1: ОЧЕРЕДЬ ЧАТОВ (ИЗ СКРИНШОТА) -->
+    <section class="static-queue-column">
+        <div class="queue-title-bar">
+            <span class="queue-title-text">Очередь чатов</span>
+            <span class="queue-badge-counter">7</span>
+        </div>
+        <div class="queue-list-scroll">
+            
+            <div class="queue-item unread active" id="q-smirnov" onclick="switchSubscriberContext(5011)">
+                <div class="queue-item-meta">
+                    <span class="queue-item-name">Смирнов И.В.</span>
+                    <span class="queue-item-time">сейчас</span>
+                </div>
+                <div class="queue-item-preview">Не работает интернет уже 3...</div>
+                <span class="badge-status new">новый</span>
+            </div>
+
+            <div class="queue-item" id="q-petrova" onclick="switchSubscriberContext(8092)">
+                <div class="queue-item-meta">
+                    <span class="queue-item-name">Петрова А.С.</span>
+                    <span class="queue-item-time">3 мин</span>
+                </div>
+                <div class="queue-item-preview">Хочу сменить тариф</div>
+                <span class="badge-status work">в работе</span>
+            </div>
+
+            <div class="queue-item" id="q-kozlov" onclick="switchSubscriberContext(3412)">
+                <div class="queue-item-meta">
+                    <span class="queue-item-name">Козлов Д.Н.</span>
+                    <span class="queue-item-time">8 мин</span>
+                </div>
+                <div class="queue-item-preview">Вопрос по счёту за апрель</div>
+                <span class="badge-status wait">ожидает</span>
+            </div>
+
+            <div class="queue-item" id="q-frolova" onclick="switchSubscriberContext(7123)">
+                <div class="queue-item-meta">
+                    <span class="queue-item-name">Фролова М.Е.</span>
+                    <span class="queue-item-time">14 мин</span>
+                </div>
+                <div class="queue-item-preview">Забыл пароль от личного каб...</div>
+                <span class="badge-status wait">ожидает</span>
+            </div>
+
+            <div class="queue-item" id="q-zaharov" onclick="switchSubscriberContext(9904)">
+                <div class="queue-item-meta">
+                    <span class="queue-item-name">Захаров В.П.</span>
+                    <span class="queue-item-time">19 мин</span>
+                </div>
+                <div class="queue-item-preview">Роутер не раздаёт WiFi</div>
+                <span class="badge-status wait">ожидает</span>
+            </div>
+
+            <div class="queue-item" id="q-orlova" onclick="switchSubscriberContext(1102)">
+                <div class="queue-item-meta">
+                    <span class="queue-item-name">Орлова Т.И.</span>
+                    <span class="queue-item-time">23 мин</span>
+                </div>
+                <div class="queue-item-preview">Хочу отключить автоплатёж</div>
+                <span class="badge-status wait">ожидает</span>
+            </div>
+
+            <div class="queue-item" id="q-novikov" onclick="switchSubscriberContext(4552)">
+                <div class="queue-item-meta">
+                    <span class="queue-item-name">Новиков К.Г.</span>
+                    <span class="queue-item-time">31 мин</span>
+                </div>
+                <div class="queue-item-preview">Подключение нового роутера</div>
+                <span class="badge-status wait">ожидает</span>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- КОЛОНКА 2: СКРЫВАЕМАЯ ПАНЕЛЬ С АНИМАЦИЕЙ И РАЗДЕЛИТЕЛЬНЫМ ЗАЦЕПОМ -->
+    <div class="collapsible-container">
+        <section class="collapsible-helper-column" id="helper-panel">
+            <div class="column-header-actions">
+                <div class="logo-text">WIFI <span>ТОЧКА</span></div>
+            </div>
+
+            <div class="helper-card-section">
+                <div class="helper-card-title">Данные активного абонента</div>
+                <div class="subscriber-info-card">
+                    <span class="sub-display-name" id="sub-card-name" onclick="openCRMCardModal()">Смирнов И.В.</span>
+                    <div class="sub-data-grid">
+                        <div class="data-cell">
+                            <div class="data-cell-label">ID договора</div>
+                            <div class="data-cell-value" id="sub-card-id-preview">#5011</div>
+                        </div>
+                        <div class="data-cell">
+                            <div class="data-cell-label">Баланс счета</div>
+                            <div class="data-cell-value" id="sub-card-bal-preview">1 200 ₽</div>
+                        </div>
+                        <div class="data-cell">
+                            <div class="data-cell-label">Базовая Станция</div>
+                            <div class="data-cell-value" id="sub-card-station-preview">Томтор</div>
+                        </div>
+                        <div class="data-cell">
+                            <div class="data-cell-label">IP-адрес сессии</div>
+                            <div class="data-cell-value" id="sub-card-ip-preview">10.0.0.15</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons-container">
+                    <button class="btn-panel-action btn-red-accent" onclick="runAutomatedDiagnostics()">Диагностика</button>
+                    <button class="btn-panel-action" onclick="openEscalateModal()">Передать инженерам</button>
+                </div>
+
+                <div class="diagnostics-log-box" id="diag-log-box">
+                    <div class="diag-log-header">
+                        <span>Проверка параметров</span>
+                        <span style="color: var(--brand-red);">Ошибка связи</span>
+                    </div>
+                    <div class="diag-log-row">
+                        <span>Статус УЗ</span>
+                        <span class="status-indicator-ok" id="preview-diag-uz">Активен</span>
+                    </div>
+                    <div class="diag-log-row">
+                        <span>Оплата тарифа</span>
+                        <span class="status-indicator-ok" id="preview-diag-tar">Оплачено</span>
+                    </div>
+                    <div class="diag-log-row">
+                        <span>Пинг до БС</span>
+                        <span class="status-indicator-error" id="preview-diag-ping">Нет ответа</span>
+                    </div>
+                    <div class="diag-log-row">
+                        <span>Станция БС</span>
+                        <span class="status-indicator-error" id="preview-diag-bs">Авария питания</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="helper-card-section" style="flex: 1; border-bottom: none;">
+                <div class="helper-card-title">Интегрированная База Знаний</div>
+                <div class="kb-widget-box">
+                    <input type="text" class="kb-widget-search" id="kb-search-input" placeholder="Поиск решений... (например: Томтор, роутер)" oninput="filterKBCardList()">
+                    
+                    <div class="kb-cards-stack" id="kb-cards-container">
+                        
+                        <div class="kb-card-item" onclick="expandKBCard(this)">
+                            <div class="kb-card-item-title">Белый экран при авторизации</div>
+                            <div class="kb-card-item-body">
+                                <p>Инструкция для абонента при сбое Captive-портала:</p>
+                                <ol style="margin-left: 14px; margin-top: 4px;">
+                                    <li>Попросите временно отключить передачу мобильных данных.</li>
+                                    <li>В адресной строке любого браузера ввести вручную IP <strong>10.0.0.1</strong>.</li>
+                                </ol>
+                                <div class="kb-card-action-bar">
+                                    <button class="kb-btn-paste" onclick="pasteKBToChatArea(this, event)">Вставить в чат</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="kb-card-item" onclick="expandKBCard(this)">
+                            <div class="kb-card-item-title">Технические работы на БС Томтор</div>
+                            <div class="kb-card-item-body">
+                                <p>Уважаемый абонент! На станции Томтор зафиксирован сбой электропитания на базовой станции. Аварийная бригада инженеров уже выехала на объект. Восстановление ожидается сегодня до 16:00. Приносим извинения за неудобства.</p>
+                                <div class="kb-card-action-bar">
+                                    <button class="kb-btn-paste" onclick="pasteKBToChatArea(this, event)">Вставить в чат</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="kb-card-item" onclick="expandKBCard(this)">
+                            <div class="kb-card-item-title">Способы пополнения баланса</div>
+                            <div class="kb-card-item-body">
+                                <p>Оплатить наши услуги можно через систему быстрых платежей (СБП) по QR-коду на стартовом портале или банковской картой в личном кабинете. Деньги поступают на баланс в течение одной минуты.</p>
+                                <div class="kb-card-action-bar">
+                                    <button class="kb-btn-paste" onclick="pasteKBToChatArea(this, event)">Вставить в чат</button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- РАЗДЕЛИТЕЛЬНЫЙ ЗАЦЕП (Split-Border Toggle) -->
+        <div class="split-toggle-handle" id="split-handle" onclick="toggleHelperPanel()">
+            <span id="handle-chevron">‹</span>
+        </div>
+    </div>
+
+    <!-- КОЛОНКА 3: РАБОЧАЯ ОБЛАСТЬ ЧАТА -->
+    <section class="right-chat-column">
+        <div class="chat-column-header">
+            <div class="chat-column-header-left">
+                <span class="chat-subscriber-title" id="chat-header-name" onclick="openCRMCardModal()" style="cursor: pointer;">Смирнов И.В.</span>
+                <span class="status-indicator-ok" id="chat-online-status">Абонент онлайн</span>
+            </div>
+            <div class="chat-column-header-right">
+                <button class="theme-toggle-btn" onclick="toggleInterfaceTheme()">Смена темы</button>
+            </div>
+        </div>
+
+        <div class="chat-messages-container" id="chat-messages-scroll">
+            <div class="chat-bubble-wrapper incoming">
+                <div class="chat-bubble-info">Абонент · 12:04</div>
+                <div class="chat-bubble-text">Не работает интернет уже 3 дня на станции Томтор. Баланс положительный. Сделайте что-нибудь!</div>
+            </div>
+        </div>
+
+        <div class="chat-bottom-input-area">
+            <div class="auto-replies-container">
+                <button class="auto-reply-btn" onclick="applyQuickReply('greeting')">Приветствие</button>
+                <button class="auto-reply-btn" onclick="applyQuickReply('check')">Запрос деталей</button>
+                <button class="auto-reply-btn" onclick="applyQuickReply('tech')">Технические работы</button>
+                <button class="auto-reply-btn" onclick="applyQuickReply('bye')">Прощание</button>
+            </div>
+
+            <div class="chat-input-layout">
+                <textarea class="chat-text-input" id="message-textarea" placeholder="Введите ваш ответ или выберите шаблон автоответа выше..."></textarea>
+                <button class="chat-submit-btn" onclick="sendOperatorMessage()">➔</button>
+            </div>
+        </div>
+    </section>
+
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО ПЕРЕДАЧИ ЗАЯВКИ ИНЖЕНЕРАМ -->
+<div class="escalate-modal-overlay" id="escalate-modal">
+    <div class="escalate-modal-card">
+        <div class="escalate-modal-title">Передача заявки инженерам</div>
+        <div class="escalate-modal-form">
+            <div>
+                <label class="escalate-field-label">Тип инцидента</label>
+                <select class="escalate-select-input" id="esc-type">
+                    <option value="hardware">Авария питания БС (Аппаратный сбой)</option>
+                    <option value="portal">Ошибка Captive Portal (Программный сбой)</option>
+                    <option value="user_line">Проблема с авторизацией конкретного абонента</option>
+                </select>
+            </div>
+            <div>
+                <label class="escalate-field-label">Приоритет исполнения</label>
+                <select class="escalate-select-input" id="esc-priority">
+                    <option value="high">Высокий (Групповая авария)</option>
+                    <option value="normal">Средний (Одиночное обращение)</option>
+                </select>
+            </div>
+            <div>
+                <label class="escalate-field-label">Техническое описание проблемы</label>
+                <textarea class="escalate-textarea-input" id="esc-comment"></textarea>
+            </div>
+        </div>
+        <div class="escalate-modal-footer">
+            <button class="theme-toggle-btn" onclick="closeEscalateModal()">Отмена</button>
+            <button class="btn-panel-action btn-red-accent" style="padding: 6px 14px; border-radius: 6px;" onclick="submitEscalateTicket()">Создать тикет</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+   ПОЛНОРАЗМЕРНОЕ МОДАЛЬНОЕ ОКНО КАРТОЧКИ АБОНЕНТА (CRM) ИЗ ВЛОЖЕНИЯ
+   ═══════════════════════════════════════════════════════════════ -->
+<div class="crm-modal-overlay" id="crm-card-modal">
+    <div class="crm-container">
+        <button class="crm-close-btn" onclick="closeCRMCardModal()">Закрыть</button>
+        
+        <div class="crm-hero">
+            <div class="crm-hero-name" id="pg-name">Смирнов И.В.</div>
+            <div class="crm-badges">
+                <span class="crm-badge" id="b-status">АКТИВЕН</span>
+                <span class="crm-badge" id="b-type">ФИЗИЧЕСКОЕ ЛИЦО</span>
+                <span class="crm-badge" id="b-online">ОНЛАЙН</span>
+            </div>
+        </div>
+
+        <div class="crm-metric-strip">
+            <div class="crm-metric-item"><span class="crm-metric-label">ID</span><span class="crm-metric-value" id="c-id">—</span></div>
+            <div class="crm-metric-item"><span class="crm-metric-label">Логин</span><span class="crm-metric-value" id="c-login">—</span></div>
+            <div class="crm-metric-item"><span class="crm-metric-label">Баланс</span><span class="crm-metric-value balance" id="c-bal">—</span></div>
+            <div class="crm-metric-item"><span class="crm-metric-label">Страница авторизации</span><span class="crm-metric-value" id="c-auth">—</span></div>
+        </div>
+
+        <div class="crm-rfm-strip">
+            <div class="crm-rfm-dot" id="rfm-dot" style="background:#1B5299"></div>
+            <div><div class="crm-rfm-label" id="rfm-label">Новый</div></div>
+            <div class="crm-desc" id="rfm-desc">Недавно подключился · средний ARPU · требует удержания</div>
+        </div>
+
+        <div class="crm-grid-2col">
+            <div style="display:flex;flex-direction:column;gap:16px">
+                <div class="crm-card">
+                    <div class="crm-card-title">Персональные данные</div>
+                    <div class="crm-row"><span class="crm-row-lbl">Почта</span><span class="crm-row-val" id="c-email">—</span></div>
+                    <div class="crm-row"><span class="crm-row-lbl">Телефон</span><span class="crm-row-val" id="c-phone">—</span></div>
+                    <div class="crm-row"><span class="crm-row-lbl">Станция</span><span class="crm-row-val" id="c-station">—</span></div>
+                    <div class="crm-row"><span class="crm-row-lbl">Адрес</span><span class="crm-row-val" id="c-addr">—</span></div>
+                    <div style="padding-top:12px;border-top:1px solid var(--line);margin-top:4px">
+                        <button class="crm-pass-btn" id="pass-btn" onclick="togglePass()">Показать паспортные данные</button>
+                        <div class="crm-pass-data" id="pass-data"></div>
+                    </div>
+                </div>
+
+                <div class="crm-card">
+                    <div class="crm-card-title">Тарифный план</div>
+                    <div class="crm-row"><span class="crm-row-lbl">Название</span><span class="crm-row-val" id="c-tar">—</span></div>
+                    <div class="crm-row"><span class="crm-row-lbl">Статус</span><span id="c-tar-status">—</span></div>
+                    <div class="crm-row"><span class="crm-row-lbl">Трафик (остаток/всего)</span><span class="crm-row-val" id="c-traffic">—</span></div>
+                </div>
+
+                <div class="crm-card">
+                    <div class="crm-card-title">Активные сессии</div>
+                    <div id="c-sessions"><span class="s-muted">Нет активных сессий</span></div>
+                </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:16px">
+                <div class="crm-card">
+                    <div class="crm-card-title">Диагностика линка</div>
+                    <div id="diag-container">
+                        <div class="crm-diag-idle" id="diag-idle">
+                            Запустите автоматическую проверку УЗ абонента — система проверит все параметры подключения и предложит алгоритм действий.
+                        </div>
+                        <button class="crm-diag-btn" id="diag-btn" onclick="runDiag()">Запустить диагностику</button>
+                        <div id="diag-result" style="display:none"></div>
+                    </div>
+                    <div id="action-buttons" class="crm-action-buttons-wrap" style="display:none"></div>
+                </div>
+
+                <div class="crm-card">
+                    <div class="crm-card-title">Статистика</div>
+                    <div class="crm-tabs">
+                        <button class="crm-tab-btn active" data-tab="payments">История платежей</button>
+                        <button class="crm-tab-btn" data-tab="tariffs">История тарифов</button>
+                        <button class="crm-tab-btn" data-tab="appeals">Обращения</button>
+                    </div>
+                    <div id="tab-payments" class="crm-tab-pane active"></div>
+                    <div id="tab-tariffs" class="crm-tab-pane"></div>
+                    <div id="tab-appeals" class="crm-tab-pane"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// СТРУКТУРИРОВАННАЯ БД
+// ═══════════════════════════════════════════════════════════════
+const SUBS = [
+  {n:'Смирнов И.В.',id:5011,station:'Томтор',a:'ул. Ленина 12',s:'active',
+   t:'Безлимитный 100',tStatus:'Активен',traffic:'12 / 100 ГБ',
+   phone:'+7 (914) 220-44-55',email:'smirnov.iv@mail.ru',login:'smirnov5011',
+   type:'Физическое лицо',online:'Офлайн',auth:'10.0.0.15',
+   passport:'Паспорт: 9811 445566, выдан 12.02.2015, ТП №1 Оймяконского р-на',
+   rfm:'yellow',rfmLabel:'Новый',rfmDesc:'Недавно подключился · средний ARPU · требует удержания',
+   bal:1200,
+   sessions:[{dev:'Xiaomi Router',mac:'A4:B2:C3:D4:E5:F6',type:'PPPoE',ip:'10.0.0.15',since:'вчера 18:22',rx:'12',tx:'3',active:false}],
+   payments:[{date:'25.03.2026 11:30',status:'ok',system:'Сбербанк',sum:'+1 200 ₽'}],
+   tariffs:[{connected:'25.03.2026 12:00',type:'Безлимитный 100',disconnected:'—',price:'1 200 ₽'}],
+   appeals:[{date:'28.03.2026',topic:'Не работает интернет',status:'Новое'}]
+  },
+  {n:'Петрова А.С.',id:8092,station:'Томтор',a:'ул. Нагорная 2',s:'active',
+   t:'Базовый 50',tStatus:'Активен',traffic:'80 / 100 ГБ',
+   phone:'+7 (924) 441-22-99',email:'petrova.as@yandex.ru',login:'petrova8092',
+   type:'Физическое лицо',online:'Онлайн',auth:'10.0.0.44',
+   passport:'Паспорт: 9804 112233, выдан 04.09.2010',
+   rfm:'blue',rfmLabel:'Лояльный',rfmDesc:'Регулярные платежи · средний ARPU · без жалоб',
+   bal:450,
+   sessions:[{dev:'Sagemcom ONT',mac:'88:12:44:A2:33:DD',type:'PPPoE',ip:'10.0.0.44',since:'сегодня 08:31',rx:'45',tx:'8',active:true}],
+   payments:[{date:'22.03.2026 14:15',status:'ok',system:'СБП',sum:'+450 ₽'}],
+   tariffs:[{connected:'01.03.2026',type:'Базовый 50',disconnected:'—',price:'450 ₽'}],
+   appeals:[]
+  },
+  {n:'Козлов Д.Н.',id:3412,station:'Оймякон',a:'ул. Полярников 7',s:'frozen',
+   t:'Безлимитный 250',tStatus:'Заморожен',traffic:'0 / 0 МБ',
+   phone:'+7 (914) 880-33-22',email:'kozlov.dn@gmail.com',login:'kozlov3412',
+   type:'Физическое лицо',online:'Офлайн',auth:'—',
+   passport:'Паспорт: 9816 778899, выдан 18.06.2016',
+   rfm:'red',rfmLabel:'Риск оттока',rfmDesc:'Нулевой баланс · тариф заморожен',
+   bal:0,
+   sessions:[],
+   payments:[{date:'15.03.2026 09:00',status:'err',system:'Сбербанк',sum:'Отклонён'}],
+   tariffs:[{connected:'01.02.2026',type:'Безлимитный 250',disconnected:'15.03.2026',price:'800 ₽'}],
+   appeals:[]
+  },
+  {n:'Фролова М.Е.',id:7123,station:'Нарьян-Мар',a:'ул. Октябрьская 5',s:'active',
+   t:'Безлимитный 250',tStatus:'Активен',traffic:'15 / 500 ГБ',
+   phone:'+7 (965) 123-45-67',email:'frolova@mail.ru',login:'frolova7123',
+   type:'Физическое лицо',online:'Онлайн',auth:'172.16.12.5',
+   passport:'Паспорт: 4514 889900, выдан 20.08.2014',
+   rfm:'blue',rfmLabel:'Лояльный',rfmDesc:'Регулярные платежи · средний ARPU',
+   bal:150,
+   sessions:[{dev:'iPhone 15',mac:'CC:DD:EE:11:22:33',type:'Hotspot',ip:'172.16.12.5',since:'сегодня 09:12',rx:'15',tx:'2',active:true}],
+   payments:[{date:'10.03.2026',status:'ok',system:'Карта',sum:'+800 ₽'}],
+   tariffs:[{connected:'10.03.2026',type:'Безлимитный 250',disconnected:'—',price:'800 ₽'}],
+   appeals:[]
+  },
+  {n:'Захаров В.П.',id:9904,station:'Томтор',a:'ул. Дружбы 3',s:'active',
+   t:'Безлимитный 150',tStatus:'Активен',traffic:'330 / 500 ГБ',
+   phone:'+7 (924) 555-66-77',email:'zaharov@mail.ru',login:'zaharov9904',
+   type:'Физическое лицо',online:'Онлайн',auth:'10.0.0.78',
+   passport:'Паспорт: 9811 556677, выдан 03.11.2011',
+   rfm:'yellow',rfmLabel:'Стабильный',rfmDesc:'Платежи регулярны · средний ARPU',
+   bal:800,
+   sessions:[{dev:'TP-Link WR841N',mac:'AA:BB:CC:DD:EE:FF',type:'PPPoE',ip:'10.0.0.78',since:'сегодня 06:12',rx:'120',tx:'30',active:true}],
+   payments:[{date:'01.03.2026',status:'ok',system:'Карта',sum:'+800 ₽'}],
+   tariffs:[{connected:'01.03.2026',type:'Безлимитный 150',disconnected:'—',price:'800 ₽'}],
+   appeals:[]
+  },
+  {n:'Орлова Т.И.',id:1102,station:'Томтор',a:'ул. Зеленая 14',s:'active',
+   t:'Безлимитный 350',tStatus:'Активен',traffic:'750 / 1000 ГБ',
+   phone:'+7 (914) 333-22-11',email:'orlova.ti@yandex.ru',login:'orlova1102',
+   type:'Физическое лицо',online:'Онлайн',auth:'10.0.0.99',
+   passport:'Паспорт: 9815 112233, выдан 12.01.2015',
+   rfm:'blue',rfmLabel:'Лояльный',rfmDesc:'Высокий ARPU · регулярные платежи',
+   bal:2400,
+   sessions:[{dev:'Keenetic Extra',mac:'50:FF:20:AA:BB:CC',type:'PPPoE',ip:'10.0.0.99',since:'сегодня 00:05',rx:'450',tx:'110',active:true}],
+   payments:[{date:'05.03.2026',status:'ok',system:'СБП',sum:'+1 200 ₽'}],
+   tariffs:[{connected:'05.03.2026',type:'Безлимитный 350',disconnected:'—',price:'1 200 ₽'}],
+   appeals:[]
+  },
+  {n:'Новиков К.Г.',id:4552,station:'Оймякон',a:'ул. Наледи 9',s:'active',
+   t:'Базовый 100',tStatus:'Активен',traffic:'89 / 200 ГБ',
+   phone:'+7 (924) 777-88-99',email:'novikov.kg@yandex.ru',login:'novikov4552',
+   type:'Физическое лицо',online:'Онлайн',auth:'172.16.5.12',
+   passport:'Паспорт: 9819 445566, выдан 14.10.2019',
+   rfm:'yellow',rfmLabel:'Новый',rfmDesc:'Недавно подключился · средний ARPU',
+   bal:3100,
+   sessions:[{dev:'ASUS RT-AC51',mac:'04:42:1A:33:AA:BB',type:'PPPoE',ip:'172.16.5.12',since:'сегодня 11:20',rx:'20',tx:'5',active:true}],
+   payments:[{date:'20.03.2026',status:'ok',system:'Сбербанк',sum:'+600 ₽'}],
+   tariffs:[{connected:'20.03.2026',type:'Базовый 100',disconnected:'—',price:'600 ₽'}],
+   appeals:[]
+  }
+];
+
+let _sub = SUBS[0]; // По умолчанию Смирнов И.В.
+let _panelCollapsed = false;
+
+// ═══════════════════════════════════════════════════════════════
+// ФУНКЦИИ ИНТЕРФЕЙСА ЧАТА И ШАБЛОНОВ (С УЛУЧШЕННОЙ АНИМАЦИЕЙ)
+// ═══════════════════════════════════════════════════════════════
+function toggleHelperPanel() {
+    const helper = document.getElementById('helper-panel');
+    const handleChevron = document.getElementById('handle-chevron');
+    const showBtn = document.getElementById('show-panel-btn');
+
+    _panelCollapsed = !_panelCollapsed;
+
+    if (_panelCollapsed) {
+        helper.classList.add('collapsed');
+        handleChevron.innerText = '›';
+        showBtn.classList.add('active');
+    } else {
+        helper.classList.remove('collapsed');
+        handleChevron.innerText = '‹';
+        showBtn.classList.remove('active');
+    }
+}
+
+function syncInterfaceAndPreview() {
+    // Обновление превью в среднем блоке-помощнике
+    document.getElementById('sub-card-name').innerText = _sub.n;
+    document.getElementById('sub-card-id-preview').innerText = `#${_sub.id}`;
+    document.getElementById('sub-card-bal-preview').innerText = `${_sub.bal.toLocaleString('ru')} ₽`;
+    document.getElementById('sub-card-station-preview').innerText = _sub.station;
+    document.getElementById('sub-card-ip-preview').innerText = _sub.auth || '—';
+
+    // Обновление лога быстрой диагностики
+    document.getElementById('preview-diag-uz').className = _sub.s === 'active' ? 'status-indicator-ok' : 'status-indicator-error';
+    document.getElementById('preview-diag-uz').innerText = _sub.s === 'active' ? 'Активен' : 'В архиве';
+
+    const hasTariff = !_sub.tStatus.includes('Замор');
+    document.getElementById('preview-diag-tar').className = hasTariff ? 'status-indicator-ok' : 'status-indicator-error';
+    document.getElementById('preview-diag-tar').innerText = hasTariff ? 'Оплачено' : 'Заморожен';
+
+    const isOnline = _sub.online === 'Онлайн';
+    document.getElementById('preview-diag-ping').className = isOnline ? 'status-indicator-ok' : 'status-indicator-error';
+    document.getElementById('preview-diag-ping').innerText = isOnline ? 'Стабилен' : 'Нет ответа';
+
+    document.getElementById('preview-diag-bs').className = isOnline ? 'status-indicator-ok' : 'status-indicator-error';
+    document.getElementById('preview-diag-bs').innerText = isOnline ? 'Работает' : 'Авария питания';
+
+    // Шапка чата
+    document.getElementById('chat-header-name').innerText = _sub.n;
+    document.getElementById('chat-online-status').className = isOnline ? 'status-indicator-ok' : 'status-indicator-error';
+    document.getElementById('chat-online-status').innerText = isOnline ? 'Абонент онлайн' : 'Абонент офлайн';
+}
+
+function switchSubscriberContext(id) {
+    const sub = SUBS.find(s => s.id == id);
+    if (!sub) return;
+
+    _sub = sub;
+    syncInterfaceAndPreview();
+
+    // Визуальное переключение в левой статичной очереди
+    document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('active'));
+    
+    let itemId = '';
+    if (id === 5011) itemId = 'q-smirnov';
+    if (id === 8092) itemId = 'q-petrova';
+    if (id === 3412) itemId = 'q-kozlov';
+    if (id === 7123) itemId = 'q-frolova';
+    if (id === 9904) itemId = 'q-zaharov';
+    if (id === 1102) itemId = 'q-orlova';
+    if (id === 4552) itemId = 'q-novikov';
+
+    const activeEl = document.getElementById(itemId);
+    if (activeEl) {
+        activeEl.classList.add('active');
+        activeEl.classList.remove('unread'); // Убираем unread при переходе
+    }
+
+    // Подгрузка диалога
+    const container = document.getElementById('chat-messages-scroll');
+    if (sub.id === 5011) {
+        container.innerHTML = `
+            <div class="chat-bubble-wrapper incoming">
+                <div class="chat-bubble-info">Абонент · 12:04</div>
+                <div class="chat-bubble-text">Не работает интернет уже 3 дня на станции Томтор. Баланс положительный. Сделайте что-нибудь!</div>
+            </div>
+        `;
+    } else if (sub.id === 8092) {
+        container.innerHTML = `
+            <div class="chat-bubble-wrapper incoming">
+                <div class="chat-bubble-info">Абонент · 3 мин назад</div>
+                <div class="chat-bubble-text">Хочу сменить тариф на более скоростной. Каковы условия перехода на Безлимитный 350?</div>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `
+            <div class="chat-bubble-wrapper incoming">
+                <div class="chat-bubble-info">Абонент · только что</div>
+                <div class="chat-bubble-text">Запрос по договору #${sub.id}. Текущий вопрос от абонента: "${sub.n}".</div>
+            </div>
+        `;
+    }
+}
+
+const QUICK_REPLIES_DB = {
+    greeting: "Добрый день! Рады помочь вам. Расскажите, пожалуйста, подробнее, на каком этапе подключения у вас возникает затруднение?",
+    check: "Одну минуту, пожалуйста. Я проверяю информацию по вашему договору и состояние ближайшей базовой станции в биллинговой системе.",
+    tech: "По вашему адресу в настоящее время проводятся внеплановые технические работы на базовой станции. Связь будет восстановлена в ближайшее время.",
+    bye: "Рады были помочь вам! Если возникнут дополнительные вопросы, пожалуйста, обращайтесь. Отличного дня!"
+};
+
+function applyQuickReply(key) {
+    const text = QUICK_REPLIES_DB[key];
+    const textarea = document.getElementById('message-textarea');
+    if (text) {
+        if (textarea.value.trim() !== "") {
+            textarea.value = textarea.value.trim() + " " + text;
+        } else {
+            textarea.value = text;
+        }
+        textarea.focus();
+    }
+}
+
+function toggleInterfaceTheme() {
+    const root = document.documentElement;
+    root.setAttribute('data-theme', root.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+}
+
+function runAutomatedDiagnostics() {
+    const box = document.getElementById('diag-log-box');
+    box.style.display = box.style.display === 'block' ? 'none' : 'block';
+}
+
+function expandKBCard(element) {
+    element.classList.toggle('open');
+}
+
+function pasteKBToChatArea(button, event) {
+    event.stopPropagation();
+    const text = button.closest('.kb-card-item').querySelector('.kb-card-item-body p').innerText;
+    const textarea = document.getElementById('message-textarea');
+    if (textarea.value.trim() !== "") {
+        textarea.value = textarea.value.trim() + " " + text;
+    } else {
+        textarea.value = text;
+    }
+}
+
+function filterKBCardList() {
+    const query = document.getElementById('kb-search-input').value.toLowerCase();
+    const cards = document.querySelectorAll('.kb-card-item');
+    cards.forEach(card => {
+        const title = card.querySelector('.kb-card-item-title').innerText.toLowerCase();
+        const body = card.querySelector('.kb-card-item-body').innerText.toLowerCase();
+        if (title.includes(query) || body.includes(query)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+function sendOperatorMessage() {
+    const input = document.getElementById('message-textarea');
+    const text = input.value.trim();
+    if (!text) return;
+
+    const scrollContainer = document.getElementById('chat-messages-scroll');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-bubble-wrapper outgoing';
+    wrapper.innerHTML = `
+        <div class="chat-bubble-info">Вы · только что</div>
+        <div class="chat-bubble-text">${text}</div>
+    `;
+    scrollContainer.appendChild(wrapper);
+    input.value = '';
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ФУНКЦИИ КАРТОЧКИ АБОНЕНТА (CRM)
+// ═══════════════════════════════════════════════════════════════
+function openCRMCardModal() {
+    loadCRMData(_sub.id);
+    document.getElementById('crm-card-modal').classList.add('active');
+}
+
+function closeCRMCardModal() {
+    document.getElementById('crm-card-modal').classList.remove('active');
+}
+
+function loadCRMData(id) {
+    const sub = SUBS.find(s=>s.id===id) || SUBS[0];
+    _sub = sub;
+    
+    document.getElementById('pg-name').textContent = sub.n;
+    
+    const bs = document.getElementById('b-status');
+    bs.textContent = sub.s==='active'?'АКТИВЕН':'ЗАМОРОЖЕН';
+    bs.className = 'crm-badge '+(sub.s==='active'?'crm-badge-ok':'crm-badge-err');
+    
+    const bo = document.getElementById('b-online');
+    bo.textContent = (sub.online||'ОФЛАЙН').toUpperCase();
+    bo.className = 'crm-badge'+(sub.online==='Онлайн'?' crm-badge-ok':'');
+    
+    document.getElementById('c-id').textContent = sub.id;
+    document.getElementById('c-login').textContent = sub.login||'—';
+    
+    const bal = sub.bal||0;
+    const balSpan = document.getElementById('c-bal');
+    balSpan.textContent = bal.toLocaleString('ru')+' ₽';
+    balSpan.className = 'crm-metric-value balance ' + (bal<=0?'crm-balance-danger':bal<1000?'crm-balance-warning':'crm-balance-positive');
+    
+    document.getElementById('c-auth').textContent = sub.auth||'—';
+    
+    const rfmColors = {blue:'#1B5299', yellow:'#B86E10', red:'#C0392B'};
+    document.getElementById('rfm-dot').style.background = rfmColors[sub.rfm]||rfmColors.blue;
+    document.getElementById('rfm-label').textContent = sub.rfmLabel||'—';
+    document.getElementById('rfm-label').style.color = rfmColors[sub.rfm]||rfmColors.blue;
+    document.getElementById('rfm-desc').textContent = sub.rfmDesc||'—';
+    
+    document.getElementById('c-email').textContent = sub.email||'—';
+    document.getElementById('c-phone').textContent = sub.phone||'—';
+    document.getElementById('c-station').textContent = sub.station||'—';
+    document.getElementById('c-addr').textContent = sub.a||'—';
+    
+    document.getElementById('pass-data').textContent = sub.passport||'Нет данных';
+    document.getElementById('pass-data').style.display='none';
+    document.getElementById('pass-btn').textContent='Показать паспортные данные';
+    
+    document.getElementById('c-tar').textContent = sub.t||'—';
+    const ts = document.getElementById('c-tar-status');
+    if(sub.s==='frozen') ts.innerHTML = '<span class="plate-err">Заморожен</span>';
+    else ts.innerHTML = '<span class="s-ok">'+sub.tStatus+'</span>';
+    document.getElementById('c-traffic').textContent = sub.traffic||'—';
+    
+    renderSessions();
+    resetDiag();
+    renderTabs();
+}
+
+function renderSessions(){
+    const el = document.getElementById('c-sessions');
+    if(!_sub.sessions||!_sub.sessions.length){ el.innerHTML='<span class="s-muted">Нет активных сессий</span>'; return; }
+    el.innerHTML = _sub.sessions.map(s=>`<div class="crm-sess-item"><div class="crm-sess-top"><div class="crm-sess-dev"><span class="crm-sess-dot"></span>${s.dev}</div><span class="crm-sess-type ${s.type==='PPPoE'?'crm-sess-pppoe':'crm-sess-hot'}">${s.type}</span></div><div class="crm-sess-meta"><span>MAC: <strong>${s.mac}</strong></span><span>IP: <strong>${s.ip}</strong></span><span>С: <strong>${s.since}</strong></span><span>↓ ${s.rx} / ↑ ${s.tx} Мбит/с</span></div></div>`).join('');
+}
+
+function renderTabs(){
+    const elPay = document.getElementById('tab-payments');
+    if(!_sub.payments||!_sub.payments.length) elPay.innerHTML='<span class="s-muted">Нет данных</span>';
+    else elPay.innerHTML=`<table class="crm-stat-table"><thead><tr><th>Дата</th><th>Статус</th><th>Система</th><th style="text-align:right">Сумма</th></tr></thead><tbody>${_sub.payments.map(p=>`<tr><td style="color:var(--muted);font-size:11px">${p.date}</td><td><span class="s-ok">Оплачено</span></td><td><span style="font-size:11px;background:var(--bg-sys);padding:2px 8px;border-radius:6px">${p.system}</span></td><td class="amount">${p.sum}</td></tr>`).join('')}</tbody></table>`;
+    
+    const elTar = document.getElementById('tab-tariffs');
+    if(!_sub.tariffs||!_sub.tariffs.length) elTar.innerHTML='<span class="s-muted">Нет данных</span>';
+    else elTar.innerHTML=`<table class="crm-stat-table"><thead><tr><th>Подключение</th><th>Тип</th><th>Отключение</th><th style="text-align:right">Цена</th></tr></thead><tbody>${_sub.tariffs.map(t=>`<tr><td style="color:var(--muted);font-size:11px">${t.connected}<td><td><span style="background:var(--status-ok-bg);color:var(--status-ok);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">${t.type}</span></td><td style="color:var(--muted);font-size:11px">${t.disconnected}</td><td class="amount">${t.price}</td></tr>`).join('')}</tbody></table>`;
+    
+    const elApp = document.getElementById('tab-appeals');
+    if(!_sub.appeals||!_sub.appeals.length) elApp.innerHTML='<span class="s-muted">Обращений пока не было</span>';
+    else elApp.innerHTML=`<table class="crm-stat-table"><thead><tr><th>Дата</th><th>Тема</th><th>Статус</th></tr></thead><tbody>${_sub.appeals.map(a=>`<tr><td style="color:var(--muted);font-size:11px">${a.date}</td><td>${a.topic}<td><span class="appeal-status ${a.status.includes('инженер')?'engineer':a.status.includes('Закрыто')?'done':'work'}">${a.status}</span></td></tr>`).join('')}</tbody></table>`;
+}
+
+function runDiag(){
+    const btn = document.getElementById('diag-btn');
+    const idleDiv = document.getElementById('diag-idle');
+    const resultDiv = document.getElementById('diag-result');
+    btn.disabled=true; btn.textContent='Проверяем...';
+    idleDiv.style.display='none';
+    resultDiv.style.display='block';
+    resultDiv.innerHTML='<div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:20px"><div style="width:20px;height:20px;border:2px solid var(--line);border-top-color:var(--brand-red);border-radius:50%;animation:spin 0.8s linear infinite"></div>Анализ состояния...</div>';
+    
+    setTimeout(()=>{
+        const checks = [
+            {label:'Статус учётной записи', val:_sub.s==='active'?'Активна':'В архиве', ok:_sub.s==='active'},
+            {label:'Состояние тарифа', val:_sub.tStatus||'—', ok:!_sub.tStatus.includes('Замор')},
+            {label:'Баланс и платежи', val:_sub.bal>0?_sub.bal+' ₽':'0 ₽', ok:_sub.bal>0},
+            {label:'Станция', val:_sub.online||'Офлайн', ok:_sub.online==='Онлайн'},
+            {label:'Активные сессии', val:_sub.sessions&&_sub.sessions.length?_sub.sessions.length+' сессий':'Нет сессий', ok:_sub.sessions&&_sub.sessions.length>0},
+        ];
+        const failed = checks.filter(c=>!c.ok);
+        resultDiv.innerHTML = `<div class="crm-diag-2col"><div class="crm-diag-problem"><h4>${failed.length===0?'Всё в порядке':checks.find(c=>!c.ok)?.label.includes('тариф')?'Тариф не активен':checks.find(c=>!c.ok)?.label.includes('Баланс')?'Недостаточно средств':checks.find(c=>!c.ok)?.label.includes('Станция')?'Станция офлайн':'Требуется действие'}</h4><div><ol><li>${failed.length===0?'Параметры в норме. Если проблема сохраняется — создайте заявку инженерам.':checks.find(c=>!c.ok)?.label.includes('тариф')?'Объясните, что нет активного тарифа. Помогите зайти в ЛК → Тарифы.':checks.find(c=>!c.ok)?.label.includes('Баланс')?'Баланс '+_sub.bal+' ₽ недостаточен. Предложите способы пополнения.':checks.find(c=>!c.ok)?.label.includes('Станция')?'Проблема на стороне сети. Создайте заявку инженерам.':'Уточните тип подключения. Перезагрузите роутер.'}</li></ol></div></div><div class="diag-steps">${checks.map(ch=>`<div class="crm-diag-step"><div class="crm-diag-step-icon ${ch.ok?'ok':'err'}">${ch.ok?'✓':'✕'}</div><div><div class="crm-diag-step-text"><strong>${ch.label}</strong>${ch.ok?`<span class="s-ok" style="font-size:11px;margin-left:8px">${ch.val}</span>`:`<span class="plate-err" style="font-size:10px;margin-left:8px">${ch.val}</span>`}</div></div></div>`).join('')}</div></div><div class="crm-diag-footer"><button class="btn-theme" onclick="resetDiag()" style="font-size:11px;padding:5px 14px">Повторить</button><span class="crm-diag-footer-note">${failed.length>0?'Остановлено на: '+checks.find(c=>!c.ok)?.label:'Все проверки пройдены'}</span></div>`;
+        const actionDiv = document.getElementById('action-buttons');
+        if(failed.length>0){
+            const actions=[];
+            if(failed.some(c=>c.label.includes('тариф'))) actions.push({label:'Активировать тариф', action:'unfreeze', danger:false});
+            if(failed.some(c=>c.label.includes('Станция'))) actions.push({label:'Создать заявку инженерам', action:'engineer', danger:true});
+            if(failed.some(c=>c.label.includes('сессии'))) actions.push({label:'Сбросить сессии', action:'resetSessions', danger:true});
+            actionDiv.style.display='flex';
+            actionDiv.innerHTML=actions.map(a=>`<button class="crm-action-btn ${a.danger?'danger':'success'}" onclick="performAction('${a.action}')">${a.label}</button>`).join('');
+        } else actionDiv.style.display='none';
+        btn.disabled=false; btn.textContent='Запустить диагностику';
+        
+        // Автоматическая обратная синхронизация результатов в превью чата
+        syncInterfaceAndPreview();
+    }, 1000);
+}
+
+function performAction(a){
+    if(a==='unfreeze'){ _sub.s='active'; _sub.tStatus='Активен'; loadCRMData(_sub.id); alert('Тариф активирован.'); }
+    if(a==='engineer') alert('Заявка инженерам создана.');
+    if(a==='resetSessions'){ _sub.sessions=[]; renderSessions(); alert('Сессии сброшены.'); }
+    syncInterfaceAndPreview();
+}
+
+function resetDiag(){
+    document.getElementById('diag-idle').style.display='block';
+    document.getElementById('diag-result').style.display='none';
+    document.getElementById('action-buttons').style.display='none';
+}
+
+function togglePass(){
+    const d=document.getElementById('pass-data');
+    const b=document.getElementById('pass-btn');
+    if(d.style.display==='none'||!d.style.display){d.style.display='block';b.textContent='Скрыть';}
+    else{d.style.display='none';b.textContent='Показать паспортные данные';}
+}
+
+// Управление табами внутри карточки CRM
+document.querySelectorAll('.crm-tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        document.querySelectorAll('.crm-tab-btn').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.crm-tab-pane').forEach(p=>p.classList.remove('active'));
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+    });
+});
+
+// Инициализация при первой загрузке
+window.addEventListener('DOMContentLoaded', () => {
+    syncInterfaceAndPreview();
+});
+</script>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+</body>
+</html>
+<!-- END OF FILE оператор_чат_эргономичный.html -->

@@ -1,9 +1,8 @@
 import logoForLightBg from "../../app/static/images/Logo_dark.svg?url";
 import logoForDarkBg from "../../app/static/images/Logo_light.svg?url";
+import type { AppTheme } from "@/theme/themeMeta";
 
-export type AppTheme = "light" | "dark";
-
-/** Светлая тема интерфейса — тёмный логотип на светлом фоне. Тёмная — светлый логотип. */
+/** Светлая и комфортная тема — тёмный логотип; тёмная — светлый логотип. */
 export function brandLogoSrc(theme: AppTheme): string {
-  return theme === "light" ? logoForLightBg : logoForDarkBg;
+  return theme === "dark" ? logoForDarkBg : logoForLightBg;
 }

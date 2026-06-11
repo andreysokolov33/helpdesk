@@ -1,9 +1,20 @@
+import { useState } from "react";
 import { staffParticipantPill, type TicketStaffParticipant } from "@/api/tracker";
 
 type Props = {
   participants: TicketStaffParticipant[];
   layout?: "sidebar" | "list";
 };
+
+function executorMoreLabel(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `Ещё ${count} исполнитель`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+    return `Ещё ${count} исполнителя`;
+  }
+  return `Ещё ${count} исполнителей`;
+}
 
 function ParticipantPill({
   p,
@@ -22,6 +33,43 @@ function ParticipantPill({
     >
       {pill.label}
     </span>
+  );
+}
+
+function CoExecutorRows({ others }: { others: TicketStaffParticipant[] }) {
+  return (
+    <>
+      {others.map((p) => (
+        <div className="tk-exec-co-row" key={p.id}>
+          <ParticipantPill p={p} className="tk-exec-co-pill " />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SecondaryExecutorsSpoiler({ others }: { others: TicketStaffParticipant[] }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className={`tk-exec-co-spoiler${open ? " tk-exec-co-spoiler--open" : ""}`}
+      aria-label="Дополнительные исполнители"
+    >
+      <div className="tk-exec-co-spoiler__body">
+        <div className="tk-exec-co-rows">
+          <CoExecutorRows others={others} />
+        </div>
+      </div>
+      <button
+        type="button"
+        className="tk-exec-co-spoiler__toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "Свернуть" : executorMoreLabel(others.length)}
+      </button>
+    </div>
   );
 }
 
@@ -53,15 +101,7 @@ export function TicketSidebarExecutors({ participants }: { participants: TicketS
           <ParticipantPill p={primary} className="tk-exec-primary-pill " />
         </span>
       </div>
-      {others.length > 0 ? (
-        <div className="tk-exec-co-rows" aria-label="Соисполнители">
-          {others.map((p) => (
-            <div className="tk-exec-co-row" key={p.id}>
-              <ParticipantPill p={p} className="tk-exec-co-pill " />
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {others.length > 0 ? <SecondaryExecutorsSpoiler others={others} /> : null}
     </div>
   );
 }

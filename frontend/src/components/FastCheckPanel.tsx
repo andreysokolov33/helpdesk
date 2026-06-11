@@ -28,6 +28,15 @@ function formatConnectionTypes(inner: string): string {
     .join(", ");
 }
 
+function inlineStepValue(step: FastCheckStep): string {
+  const detail = step.detail?.trim();
+  if (detail) return detail;
+  if (step.status === "pass") return "В порядке";
+  if (step.status === "skip") return "Не проверялось";
+  if (step.test_code === "tariff_state") return "Не подключен";
+  return "—";
+}
+
 function buildFastCheckSummary(steps: FastCheckStep[]): SummaryRow[] {
   const byCode = new Map(steps.map((s) => [s.test_code, s]));
   const rows: SummaryRow[] = [];
@@ -36,10 +45,7 @@ function buildFastCheckSummary(steps: FastCheckStep[]): SummaryRow[] {
     const step = byCode.get(code);
     if (!step) return;
     if (step.status === "skip" && !step.detail?.trim()) return;
-    const value =
-      step.detail?.trim() ||
-      (step.status === "pass" ? "В порядке" : step.status === "skip" ? "Не проверялось" : "—");
-    rows.push({ label, value });
+    rows.push({ label, value: inlineStepValue(step) });
   };
 
   push("account_status", "Статус УЗ");
@@ -71,8 +77,8 @@ type Props = {
   userId: number;
   onDisconnect?: () => void;
   onUnarchive?: () => void;
-  /** split — как в профиле; stacked — шаги сверху, решение снизу (тикет). */
-  layout?: "split" | "stacked";
+  /** split — профиль; stacked — тикет; inline — компактный блок под кнопкой диагностики. */
+  layout?: "split" | "stacked" | "inline";
   /** Скрыть intro и кнопку запуска (запуск снаружи). */
   hideIdleUI?: boolean;
   introText?: string;
@@ -84,6 +90,8 @@ type Props = {
   autoRun?: boolean;
   repeatLabel?: string;
   onPhaseChange?: (phase: "idle" | "loading" | "reveal" | "done") => void;
+  /** Инкремент запускает новую проверку (внешняя кнопка «Диагностика»). */
+  runNonce?: number;
 };
 
 function StatusIcon({ status }: { status: FastCheckStep["status"] | "pending" | "running" }) {
@@ -161,6 +169,7 @@ export default function FastCheckPanel({
   autoRun = false,
   repeatLabel = "Повторить проверку",
   onPhaseChange,
+  runNonce = 0,
 }: Props) {
   const [phase, setPhase] = useState<"idle" | "loading" | "reveal" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +178,7 @@ export default function FastCheckPanel({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const revealRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoRunDoneRef = useRef(false);
+  const lastRunNonceRef = useRef(0);
 
   const setPhaseTracked = useCallback(
     (p: "idle" | "loading" | "reveal" | "done") => {
@@ -223,6 +233,12 @@ export default function FastCheckPanel({
   }, [autoRun, initialData, runCheck]);
 
   useEffect(() => {
+    if (!runNonce || runNonce === lastRunNonceRef.current) return;
+    lastRunNonceRef.current = runNonce;
+    void runCheck();
+  }, [runNonce, runCheck]);
+
+  useEffect(() => {
     if (phase !== "reveal" || !data?.steps.length) return;
     setVisibleCount(1);
     let n = 1;
@@ -266,6 +282,66 @@ export default function FastCheckPanel({
   const panelScroll = Boolean(showPanel && data && phase !== "loading");
 
   const gridClass = layout === "stacked" ? "up-fc-grid up-fc-grid--stacked" : "up-fc-grid";
+
+  const failedStep = data?.steps.find((s) => s.status === "fail" || s.status === "warn") ?? null;
+  const inlineHeadline = failedStep
+    ? failedStep.detail?.trim() || failedStep.check_label
+    : "Все параметры в норме";
+
+  if (layout === "inline") {
+    return (
+      <div className="tk-cc-diag">
+        {phase === "loading" ? (
+          <div className="tk-cc-diag-loading">
+            <span className="up-fc-ico up-fc-ico--run" aria-hidden />
+            Выполняем проверки…
+          </div>
+        ) : null}
+        {error ? <p className="tk-cc-diag-error">{error}</p> : null}
+        {showPanel && data && phase !== "loading" ? (
+          <>
+            <div className="tk-cc-diag-head">
+              <span>Проверка параметров</span>
+              <span className={failedStep ? "tk-cc-diag-head__fail" : "tk-cc-diag-head__ok"}>
+                {inlineHeadline}
+              </span>
+            </div>
+            <div className="tk-cc-diag-rows">
+              {data.steps.map((step, i) => {
+                const revealed = phase === "done" || i < visibleCount;
+                if (!revealed) return null;
+                const isFail = step.status === "fail" || step.status === "warn";
+                const value = inlineStepValue(step);
+                return (
+                  <div key={`${step.test_code}-${step.variant}-${i}`} className="tk-cc-diag-row">
+                    <span className="tk-cc-diag-row__label">{step.check_label}</span>
+                    <span
+                      className={
+                        isFail ? "tk-cc-diag-val tk-cc-diag-val--err" : "tk-cc-diag-val tk-cc-diag-val--ok"
+                      }
+                    >
+                      {value}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {phase === "done" && failedStep?.actions_html ? (
+              <div
+                className="tk-cc-diag-actions up-fc-html fc-block-wrap"
+                dangerouslySetInnerHTML={{ __html: failedStep.actions_html }}
+              />
+            ) : null}
+            {phase === "done" && failedStep?.test_code === "session_limit" && onDisconnect ? (
+              <button type="button" className="tk-cc-btn tk-cc-btn--outline tk-cc-diag-action" onClick={onDisconnect}>
+                Закрыть сессии
+              </button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div

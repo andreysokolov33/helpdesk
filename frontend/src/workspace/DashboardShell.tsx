@@ -1,12 +1,13 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
-import { themeMoonIcon, themeSunIcon } from "@/themeIcons";
+import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
 import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
 import { fetchChatUnread } from "@/api/chat";
 import { getBellUnreadCount, MOCK_NOTIFS } from "@/data/mockCc";
 import { useTheme } from "@/theme/ThemeContext";
+import { themeToggleHint } from "@/theme/themeMeta";
 
 type TabDef = {
   to: string;
@@ -204,11 +205,14 @@ export default function DashboardShell() {
             type="button"
             className="nav-icon-btn nav-theme-btn"
             onClick={toggleTheme}
-            title={theme === "light" ? "Включить тёмную тему" : "Включить светлую тему"}
-            aria-label={theme === "light" ? "Включить тёмную тему" : "Включить светлую тему"}
+            title={themeToggleHint(theme)}
+            aria-label={themeToggleHint(theme)}
           >
             <span className={`nav-theme-fade ${theme === "light" ? "is-on" : ""}`}>
               <img className="nav-theme-svg" src={themeSunIcon} width={24} height={24} alt="" />
+            </span>
+            <span className={`nav-theme-fade ${theme === "comfort" ? "is-on" : ""}`}>
+              <img className="nav-theme-svg" src={themeComfortIcon} width={24} height={24} alt="" />
             </span>
             <span className={`nav-theme-fade ${theme === "dark" ? "is-on" : ""}`}>
               <img className="nav-theme-svg" src={themeMoonIcon} width={24} height={24} alt="" />

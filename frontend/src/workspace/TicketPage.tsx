@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import RichEditor, { type RichEditorHandle } from "@/components/RichEditor";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
 import TicketDeleteMessageModal from "@/components/TicketDeleteMessageModal";
 import TicketDeliveryTicks from "@/components/TicketDeliveryTicks";
@@ -9,23 +9,12 @@ import TicketMessageContextMenu, { type MessageMenuAction } from "@/components/T
 import TicketChatScrollDown from "@/components/TicketChatScrollDown";
 import TicketMessageReplyQuote from "@/components/TicketMessageReplyQuote";
 import { postDisconnect, type FastCheckResponse } from "@/api/userProfile";
-import TicketFastCheckDrawer from "@/workspace/TicketFastCheckDrawer";
-import { formatWorkDurationSince } from "@/utils/ticketFormat";
-import TicketStaffParticipants from "@/components/TicketStaffParticipants";
-import { ticketListStatusColumn } from "@/api/tracker";
-import {
-  isLkTicketSource,
-  priorityBadgeClass,
-  queueLineBadgeClass,
-  queueLineShortLabel,
-  sourceBadgeClass,
-} from "@/utils/ticketLabels";
+import { isLkTicketSource } from "@/utils/ticketLabels";
 import {
   fetchTicketDetail,
   fetchTicketMessages,
   fetchTicketReadReceipts,
   formatMsgTime,
-  formatTicketCreated,
   mergeTicketPollSnapshot,
   ticketPollSnapshotChanged,
   reopenTicket,
@@ -48,10 +37,6 @@ import {
   mergeIncomingReadState,
   mergeTicketMessages,
   ticketAuthorLabel,
-  ticketAvatarLetter,
-  ticketBblClass,
-  ticketMavClass,
-  ticketMsgRowClass,
 } from "@/utils/ticketMessages";
 import {
   CHAT_PAGE_SIZE,
@@ -82,8 +67,10 @@ import {
   isOwnTicketComment,
   type TicketComment,
 } from "@/api/ticketComments";
-import TicketSubscriberAccountSidebar from "@/components/TicketSubscriberAccountSidebar";
+import TicketQueueSidebar from "@/components/TicketQueueSidebar";
+import TicketHelperPanel from "@/components/TicketHelperPanel";
 import TicketLinkSubscriberModal from "@/workspace/TicketLinkSubscriberModal";
+import { fetchUserProfile, type UserProfileResponse } from "@/api/userProfile";
 import { macroTextToEditorHtml, type HelpdeskMacro } from "@/api/macros";
 import { validateTicketMessage } from "@/utils/ticketMessageValidation";
 
@@ -164,7 +151,6 @@ function AttachmentsBlock({
 export default function TicketPage() {
   const { ticketId: ticketIdParam } = useParams();
   const ticketId = Number(ticketIdParam);
-  const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEditorHandle>(null);
@@ -190,7 +176,8 @@ export default function TicketPage() {
   const [error, setError] = useState<string | null>(null);
   const [editorEmpty, setEditorEmpty] = useState(true);
   const [sending, setSending] = useState(false);
-  const [sideOpen, setSideOpen] = useState(true);
+  const [helperCollapsed, setHelperCollapsed] = useState(false);
+  const [subscriberProfile, setSubscriberProfile] = useState<UserProfileResponse | null>(null);
   const [takeBackLoading, setTakeBackLoading] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
   const [reopenLoading, setReopenLoading] = useState(false);
@@ -209,9 +196,7 @@ export default function TicketPage() {
   const [subscriberChatUnread, setSubscriberChatUnread] = useState(0);
   const [linkSubscriberOpen, setLinkSubscriberOpen] = useState(false);
   const [nowPulse, setNowPulse] = useState(() => Date.now());
-  const [checkOpen, setCheckOpen] = useState(false);
   const [checkCache, setCheckCache] = useState<FastCheckResponse | null>(null);
-  const [checkLoading, setCheckLoading] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; msg: TicketMessage } | null>(null);
   const [replyTo, setReplyTo] = useState<TicketMessage | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -335,6 +320,7 @@ export default function TicketPage() {
     setCommentDeleteTarget(null);
     setSubscriberChatUnread(0);
     subscriberSeenMaxIdRef.current = 0;
+    setCheckCache(null);
   }, [ticketId]);
 
   useEffect(() => {
@@ -380,6 +366,25 @@ export default function TicketPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const uid = detail?.user_id;
+    if (!uid) {
+      setSubscriberProfile(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchUserProfile(uid, 1, 10, false)
+      .then((profile) => {
+        if (!cancelled) setSubscriberProfile(profile);
+      })
+      .catch(() => {
+        if (!cancelled) setSubscriberProfile(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail?.user_id]);
 
   useEffect(() => {
     if (!detail || isLkTicketSource(detail.source)) return;
@@ -878,14 +883,6 @@ export default function TicketPage() {
     }
   }
 
-  function openCheck() {
-    if (!detail?.user_id) {
-      window.alert("Абонент не определён — проверка недоступна");
-      return;
-    }
-    setCheckOpen(true);
-  }
-
   function clearComposerMode() {
     setReplyTo(null);
     setEditingId(null);
@@ -1256,8 +1253,8 @@ export default function TicketPage() {
 
   if (loading) {
     return (
-      <div className="tp on">
-        <div className="pg">
+      <div className="tp on" id="tp-ticket">
+        <div className="tk-cc-viewport tk-cc-viewport--loading">
           <p className="ch-list-loading">Загрузка тикета…</p>
         </div>
       </div>
@@ -1266,8 +1263,8 @@ export default function TicketPage() {
 
   if (error || !detail) {
     return (
-      <div className="tp on">
-        <div className="pg">
+      <div className="tp on" id="tp-ticket">
+        <div className="tk-cc-viewport tk-cc-viewport--loading">
           <div className="ch-list-err">{error || "Тикет не найден"}</div>
           <Link to="/tickets" className="tk-back-link">
             ← К тикетам
@@ -1287,7 +1284,6 @@ export default function TicketPage() {
     return parts.length >= 2 ? parts[1] : subscriberSidebarName;
   })();
   const introBody = detail.body?.trim() || "";
-  const statusColumn = ticketListStatusColumn(detail);
   const chatMessages = messages.filter((m) => !m.is_initial);
   const isLkTicket = isLkTicketSource(detail.source);
   const isCommentsPanel = isLkTicket && chatPanel === "comments";
@@ -1296,6 +1292,12 @@ export default function TicketPage() {
   const hasIntro = !isCommentsPanel && introBody.length > 0;
   const feedLoadingOlder = isCommentsPanel ? commentsLoadingOlder : loadingOlder;
   const online = Boolean(detail.user_id) ? Boolean(detail.subscriber_online) : false;
+  const offlineAuthLabel = subscriberProfile?.online.last_session_end_label?.trim() || null;
+  const onlineStatusLabel = online
+    ? "Абонент онлайн"
+    : offlineAuthLabel
+      ? `Офлайн · последняя авторизация ${offlineAuthLabel}`
+      : "Абонент офлайн";
 
   function handleFeedContextMenu(e: React.MouseEvent, m: TicketMessage) {
     if (!detail.is_open) {
@@ -1321,163 +1323,112 @@ export default function TicketPage() {
   }
 
   function renderFeedMessage(m: TicketMessage) {
+    const authorLabel = isCommentsPanel
+      ? m.author_name || ticketAuthorLabel(m, subscriberChatName)
+      : ticketAuthorLabel(m, subscriberChatName);
+    const timeLabel = formatMsgTime(m.created_at_iso) || "—";
+    const editedSuffix =
+      m.is_edited ? (
+        <span className="tk-msg-edited" title={m.updated_at_iso || undefined}>
+          {" "}
+          · изменено
+          {m.updated_at_iso ? ` ${formatMsgTime(m.updated_at_iso)}` : ""}
+        </span>
+      ) : null;
+
     if (m.side === "bot") {
       return (
-        <div key={m.id} className="msg bot">
-          <div className="mc2">
-            <div className="bbl bot">
-              <div className="tk-msg-label">{ticketAuthorLabel(m, subscriberChatName)}</div>
-              <MessageBody text={m.text} />
-              <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
-            </div>
-            <div className="mtm">{formatMsgTime(m.created_at_iso) || "—"}</div>
+        <div key={m.id} className="tk-tg-bubble tk-tg-bubble--bot" data-msg-id={m.id}>
+          <div className="tk-tg-bubble__info">{authorLabel} · {timeLabel}</div>
+          <div className="tk-tg-bubble__body tk-tg-bubble__body--bot">
+            <MessageBody text={m.text} />
+            <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
           </div>
         </div>
       );
     }
 
-    const authorRole = m.author_role;
+    const outgoing = m.side === "me";
     return (
       <div
         key={m.id}
         data-msg-id={m.id}
-        className={`${ticketMsgRowClass(m.side, authorRole)}${highlightId === m.id ? " tk-msg--highlight" : ""}`}
+        className={`tk-tg-bubble${outgoing ? " tk-tg-bubble--out" : " tk-tg-bubble--in"}${highlightId === m.id ? " tk-tg-bubble--highlight" : ""}`}
         onContextMenu={(e) => handleFeedContextMenu(e, m)}
       >
-        <div className={ticketMavClass(m.side, authorRole)}>{ticketAvatarLetter(m, subscriberChatName)}</div>
-        <div className="mc2">
-          <div className={ticketBblClass(m.side, authorRole)}>
-            <div className="tk-msg-label">
-              {isCommentsPanel
-                ? m.author_name || ticketAuthorLabel(m, subscriberChatName)
-                : ticketAuthorLabel(m, subscriberChatName)}
-            </div>
-            {!isCommentsPanel && m.reply_preview ? (
-              <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
-            ) : null}
-            <MessageBody text={m.text} />
-            {!isCommentsPanel ? <AttachmentsBlock msg={m} onOpenImage={openImageViewer} /> : null}
-          </div>
-          <div className="mtm">
-            <span>
-              {formatMsgTime(m.created_at_iso) || "—"}
-              {m.is_edited ? (
-                <span className="tk-msg-edited" title={m.updated_at_iso || undefined}>
-                  {" "}
-                  · изменено
-                  {m.updated_at_iso ? ` ${formatMsgTime(m.updated_at_iso)}` : ""}
-                </span>
-              ) : null}
-            </span>
-            {!isCommentsPanel ? (
-              <TicketDeliveryTicks
-                side={m.side}
-                recipientReadAtIso={m.recipient_read_at_iso}
-                readBy={m.read_by}
-              />
-            ) : null}
-          </div>
+        <div className="tk-tg-bubble__info">
+          {outgoing ? "Вы" : authorLabel} · {timeLabel}
+          {editedSuffix}
         </div>
+        <div className={`tk-tg-bubble__body${outgoing ? " tk-tg-bubble__body--out" : ""}`}>
+          {!isCommentsPanel && m.reply_preview ? (
+            <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
+          ) : null}
+          <MessageBody text={m.text} />
+          {!isCommentsPanel ? <AttachmentsBlock msg={m} onOpenImage={openImageViewer} /> : null}
+        </div>
+        {!isCommentsPanel ? (
+          <div className="tk-tg-bubble__ticks">
+            <TicketDeliveryTicks
+              side={m.side}
+              recipientReadAtIso={m.recipient_read_at_iso}
+              readBy={m.read_by}
+            />
+          </div>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="tp on" id="tp-ticket" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div className="tk-ticket-shell">
-        <div className="tbar">
-          <button type="button" className="tbk" onClick={() => navigate("/tickets")}>
-            ← Назад
-          </button>
-          <div style={{ width: 1, height: 16, background: "var(--ln)" }} />
-          <div className="tk-tbar-head">
-            <span className="tk-tbar-id">#{detail.id}</span>
-            <span className="tk-tbar-sep" aria-hidden>
-              ·
-            </span>
-            <h1 className="tk-tbar-title">{detail.title}</h1>
-            <span
-              className={
-                statusColumn.kind === "comm"
-                  ? `ch-comm ch-comm--${statusColumn.state}`
-                  : `ch-status ch-status--${detail.status}`
-              }
-            >
-              {statusColumn.label}
-            </span>
-          </div>
-          <div className="tacts">
-            <button
-              type="button"
-              className={`diag-btn${checkLoading ? " running" : ""}`}
-              onClick={openCheck}
-              title={detail.user_id ? "Быстрая проверка абонента" : "Укажите абонента в тикете"}
-            >
-              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M2 15h3l2-5 3 8 2-10 2 4h4" />
-                <circle cx="17" cy="12" r="1.5" fill="currentColor" stroke="none" />
-              </svg>
-              {checkLoading ? "Проверяю…" : "Проверка"}
-            </button>
-            {detail.is_open && detail.queue_line === "cs" && detail.support_line !== 4 ? (
-              <button
-                type="button"
-                className="tb3"
-                disabled={transferLoading}
-                onClick={() => void handleTransferToEngineers()}
-              >
-                {transferLoading ? "Передаю…" : "Инженерам"}
-              </button>
-            ) : null}
-            {detail.is_open && detail.queue_line === "engineers" ? (
-              <button
-                type="button"
-                className="tb3"
-                disabled={takeBackLoading}
-                onClick={() => void handleTakeBackToKs()}
-              >
-                {takeBackLoading ? "Возврат…" : "Взять в работу"}
-              </button>
-            ) : null}
-            {detail.can_reopen ? (
-              <button
-                type="button"
-                className="tb3"
-                disabled={reopenLoading}
-                onClick={() => void handleReopenTicket()}
-              >
-                {reopenLoading ? "Открываю…" : "Переоткрыть"}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className={`tb3 tk-panel-toggle${sideOpen ? " on" : ""}`}
-              onClick={() => setSideOpen((v) => !v)}
-              title={sideOpen ? "Скрыть панель абонента" : "Показать панель абонента"}
-            >
-              {sideOpen ? "Панель ▶" : "◀ Панель"}
-            </button>
-          </div>
-        </div>
+    <div className="tp on" id="tp-ticket">
+      <div className="tk-cc-viewport">
+        <TicketQueueSidebar activeTicketId={detail.id} />
 
-        <div className="tbody tk-ticket-body">
-          {detail.user_id != null ? (
-            <TicketFastCheckDrawer
-              userId={detail.user_id}
-              open={checkOpen}
-              subscriberSidebarOpen={sideOpen}
-              cachedData={checkCache}
-              onCachedData={setCheckCache}
-              onClose={() => setCheckOpen(false)}
-              onLoadingChange={setCheckLoading}
-              onDisconnect={() =>
-                postDisconnect(detail.user_id!).then(() => {
-                  void load();
-                })
-              }
-            />
-          ) : null}
-          <div className={`czone tk-chat-main${isCommentsPanel ? " tk-chat-main--comments" : ""}`}>
+        <TicketHelperPanel
+          detail={detail}
+          profile={subscriberProfile}
+          collapsed={helperCollapsed}
+          onToggle={() => setHelperCollapsed((v) => !v)}
+          nowPulse={nowPulse}
+          checkCache={checkCache}
+          onCheckCache={setCheckCache}
+          onDisconnect={() =>
+            postDisconnect(detail.user_id!).then(() => {
+              void load();
+            })
+          }
+          transferLoading={transferLoading}
+          takeBackLoading={takeBackLoading}
+          reopenLoading={reopenLoading}
+          onTransfer={() => void handleTransferToEngineers()}
+          onTakeBack={() => void handleTakeBackToKs()}
+          onReopen={() => void handleReopenTicket()}
+          onLinkSubscriber={() => setLinkSubscriberOpen(true)}
+        />
+
+        <div className={`tk-cc-chat${isCommentsPanel ? " tk-cc-chat--comments" : ""}`}>
+          <header className="tk-cc-chat__head">
+            <div className="tk-cc-chat__head-left">
+              {detail.subscriber_profile_user_id != null ? (
+                <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-cc-chat__title">
+                  {subscriberSidebarName}
+                </Link>
+              ) : (
+                <span className="tk-cc-chat__title">{subscriberSidebarName}</span>
+              )}
+              <span className={`tk-cc-online${online ? " tk-cc-online--on" : " tk-cc-online--off"}`}>
+                {onlineStatusLabel}
+              </span>
+            </div>
+            <div className="tk-cc-chat__head-right">
+              <span className="tk-cc-chat__ticket-meta" title={detail.title}>
+                #{detail.id} · {detail.title}
+              </span>
+            </div>
+          </header>
+
+          <div className={`tk-chat-main tk-cc-chat__body${isCommentsPanel ? " tk-chat-main--comments" : ""}`}>
             <div className="tk-chat-viewport">
               <div
                 className="cscrl tk-chat-scroll"
@@ -1988,145 +1939,6 @@ export default function TicketPage() {
             onConfirm={() => void (commentDeleteTarget ? confirmDeleteComment() : confirmDelete())}
           />
 
-          <aside className={`tk-sidebar ip${sideOpen ? "" : " closed"}`} aria-label="Информация о тикете">
-            <div className="tk-sidebar__accent" aria-hidden />
-            <div className="ips">
-              <div className="ipb">
-                <div className="ipl">Абонент</div>
-                {detail.user_id == null ? (
-                  <>
-                    <div className="tk-side-unknown" role="status">
-                      Не удалось определить абонента
-                    </div>
-                    {detail.caller_name ? (
-                      <div className="tk-side-meta">Как представился: {detail.caller_name}</div>
-                    ) : null}
-                    {detail.station_name ? (
-                      <div className="tk-side-meta">Станция: {detail.station_name}</div>
-                    ) : null}
-                    <button type="button" className="tb3 tk-link-subscriber-btn" onClick={() => setLinkSubscriberOpen(true)}>
-                      Найти абонента
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div
-                      className={
-                        detail.subscriber_is_juridical === 2 ? "tk-side-name tk-side-name--jur" : "tk-side-name"
-                      }
-                    >
-                      <span
-                        aria-hidden
-                        style={{
-                          display: "inline-block",
-                          width: 8,
-                          height: 8,
-                          borderRadius: 999,
-                          background: online ? "var(--ok)" : "var(--lm)",
-                          marginRight: 8,
-                          verticalAlign: "middle",
-                          boxShadow: online ? "0 0 0 2px rgba(27,122,72,.14)" : "none",
-                        }}
-                      />
-                      {subscriberSidebarName}
-                    </div>
-                    <div className="tk-side-meta">ID: {detail.user_id}</div>
-                    {detail.subscriber_login ? (
-                      <div className="tk-side-meta">Логин: {detail.subscriber_login}</div>
-                    ) : null}
-                    {detail.station_name ? (
-                      <div className="tk-side-meta">Станция: {detail.station_name}</div>
-                    ) : null}
-                    {detail.subscriber_profile_user_id != null ? (
-                      <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-profile-link">
-                        Карточка абонента →
-                      </Link>
-                    ) : null}
-                  </>
-                )}
-              </div>
-
-              {detail.is_open && detail.subscriber_account && detail.user_id != null ? (
-                <TicketSubscriberAccountSidebar
-                  account={detail.subscriber_account}
-                  isJuridical={detail.subscriber_is_juridical}
-                />
-              ) : null}
-
-              <div className="ipb tk-ticket-meta">
-                <div className="ipl">Тикет</div>
-                <div className="kv">
-                  <span className="kvk">Линия</span>
-                  <span className="kvv">
-                    <span
-                      className={`ch-line ch-line--${queueLineBadgeClass(detail.queue_line)}`}
-                      title={detail.support_line_label}
-                    >
-                      {detail.queue_line_label ||
-                        queueLineShortLabel(detail.queue_line, detail.support_line)}
-                    </span>
-                  </span>
-                </div>
-                <div className="kv">
-                  <span className="kvk">Статус</span>
-                  <span className="kvv">
-                    <span
-                      className={
-                        statusColumn.kind === "comm"
-                          ? `ch-comm ch-comm--${statusColumn.state}`
-                          : `ch-status ch-status--${detail.status}`
-                      }
-                    >
-                      {statusColumn.label}
-                    </span>
-                  </span>
-                </div>
-                <div className="kv">
-                  <span className="kvk">Источник</span>
-                  <span className="kvv">
-                    <span className={`ch-source ch-source--${sourceBadgeClass(detail.source)}`}>
-                      {detail.source_label}
-                    </span>
-                  </span>
-                </div>
-                <TicketStaffParticipants participants={detail.staff_participants ?? []} layout="sidebar" />
-                <div className="kv">
-                  <span className="kvk">Приоритет</span>
-                  <span className="kvv">
-                    <span
-                      className={`ch-priority ch-priority--${priorityBadgeClass(detail.priority)}`}
-                      title={detail.priority_label ?? "Средний"}
-                    >
-                      {detail.priority_label ?? "Средний"}
-                    </span>
-                  </span>
-                </div>
-                <div className="kv tk-category-kv">
-                  <div className="tk-category-kv__top">
-                    <span className="kvk">Категория</span>
-                    <span className="kvv">
-                      {detail.category_parent_name || detail.category_name || "—"}
-                    </span>
-                  </div>
-                  {detail.category_parent_name && detail.category_name ? (
-                    <div className="tk-category-kv__child">{detail.category_name}</div>
-                  ) : null}
-                </div>
-                {detail.date_of_create_iso ? (
-                  <>
-                    <div className="kv">
-                      <span className="kvk">Создан</span>
-                      <span className="kvv">{formatTicketCreated(detail.date_of_create_iso) || "—"}</span>
-                    </div>
-                    <div className="kv">
-                      <span className="kvk">В работе</span>
-                      <span className="kvv">{formatWorkDurationSince(detail.date_of_create_iso, nowPulse)}</span>
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          </aside>
         </div>
       </div>
 

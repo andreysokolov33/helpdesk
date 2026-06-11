@@ -203,6 +203,19 @@ async def list_tracker_tickets(
                 date_to=date_to,
                 assigned_to=eff_assigned_to,
             )
+            if not closed and rows:
+                await ticket_svc.reconcile_open_tickets_on_list_page(db, rows)
+                total, rows, list_stats = await ticket_svc.fetch_tracker_list_page(
+                    db,
+                    viewer_id=viewer_skystream_id,
+                    closed=closed,
+                    page=page,
+                    per_page=per_page,
+                    subscriber_q=subscriber_q,
+                    date_from=date_from,
+                    date_to=date_to,
+                    assigned_to=eff_assigned_to,
+                )
             break
         except NotSupportedError as exc:
             if attempt == 0 and _is_stale_prepared_cache(exc):

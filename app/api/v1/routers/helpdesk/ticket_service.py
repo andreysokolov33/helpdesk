@@ -332,6 +332,23 @@ async def reconcile_ticket_queue_from_thread(
     await db.commit()
 
 
+async def reconcile_open_tickets_on_list_page(
+    db: AsyncSession,
+    rows: list[dict[str, Any]],
+) -> None:
+    """Синхронизировать v2-очередь с лентой перед отдачей списка (как в карточке тикета)."""
+    for row in rows:
+        status = str(row.get("status") or "").strip()
+        if status in TRACKER_CLOSED_STATUSES:
+            continue
+        ticket_id = int(row["id"])
+        await reconcile_ticket_queue_from_thread(
+            db,
+            ticket_id,
+            source=row.get("source"),
+        )
+
+
 async def _apply_queue_snapshot(
     db: AsyncSession,
     ticket_id: int,
