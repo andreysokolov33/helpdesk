@@ -88,6 +88,11 @@ class ResilientRedis:
     async def get(self, key: str) -> Optional[str]:
         return await self._run("GET", lambda: self._client.get(key))
 
+    async def mget(self, keys: list[str]) -> Optional[list[Any]]:
+        if not keys:
+            return []
+        return await self._run("MGET", lambda: self._client.mget(keys))
+
     async def set(
         self,
         key: str,

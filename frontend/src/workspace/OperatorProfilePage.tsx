@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchAuthMe, type AuthMe } from "@/api/auth";
+import AdminOperatorsPage from "@/workspace/AdminOperatorsPage";
 import {
   clampProfileMonth,
   fetchOperatorTicketStats,
@@ -24,6 +25,7 @@ export default function OperatorProfilePage() {
   const [stats, setStats] = useState<OperatorTicketMonthStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     const clamped = clampProfileMonth(year, month);
@@ -31,19 +33,35 @@ export default function OperatorProfilePage() {
   }, [year, month]);
 
   useEffect(() => {
-    if (monthOptions.length === 0) return;
+    let cancelled = false;
+    fetchAuthMe()
+      .then((auth) => {
+        if (!cancelled) setMe(auth);
+      })
+      .catch(() => {
+        if (!cancelled) setMe(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const isAdmin = Boolean(me?.is_support_admin);
+
+  useEffect(() => {
+    if (!authChecked || isAdmin || monthOptions.length === 0) return;
     let cancelled = false;
     setLoading(true);
     setError("");
-    Promise.all([fetchAuthMe(), fetchOperatorTicketStats(year, month)])
-      .then(([auth, data]) => {
-        if (cancelled) return;
-        setMe(auth);
-        setStats(data);
+    fetchOperatorTicketStats(year, month)
+      .then((data) => {
+        if (!cancelled) setStats(data);
       })
       .catch((e: unknown) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : "Ошибка загрузки");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Ошибка загрузки");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -51,7 +69,21 @@ export default function OperatorProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [year, month, monthOptions.length]);
+  }, [authChecked, isAdmin, year, month, monthOptions.length]);
+
+  if (!authChecked) {
+    return (
+      <div className="op-page">
+        <div className="op-head">
+          <h1 className="op-title">Профиль</h1>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdmin) {
+    return <AdminOperatorsPage />;
+  }
 
   function onYearChange(nextYear: number) {
     setYear(nextYear);

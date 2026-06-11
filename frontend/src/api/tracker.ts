@@ -172,20 +172,17 @@ export function staffParticipantPill(p: TicketStaffParticipant): AssigneePillDis
   if (role === "manager") {
     return { label: "Менеджер", variant: "manager" };
   }
-  const label = p.label?.trim() || "—";
-  return { label, variant: "support", title: label };
+  const full = p.label?.trim() || "—";
+  const label = full !== "—" ? formatStaffNameShort(full) : full;
+  return {
+    label,
+    variant: "support",
+    title: full !== label ? full : undefined,
+  };
 }
 
-export type AssigneePillOptions = {
-  /** Для админа в списке /tickets: фамилия полностью, имя и отчество — инициалы. */
-  shortAssigneeName?: boolean;
-};
-
 /** Исполнитель: assigned_to; ФИО только для support. */
-export function ticketListAssigneePill(
-  row: AssigneePillRow,
-  options?: AssigneePillOptions,
-): AssigneePillDisplay {
+export function ticketListAssigneePill(row: AssigneePillRow): AssigneePillDisplay {
   if (row.assigned_to == null) {
     return { label: "Нет исполнителя", variant: "unassigned" };
   }
@@ -200,14 +197,11 @@ export function ticketListAssigneePill(
     return { label: "Менеджер", variant: "manager" };
   }
   const full = row.assignee_label?.trim() || "—";
-  const label =
-    options?.shortAssigneeName && full !== "—"
-      ? formatStaffNameShort(full)
-      : full;
+  const label = full !== "—" ? formatStaffNameShort(full) : full;
   return {
     label,
     variant: assigneePillVariant(role),
-    title: full !== "—" && full !== label ? full : undefined,
+    title: full !== label ? full : undefined,
   };
 }
 

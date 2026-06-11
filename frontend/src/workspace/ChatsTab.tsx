@@ -121,7 +121,6 @@ export default function ChatsTab() {
   const [perPage, setPerPage] = useState<TicketsListPerPage>(20);
   const [listPrefsReady, setListPrefsReady] = useState(false);
   const viewerIdRef = useRef<number | null>(null);
-  const [isSupportAdmin, setIsSupportAdmin] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listPolling, setListPolling] = useState(false);
   const [listError, setListError] = useState("");
@@ -171,7 +170,6 @@ export default function ChatsTab() {
       .then((me) => {
         if (cancelled) return;
         viewerIdRef.current = me.user_id;
-        setIsSupportAdmin(Boolean(me.is_support_admin));
         setPerPage(loadTicketsPerPage(me.user_id));
         setListPrefsReady(true);
       })
@@ -487,7 +485,7 @@ export default function ChatsTab() {
           {!closedMode ? (
             <>
               <div className="ch-exec-cell">
-                <TicketAssigneePill row={row} shortAssigneeName={isSupportAdmin} />
+                <TicketAssigneePill row={row} />
               </div>
               <span
                 className={`ch-line ch-line--${queueLineBadgeClass(row.queue_line ?? "cs")}`}

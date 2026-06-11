@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
 import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
 import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
+import { sendOperatorPresence } from "@/api/operatorsManage";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
 import { fetchChatUnread } from "@/api/chat";
 import { ticketsListPollDelayMs } from "@/utils/ticketsListPoll";
@@ -149,6 +150,31 @@ export default function DashboardShell() {
       window.removeEventListener("focus", loadChatUnread);
     };
   }, [location.pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function ping() {
+      if (document.visibilityState !== "visible") return;
+      await sendOperatorPresence();
+    }
+
+    void ping();
+    const timer = window.setInterval(() => void ping(), 30_000);
+
+    function onVisible() {
+      if (document.visibilityState === "visible" && !cancelled) void ping();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
 
   async function performLogout() {
     await logoutRequest().catch(() => {});

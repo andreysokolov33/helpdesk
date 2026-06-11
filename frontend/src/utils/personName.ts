@@ -1,4 +1,4 @@
-/** «Сидоров Сидор Сидорович» → «Сидоров С. С.» */
+/** «Иванов Иван Иванович» → «Иванов И.И.» */
 export function formatStaffNameShort(fullName: string): string {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "—";
@@ -11,6 +11,6 @@ export function formatStaffNameShort(fullName: string): string {
       return ch ? `${ch.toUpperCase()}.` : "";
     })
     .filter(Boolean)
-    .join(" ");
+    .join("");
   return initials ? `${surname} ${initials}` : surname;
 }

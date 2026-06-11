@@ -75,6 +75,48 @@ class OperatorTicketMonthStatsResponse(BaseModel):
     closed_count: int = 0
 
 
+class OperatorManageItem(BaseModel):
+    id: int
+    login: str
+    full_name: str | None = None
+    email: str | None = None
+    is_active: bool = True
+    is_online: bool = False
+    level: int | None = None
+    open_tickets_count: int = 0
+
+
+class OperatorManageStats(BaseModel):
+    active_count: int = 0
+    online_count: int = 0
+
+
+class OperatorManageListResponse(BaseModel):
+    admins: list[OperatorManageItem] = []
+    operators: list[OperatorManageItem] = []
+    stats: OperatorManageStats
+
+
+class OperatorSuggestedLoginResponse(BaseModel):
+    login: str
+
+
+class OperatorCreateRequest(BaseModel):
+    login: str = Field(..., min_length=1, max_length=128)
+    password: str = Field(..., min_length=10, max_length=10)
+    full_name: str = Field(..., min_length=1, max_length=256)
+    email: str | None = Field(None, max_length=256)
+
+
+class OperatorUpdateRequest(BaseModel):
+    full_name: str | None = Field(None, min_length=1, max_length=256)
+    is_active: bool | None = None
+
+
+class OperatorPasswordResetRequest(BaseModel):
+    password: str = Field(..., min_length=10, max_length=10)
+
+
 class TrackerTicketListStats(BaseModel):
     avg_rating: Optional[float] = None
     avg_rating_mine: Optional[float] = None
