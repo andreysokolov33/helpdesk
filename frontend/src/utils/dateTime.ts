@@ -26,7 +26,14 @@ export function parseApiDate(iso: string | null | undefined): Date | null {
 export type FormatDateTimeOptions = {
   withYear?: boolean;
   withSeconds?: boolean;
+  /** IANA-зона; по умолчанию — часовой пояс браузера (администратора/оператора). */
+  timeZone?: string;
 };
+
+/** Часовой пояс браузера текущего пользователя (например Europe/Moscow). */
+export function viewerTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
 
 /** Дата/время в часовом поясе пользователя (локаль браузера). */
 export function formatDateTimeLocal(
@@ -36,10 +43,11 @@ export function formatDateTimeLocal(
   const d = parseApiDate(iso);
   if (!d) return "";
 
-  const { withYear = false, withSeconds = false } = opts;
+  const { withYear = false, withSeconds = false, timeZone = viewerTimeZone() } = opts;
 
   return d
     .toLocaleString("ru-RU", {
+      timeZone,
       day: "numeric",
       month: "short",
       ...(withYear ? { year: "numeric" } : {}),

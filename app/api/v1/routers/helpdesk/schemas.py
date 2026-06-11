@@ -84,6 +84,7 @@ class OperatorManageItem(BaseModel):
     is_online: bool = False
     level: int | None = None
     open_tickets_count: int = 0
+    last_activity: str | None = None
 
 
 class OperatorManageStats(BaseModel):
@@ -91,10 +92,18 @@ class OperatorManageStats(BaseModel):
     online_count: int = 0
 
 
+class OperatorManagePagination(BaseModel):
+    page: int = Field(ge=1)
+    per_page: int = Field(ge=1, le=100)
+    total: int = Field(ge=0)
+    total_pages: int = Field(ge=1)
+
+
 class OperatorManageListResponse(BaseModel):
     admins: list[OperatorManageItem] = []
     operators: list[OperatorManageItem] = []
     stats: OperatorManageStats
+    operators_pagination: OperatorManagePagination
 
 
 class OperatorSuggestedLoginResponse(BaseModel):

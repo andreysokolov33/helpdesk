@@ -3,15 +3,19 @@ import { fetchAuthMe, type AuthMe } from "@/api/auth";
 import {
   createOperator,
   fetchOperatorsManage,
+  OPERATORS_MANAGE_PER_PAGE,
   resetOperatorPassword,
   updateOperator,
   type OperatorManageItem,
+  type OperatorManagePagination,
   type OperatorManageStats,
 } from "@/api/operatorsManage";
 import OperatorCreateModal from "@/components/OperatorCreateModal";
 import OperatorCreatedModal, { type OperatorCredsVariant } from "@/components/OperatorCreatedModal";
+import OperatorArchiveConfirmModal from "@/components/OperatorArchiveConfirmModal";
 import OperatorEditModal from "@/components/OperatorEditModal";
 import { staffEditIcon } from "@/staffIcons";
+import { formatDateTimeLocal } from "@/utils/dateTime";
 
 const POLL_MS = 30_000;
 
@@ -25,6 +29,12 @@ function canEditOperator(op: OperatorManageItem, currentUserId: number | null): 
   return true;
 }
 
+function formatLastSeenLabel(iso: string | null): string {
+  if (!iso) return "Не авторизовывался";
+  const when = formatDateTimeLocal(iso, { withYear: true });
+  return when ? `Был(а) ${when}` : "Не авторизовывался";
+}
+
 function OnlineDot({ online }: { online: boolean }) {
   return (
     <span
@@ -35,14 +45,14 @@ function OnlineDot({ online }: { online: boolean }) {
   );
 }
 
-function StaffTableColgroup({ showOpenTickets }: { showOpenTickets: boolean }) {
+function StaffTableColgroup() {
   return (
     <colgroup>
       <col className="op-admin-col-name" />
       <col className="op-admin-col-login" />
       <col className="op-admin-col-status" />
       <col className="op-admin-col-online" />
-      {showOpenTickets ? <col className="op-admin-col-open" /> : null}
+      <col className="op-admin-col-open" />
       <col className="op-admin-col-actions" />
     </colgroup>
   );
@@ -65,18 +75,22 @@ function StaffTable({
   showOpenTickets = false,
   onEdit,
 }: StaffTableProps) {
-  const colCount = showOpenTickets ? 6 : 5;
+  const colCount = 6;
   return (
     <div className="op-admin-table-wrap">
       <table className="dt op-admin-table">
-        <StaffTableColgroup showOpenTickets={showOpenTickets} />
+        <StaffTableColgroup />
         <thead>
           <tr>
             <th>ФИО</th>
             <th>Логин</th>
             <th>Статус</th>
             <th>Онлайн</th>
-            {showOpenTickets ? <th>Открытые</th> : null}
+            {showOpenTickets ? (
+              <th>Открытые</th>
+            ) : (
+              <th className="op-admin-col-open-spacer" aria-hidden />
+            )}
             <th aria-label="Действия" />
           </tr>
         </thead>
@@ -102,11 +116,25 @@ function StaffTable({
                 <td className="op-admin-cell-name">{op.full_name || "—"}</td>
                 <td className="op-admin-login">{op.login}</td>
                 <td className="op-admin-cell-status">
-                  <span
-                    className={`op-admin-badge ${op.is_active ? "op-admin-badge--on" : "op-admin-badge--off"}`}
-                  >
-                    {op.is_active ? "Активен" : "Архив"}
-                  </span>
+                  <div className="op-admin-status-stack">
+                    <span
+                      className={`op-admin-badge ${op.is_active ? "op-admin-badge--on" : "op-admin-badge--off"}`}
+                    >
+                      {op.is_active ? "Активен" : "Архив"}
+                    </span>
+                    {op.is_active && !op.is_online ? (
+                      <span
+                        className="op-admin-last-seen"
+                        title={
+                          op.last_activity
+                            ? "Последняя активность на портале"
+                            : "Учётная запись ещё не использовалась для входа"
+                        }
+                      >
+                        {formatLastSeenLabel(op.last_activity)}
+                      </span>
+                    ) : null}
+                  </div>
                 </td>
                 <td className="op-admin-cell-online">
                   {op.is_active ? <OnlineDot online={op.is_online} /> : "—"}
@@ -115,7 +143,9 @@ function StaffTable({
                   <td className="op-admin-cell-open" title="Открытые тикеты, где оператор — исполнитель">
                     {op.open_tickets_count ?? 0}
                   </td>
-                ) : null}
+                ) : (
+                  <td className="op-admin-cell-open op-admin-cell-open--spacer" aria-hidden />
+                )}
                 <td className="op-admin-actions">
                   {editable ? (
                     <button
@@ -143,6 +173,13 @@ export default function AdminOperatorsPage() {
   const [admins, setAdmins] = useState<OperatorManageItem[]>([]);
   const [operators, setOperators] = useState<OperatorManageItem[]>([]);
   const [stats, setStats] = useState<OperatorManageStats>({ active_count: 0, online_count: 0 });
+  const [operatorsPage, setOperatorsPage] = useState(1);
+  const [operatorsPagination, setOperatorsPagination] = useState<OperatorManagePagination>({
+    page: 1,
+    per_page: OPERATORS_MANAGE_PER_PAGE,
+    total: 0,
+    total_pages: 1,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -155,6 +192,10 @@ export default function AdminOperatorsPage() {
     password: string;
     fullName: string;
   } | null>(null);
+  const [archiveConfirm, setArchiveConfirm] = useState<{
+    operator: OperatorManageItem;
+    restore: boolean;
+  } | null>(null);
 
   const currentUserId = me?.user_id ?? null;
 
@@ -166,14 +207,24 @@ export default function AdminOperatorsPage() {
     setEditTarget((prev) => (prev?.id === updated.id ? updated : prev));
   }, []);
 
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (page: number, silent = false) => {
     if (!silent) setLoading(true);
     setError("");
     try {
-      const data = await fetchOperatorsManage();
+      const data = await fetchOperatorsManage({
+        page,
+        per_page: OPERATORS_MANAGE_PER_PAGE,
+      });
+      const pg = data.operators_pagination;
+      if (pg.total > 0 && page > pg.total_pages) {
+        setOperatorsPage(pg.total_pages);
+        return;
+      }
       setAdmins(data.admins);
       setOperators(data.operators);
       setStats(data.stats);
+      setOperatorsPagination(pg);
+      setOperatorsPage(pg.page);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
     } finally {
@@ -196,20 +247,20 @@ export default function AdminOperatorsPage() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(operatorsPage);
+  }, [load, operatorsPage]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => void load(true), POLL_MS);
+    const timer = window.setInterval(() => void load(operatorsPage, true), POLL_MS);
     function onVisible() {
-      if (document.visibilityState === "visible") void load(true);
+      if (document.visibilityState === "visible") void load(operatorsPage, true);
     }
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [load]);
+  }, [load, operatorsPage]);
 
   async function handleResetPassword(password: string) {
     if (!editTarget) return;
@@ -246,7 +297,8 @@ export default function AdminOperatorsPage() {
         password: payload.password,
         fullName: payload.full_name,
       });
-      await load(true);
+      setOperatorsPage(1);
+      await load(1, true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Не удалось создать оператора");
     } finally {
@@ -267,20 +319,24 @@ export default function AdminOperatorsPage() {
     }
   }
 
-  async function handleArchiveToggle(restore: boolean) {
-    if (!editTarget) return;
+  function requestArchiveToggle(operator: OperatorManageItem, restore: boolean) {
+    setArchiveConfirm({ operator, restore });
+  }
+
+  async function confirmArchiveToggle() {
+    if (!archiveConfirm) return;
+    const { operator, restore } = archiveConfirm;
     const label = restore ? "восстановить" : "архивировать";
-    const ok = window.confirm(
-      restore
-        ? `Восстановить оператора «${displayName(editTarget)}»?`
-        : `Архивировать оператора «${displayName(editTarget)}»? Вход будет заблокирован.`,
-    );
-    if (!ok) return;
     setBusy(true);
     try {
-      const updated = await updateOperator(editTarget.id, { is_active: restore });
+      const updated = await updateOperator(operator.id, { is_active: restore });
       patchRow(updated);
-      await load(true);
+      setArchiveConfirm(null);
+      if (editTarget?.id === operator.id) {
+        setEditTarget(updated);
+        if (!restore) setEditTarget(null);
+      }
+      await load(operatorsPage, true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : `Не удалось ${label} оператора`);
     } finally {
@@ -342,6 +398,31 @@ export default function AdminOperatorsPage() {
             showOpenTickets
             onEdit={setEditTarget}
           />
+
+          {operatorsPagination.total > OPERATORS_MANAGE_PER_PAGE ? (
+            <div className="ch-pager op-admin-pager">
+              <button
+                type="button"
+                className="ch-page-btn"
+                disabled={operatorsPage <= 1 || loading}
+                onClick={() => setOperatorsPage((p) => Math.max(1, p - 1))}
+              >
+                Назад
+              </button>
+              <span className="ch-page-info">
+                Стр. {operatorsPagination.page} / {operatorsPagination.total_pages} · всего{" "}
+                {operatorsPagination.total}
+              </span>
+              <button
+                type="button"
+                className="ch-page-btn"
+                disabled={operatorsPage >= operatorsPagination.total_pages || loading}
+                onClick={() => setOperatorsPage((p) => p + 1)}
+              >
+                Вперёд
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -372,8 +453,25 @@ export default function AdminOperatorsPage() {
         }}
         onSaveName={handleSaveName}
         onSavePassword={handleResetPassword}
-        onArchive={() => handleArchiveToggle(false)}
-        onRestore={() => handleArchiveToggle(true)}
+        onArchive={() => {
+          if (editTarget) requestArchiveToggle(editTarget, false);
+        }}
+        onRestore={() => {
+          if (editTarget) requestArchiveToggle(editTarget, true);
+        }}
+      />
+
+      <OperatorArchiveConfirmModal
+        open={Boolean(archiveConfirm)}
+        operatorName={archiveConfirm ? displayName(archiveConfirm.operator) : ""}
+        operatorLogin={archiveConfirm?.operator.login || ""}
+        restore={archiveConfirm?.restore ?? false}
+        openTicketsCount={archiveConfirm?.operator.open_tickets_count ?? 0}
+        busy={busy}
+        onClose={() => {
+          if (!busy) setArchiveConfirm(null);
+        }}
+        onConfirm={() => void confirmArchiveToggle()}
       />
     </div>
   );

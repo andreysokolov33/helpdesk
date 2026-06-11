@@ -3,43 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { loginRequest } from "@/api/auth";
 import { brandLogoSrc } from "@/brandLogos";
 import { useTheme } from "@/theme/ThemeContext";
-import { themeComfortIcon } from "@/themeIcons";
-import { nextTheme, themeToggleHint, type AppTheme } from "@/theme/themeMeta";
+import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
+import { themeToggleHint } from "@/theme/themeMeta";
 import styles from "./LoginPage.module.css";
-
-function IconMoon() {
-  return (
-    <svg className={styles.themeGlyph} viewBox="0 0 24 24" aria-hidden>
-      <path
-        fill="currentColor"
-        d="M21.64 13a1 1 0 0 0-1.05-.14 8.05 8.05 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.28 1 1 0 0 0-.36-1.64Z"
-      />
-    </svg>
-  );
-}
-
-function IconSun() {
-  return (
-    <svg className={styles.themeGlyph} viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
-      <path
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
-      />
-    </svg>
-  );
-}
-
-function ThemeCycleIcon({ theme }: { theme: AppTheme }) {
-  const next = nextTheme(theme);
-  if (next === "dark") return <IconMoon />;
-  if (next === "comfort") {
-    return <img className={styles.themeGlyph} src={themeComfortIcon} width={22} height={22} alt="" />;
-  }
-  return <IconSun />;
-}
 
 function IconLock() {
   return (
@@ -111,7 +77,15 @@ export default function LoginPage() {
           title={themeToggleHint(theme)}
           aria-label={themeToggleHint(theme)}
         >
-          <ThemeCycleIcon theme={theme} />
+          <span className={`${styles.themeFade} ${theme === "light" ? styles.themeFadeOn : ""}`}>
+            <img className={styles.themeIcon} src={themeSunIcon} width={22} height={22} alt="" />
+          </span>
+          <span className={`${styles.themeFade} ${theme === "comfort" ? styles.themeFadeOn : ""}`}>
+            <img className={styles.themeIcon} src={themeComfortIcon} width={22} height={22} alt="" />
+          </span>
+          <span className={`${styles.themeFade} ${theme === "dark" ? styles.themeFadeOn : ""}`}>
+            <img className={styles.themeIcon} src={themeMoonIcon} width={22} height={22} alt="" />
+          </span>
         </button>
       </header>
 

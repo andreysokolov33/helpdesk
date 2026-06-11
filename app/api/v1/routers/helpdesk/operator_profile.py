@@ -37,19 +37,27 @@ async def operator_ticket_month_stats(
 
 @router.post("/me/presence", status_code=204)
 async def operator_presence_heartbeat(
+    db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> None:
     """Пульс активности вкладки (онлайн-статус оператора)."""
-    await ops_admin_svc.touch_presence(int(user["user_id"]))
+    await ops_admin_svc.touch_presence(db, int(user["user_id"]))
 
 
 @router.get("/manage", response_model=OperatorManageListResponse)
 async def operators_manage_list(
+    page: int = Query(1, ge=1, description="Страница списка операторов"),
+    per_page: int = Query(
+        ops_admin_svc.OPERATORS_MANAGE_PER_PAGE_DEFAULT,
+        ge=1,
+        le=100,
+        description="Операторов на странице",
+    ),
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> OperatorManageListResponse:
     await ops_admin_svc.require_support_admin(db, user)
-    data = await ops_admin_svc.fetch_operators_manage(db)
+    data = await ops_admin_svc.fetch_operators_manage(db, page=page, per_page=per_page)
     return OperatorManageListResponse(**data)
 
 

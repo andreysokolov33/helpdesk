@@ -9,6 +9,7 @@ import { fetchChatUnread } from "@/api/chat";
 import { ticketsListPollDelayMs } from "@/utils/ticketsListPoll";
 import { getBellUnreadCount, MOCK_NOTIFS } from "@/data/mockCc";
 import { useTheme } from "@/theme/ThemeContext";
+import LogoutConfirmModal from "@/components/LogoutConfirmModal";
 import { themeToggleHint } from "@/theme/themeMeta";
 
 type TabDef = {
@@ -49,6 +50,8 @@ function IconUser() {
 export default function DashboardShell() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [ticketsUnread, setTicketsUnread] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
@@ -177,15 +180,17 @@ export default function DashboardShell() {
   }, []);
 
   async function performLogout() {
-    await logoutRequest().catch(() => {});
-    window.location.href = "/login";
+    setLogoutBusy(true);
+    try {
+      await logoutRequest().catch(() => {});
+      window.location.href = "/login";
+    } finally {
+      setLogoutBusy(false);
+    }
   }
 
   function requestLogout() {
-    const ok = window.confirm(
-      "Выйти из Helpdesk? Текущая сессия будет завершена, потребуется войти снова.",
-    );
-    if (ok) void performLogout();
+    setLogoutOpen(true);
   }
 
   return (
@@ -333,6 +338,17 @@ export default function DashboardShell() {
         ))}
       </div>
       <Outlet key={location.pathname} />
+
+      <LogoutConfirmModal
+        open={logoutOpen}
+        userName={userHead.title}
+        userLogin={userHead.login}
+        busy={logoutBusy}
+        onClose={() => {
+          if (!logoutBusy) setLogoutOpen(false);
+        }}
+        onConfirm={() => void performLogout()}
+      />
     </div>
   );
 }

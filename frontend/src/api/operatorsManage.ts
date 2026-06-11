@@ -7,6 +7,7 @@ export type OperatorManageItem = {
   is_online: boolean;
   level: number | null;
   open_tickets_count: number;
+  last_activity: string | null;
 };
 
 export type OperatorManageStats = {
@@ -14,11 +15,21 @@ export type OperatorManageStats = {
   online_count: number;
 };
 
+export type OperatorManagePagination = {
+  page: number;
+  per_page: number;
+  total: number;
+  total_pages: number;
+};
+
 export type OperatorManageList = {
   admins: OperatorManageItem[];
   operators: OperatorManageItem[];
   stats: OperatorManageStats;
+  operators_pagination: OperatorManagePagination;
 };
+
+export const OPERATORS_MANAGE_PER_PAGE = 15;
 
 async function parseError(res: Response): Promise<string> {
   const data = (await res.json().catch(() => ({}))) as { detail?: string | { msg?: string }[] };
@@ -27,8 +38,14 @@ async function parseError(res: Response): Promise<string> {
   return `HTTP ${res.status}`;
 }
 
-export async function fetchOperatorsManage(): Promise<OperatorManageList> {
-  const res = await fetch("/api/v1/helpdesk/operators/manage", {
+export async function fetchOperatorsManage(params?: {
+  page?: number;
+  per_page?: number;
+}): Promise<OperatorManageList> {
+  const q = new URLSearchParams();
+  q.set("page", String(params?.page ?? 1));
+  q.set("per_page", String(params?.per_page ?? OPERATORS_MANAGE_PER_PAGE));
+  const res = await fetch(`/api/v1/helpdesk/operators/manage?${q}`, {
     method: "GET",
     credentials: "include",
   });

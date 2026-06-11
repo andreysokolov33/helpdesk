@@ -76,11 +76,13 @@
 }
 
 .themeBtn {
+  position: relative;
   width: 44px;
   height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
@@ -111,9 +113,31 @@
   border-color: rgba(255, 19, 0, 0.35);
 }
 
-.themeGlyph {
+.themeFade {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.88);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  pointer-events: none;
+}
+
+.themeFadeOn {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.themeIcon {
   width: 22px;
   height: 22px;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .main {

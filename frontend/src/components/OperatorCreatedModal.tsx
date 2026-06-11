@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type OperatorCredsVariant = "created" | "password";
 
@@ -11,7 +11,9 @@ type Props = {
   onClose: () => void;
 };
 
-type CopiedField = "login" | "password" | "all" | null;
+export function formatOperatorCredentialsText(login: string, password: string): string {
+  return `Логин: ${login}\nПароль: ${password}`;
+}
 
 export default function OperatorCreatedModal({
   open,
@@ -21,27 +23,30 @@ export default function OperatorCreatedModal({
   fullName,
   onClose,
 }: Props) {
-  const [copied, setCopied] = useState<CopiedField>(null);
+  const [copied, setCopied] = useState(false);
+
+  const credentialsText = useMemo(
+    () => formatOperatorCredentialsText(login, password),
+    [login, password],
+  );
 
   useEffect(() => {
-    if (!open) setCopied(null);
+    if (!open) setCopied(false);
   }, [open]);
 
   if (!open) return null;
 
   const title = variant === "created" ? "Оператор создан" : "Пароль изменён";
 
-  async function copyText(text: string, field: CopiedField) {
+  async function copyCredentials() {
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(field);
-      window.setTimeout(() => setCopied(null), 2000);
+      await navigator.clipboard.writeText(credentialsText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
       /* clipboard may be unavailable */
     }
   }
-
-  const allText = `Логин: ${login}\nПароль: ${password}`;
 
   return (
     <div
@@ -67,34 +72,17 @@ export default function OperatorCreatedModal({
         </div>
         <div className="clf-bd">
           <p className="op-admin-hint op-admin-hint--warn">
-            Скопируйте логин и пароль сейчас — больше они не отобразятся.
+            Скопируйте данные сейчас — больше они не отобразятся.
           </p>
 
-          <label className="clf-lbl" htmlFor="op-created-login">
-            Логин
-          </label>
-          <div className="op-admin-cred-row">
-            <input id="op-created-login" className="clf-inp op-admin-pwd" readOnly value={login} />
-            <button type="button" className="clf-btn sec" onClick={() => void copyText(login, "login")}>
-              {copied === "login" ? "Скопировано" : "Копировать"}
-            </button>
-          </div>
+          <pre className="op-admin-cred-pre">{credentialsText}</pre>
 
-          <label className="clf-lbl" htmlFor="op-created-pwd">
-            Пароль
-          </label>
-          <div className="op-admin-cred-row">
-            <input id="op-created-pwd" className="clf-inp op-admin-pwd" readOnly value={password} />
-            <button type="button" className="clf-btn sec" onClick={() => void copyText(password, "password")}>
-              {copied === "password" ? "Скопировано" : "Копировать"}
-            </button>
-          </div>
-        </div>
-        <div className="clf-ft op-admin-created-ft">
-          <button type="button" className="clf-btn sec" onClick={() => void copyText(allText, "all")}>
-            {copied === "all" ? "Скопировано" : "Скопировать всё"}
+          <button type="button" className="clf-btn pri op-admin-cred-copy" onClick={() => void copyCredentials()}>
+            {copied ? "Скопировано" : "Копировать в буфер"}
           </button>
-          <button type="button" className="clf-btn pri" onClick={onClose}>
+        </div>
+        <div className="clf-ft">
+          <button type="button" className="clf-btn sec" onClick={onClose}>
             Готово
           </button>
         </div>
