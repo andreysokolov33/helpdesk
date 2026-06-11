@@ -125,6 +125,96 @@
   text-align: left;
 }
 
+/* ——— База знаний (/kb) ——— */
+.kb-page__title {
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+
+.kb-page .kbst {
+  color: var(--ink);
+}
+
+.kb-page .kbi:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.kb-page .kbid a {
+  color: var(--ok);
+}
+
+[data-theme="dark"] .kb-page .kbid a {
+  color: #9fd0ff;
+}
+
+/* ——— Обучение (/train) ——— */
+.train-page__title {
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+
+.train-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.train-card {
+  background: var(--p);
+  border: 1.5px solid var(--ln);
+  border-radius: var(--r);
+  padding: 16px;
+  transition: border-color var(--a), transform var(--a), background var(--a);
+  cursor: pointer;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+  color: inherit;
+  font: inherit;
+}
+
+.train-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--ok);
+}
+
+.train-card:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.train-icon {
+  font-size: 24px;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+
+.train-title {
+  font-size: 14px;
+  font-weight: 800;
+  margin-bottom: 4px;
+  color: var(--ink);
+}
+
+.train-desc {
+  font-size: 11px;
+  color: var(--i3);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.train-duration {
+  font-size: 9px;
+  color: var(--ok);
+  font-weight: 600;
+}
+
 /* ——— Регистрация звонка (/call) ——— */
 .call-page {
   background: linear-gradient(180deg, var(--obg) 0%, transparent 220px);

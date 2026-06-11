@@ -32,6 +32,7 @@ const tabs: TabDef[] = [
   { to: "/chat", label: "Чат" },
   { to: "/stats", label: "Статистика" },
   { to: "/kb", label: "База знаний" },
+  { to: "/train", label: "Обучение" },
 ];
 
 function IconUser() {

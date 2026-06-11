@@ -9,9 +9,9 @@ export default function KbTab() {
   }
 
   return (
-    <div className="tp on">
+    <div className="tp on kb-page">
       <div className="pg">
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>База знаний</div>
+        <div className="kb-page__title">База знаний</div>
         {MOCK_KB_SECTIONS.map((sec) => (
           <div key={sec.title} className="kbsec">
             <div className="kbst">{sec.title}</div>

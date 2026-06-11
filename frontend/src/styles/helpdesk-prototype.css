@@ -664,8 +664,8 @@ h1,h2,h3,h4,h5,h6,.up-title,.ch-list-title,.ct,.ttl,.mlt,.clf-hd-t,.sr-line-titl
 .mfd{background:var(--obg);border:1.5px solid var(--ok);border-radius:var(--rs);padding:8px 10px;display:none;gap:6px}.mfd.vis{display:flex}
 .pri2{padding:7px 10px;border-radius:var(--rs);font-size:10px;font-weight:600;display:none}.pri2.vis{display:block}.pri2.hi{background:var(--rbg);color:var(--red)}.pri2.mi{background:var(--wbg);color:var(--wn)}.pri2.lo{background:var(--obg);color:var(--ok)}
 .kbsec{margin-bottom:12px}.kbst{font-size:12px;font-weight:700;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid var(--ln)}
-.kbi{padding:8px 10px;border:1px solid var(--ln);border-radius:var(--rs);margin-bottom:4px;cursor:pointer;transition:all var(--a)}.kbi:hover{background:var(--bg)}.kbi.open{border-color:var(--rsf);background:var(--rbg)}
-.kbit{font-size:11px;font-weight:600;margin-bottom:1px}.kbid{font-size:10px;color:var(--i3);line-height:1.5;display:none}.kbi.open .kbid{display:block}
+.kbi{padding:8px 10px;border:1px solid var(--ln);border-radius:var(--rs);margin-bottom:4px;cursor:pointer;transition:all var(--a);background:var(--p);color:var(--ink);appearance:none;-webkit-appearance:none}.kbi:hover{background:var(--bg)}.kbi.open{border-color:var(--rsf);background:var(--rbg)}
+.kbit{font-size:11px;font-weight:600;margin-bottom:1px;color:var(--ink)}.kbid{font-size:10px;color:var(--i2);line-height:1.5;display:none}.kbi.open .kbid{display:block}.kbid strong{color:var(--ink);font-weight:700}.kbid ol{padding-left:18px;margin:6px 0}.kbid li{margin-bottom:3px}
 /* DIAGNOSTICS */
 .diag-btn{height:26px;padding:0 10px;border-radius:5px;border:1.5px solid var(--red);background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:var(--red);display:flex;align-items:center;gap:5px;transition:all var(--a);white-space:nowrap}.diag-btn:hover{background:var(--red);color:#fff}.diag-btn.running{background:var(--red);color:#fff;pointer-events:none;animation:diagPulse 1.2s infinite}.diag-btn svg{flex-shrink:0}
 @keyframes diagPulse{0%,100%{opacity:1}50%{opacity:.6}}

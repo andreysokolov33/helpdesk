@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiFi Точка — КЦ</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--f:'Manrope',system-ui,sans-serif;--nh:46px;--r:10px;--rs:7px;--a:180ms ease}
+[data-theme="light"]{--bg:#F4F4F1;--p:#FFF;--ln:#E2E2DC;--lm:#D0D0C8;--ink:#0A1E36;--i2:#3D5068;--i3:#7A8B9A;--red:#FF1300;--rdk:#D41000;--rbg:#FFF0EE;--rsf:#FFDAD6;--ok:#1B5299;--obg:#EAF2F9;--wn:#B86E10;--wbg:#FDF3E0;--nbg:rgba(10,30,54,.06);--sh:0 2px 8px rgba(10,30,54,.08);--shl:0 8px 30px rgba(10,30,54,.12);--nvb:#FFF;--tp:#0A1E36;--tc:#fff}
+[data-theme="dark"]{--bg:#0A1E36;--p:#11283F;--ln:#1C3550;--lm:#274562;--ink:#E8EDF2;--i2:#9CB0C4;--i3:#5E7B94;--red:#FF1300;--rdk:#FF4433;--rbg:rgba(255,19,0,.1);--rsf:rgba(255,19,0,.18);--ok:#F0A830;--obg:rgba(240,168,48,.1);--wn:#F0A050;--wbg:rgba(240,160,80,.1);--nbg:rgba(255,255,255,.04);--sh:0 2px 8px rgba(0,0,0,.3);--shl:0 8px 30px rgba(0,0,0,.4);--nvb:#0E2438;--tp:#E8EDF2;--tc:#0A1E36}
+html,body{height:100%;font-family:var(--f);font-size:14px;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+*{scrollbar-width:thin;scrollbar-color:var(--lm) transparent}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--lm);border-radius:3px}
+button,input,select,textarea{font-family:var(--f);color:var(--ink)}
+.view{display:none;height:100%}.view.active{display:flex;flex-direction:column}
+
+/* NAV */
+.nav{height:var(--nh);background:var(--nvb);border-bottom:1px solid var(--ln);display:flex;align-items:center;padding:0 16px;gap:8px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:2px;flex-shrink:0}
+.logo-wifi{font-size:14px;font-weight:800;color:var(--ink);letter-spacing:.5px}
+.logo-tochka{font-size:14px;font-weight:800;color:var(--ink);letter-spacing:.5px}
+.logo-mark{width:26px;height:26px;flex-shrink:0;margin:0 2px}
+.nr{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ib{width:30px;height:30px;border-radius:var(--rs);border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;transition:background var(--a)}.ib:hover{background:var(--rbg)}.ib svg{color:var(--red)}
+.ib .dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--red);border:2px solid var(--nvb)}
+.tb{height:26px;padding:0 8px;border-radius:5px;border:1px solid var(--ln);background:var(--p);font-size:11px;font-weight:500;color:var(--i3);cursor:pointer;transition:all var(--a)}.tb:hover{color:var(--ink)}
+.ndd{position:absolute;top:36px;right:0;width:280px;background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);box-shadow:var(--shl);z-index:200;display:none;overflow:hidden}.ndd.open{display:block}
+.ndh{padding:8px 12px;border-bottom:1px solid var(--ln);font-size:10px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.5px}
+.ndi{padding:8px 12px;border-bottom:1px solid var(--ln);font-size:11px;line-height:1.5;cursor:pointer}.ndi:hover{background:var(--bg)}.ndi:last-child{border:none}
+.ndt{font-size:9px;color:var(--i3);margin-top:2px}
+.user-block{display:flex;align-items:center;gap:10px;background:var(--bg);padding:4px 8px 4px 4px;border-radius:30px;border:1px solid var(--ln)}
+.user-avatar{width:28px;height:28px;border-radius:50%;background:var(--ok);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:white}
+.user-name{font-size:12px;font-weight:600;color:var(--ink)}
+.user-role{font-size:9px;color:var(--i3)}
+
+/* TABS */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--ln);background:var(--nvb);flex-shrink:0;padding:0 16px}
+.tab{height:34px;padding:0 11px;border:none;border-bottom:2px solid transparent;background:none;font-size:12px;font-weight:500;color:var(--i3);cursor:pointer;transition:all var(--a);display:flex;align-items:center;gap:4px;margin-bottom:-1px}
+.tab:hover{color:var(--ink)}.tab.on{color:var(--red);border-bottom-color:var(--red);font-weight:700}
+.tab .c{font-size:9px;font-weight:700;background:var(--ln);color:var(--i3);padding:1px 5px;border-radius:7px}.tab.on .c{background:var(--rbg);color:var(--red)}
+.tp{display:none;flex:1;overflow-y:auto;padding:18px}.tp.on{display:block}
+.pg{display:flex;flex-direction:column;gap:12px;max-width:1300px;margin:0 auto}
+
+/* SHARED */
+.card{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:16px 18px}
+.ct{font-size:14px;font-weight:700;margin-bottom:3px}.cs2{font-size:11px;color:var(--i3);margin-bottom:10px}
+.mc{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:14px 16px;transition:all var(--a)}.mc:hover{box-shadow:var(--sh);transform:translateY(-1px)}
+.ml{font-size:10px;color:var(--i3);margin-bottom:5px;display:flex;align-items:center;gap:3px}
+.mv{font-size:22px;font-weight:800;line-height:1;margin-bottom:3px;letter-spacing:-.3px}
+.mv.red{color:var(--red)}.mv.ok{color:var(--ok)}.mv.wn{color:var(--wn)}.mv.nv{color:var(--ink)}
+.tag{font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.tn{background:var(--rbg);color:var(--red)}.tw{background:var(--wbg);color:var(--wn)}.tk{background:var(--nbg);color:var(--i2)}.td{background:var(--obg);color:var(--ok)}
+.tl{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--rs);padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all var(--a)}.tl:hover{border-color:var(--lm);transform:translateX(2px)}
+.tln{font-size:11px;font-weight:700;color:var(--i3);width:36px}.tld{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.tlnm{font-size:12px;font-weight:600;flex:1}.tltp{font-size:11px;color:var(--i2);flex:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tlt{font-size:10px;color:var(--i3);white-space:nowrap}
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--red);display:inline-block;animation:p 1.5s infinite}@keyframes p{0%,100%{opacity:1}50%{opacity:.3}}
+.ug{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:12px 14px;cursor:pointer;transition:all var(--a);position:relative;overflow:hidden}.ug::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red)}.ug:hover{border-color:var(--rsf);box-shadow:var(--sh);transform:translateY(-2px)}
+.sw{position:relative}.si{width:100%;height:40px;border:1.5px solid var(--ln);border-radius:20px;padding:0 14px 0 36px;font-size:13px;color:var(--ink);outline:none;background:var(--p);transition:all var(--a)}.si:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(255,19,0,.06)}.si::placeholder{color:var(--i3)}
+.sic{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--i3);pointer-events:none}
+.sd{position:absolute;top:48px;left:0;right:0;background:var(--p);border:1.5px solid var(--lm);border-radius:var(--r);box-shadow:var(--shl);z-index:100;display:none;max-height:380px;overflow-y:auto}.sd.vis{display:block}
+.kbc{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:20px;display:none;position:relative;margin:0 0 12px}.kbc.vis{display:block}
+.kbc-t{font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.kbc-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--rbg);color:var(--red)}
+.kbc-b{font-size:12px;line-height:1.8;color:var(--i2)}.kbc-b ol{padding-left:18px;margin:6px 0}.kbc-b li{margin-bottom:3px}.kbc-b strong{color:var(--ink);font-weight:700}
+.kbc-x{position:absolute;top:10px;right:10px;width:26px;height:26px;border-radius:5px;border:1px solid var(--ln);background:var(--p);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--i3)}.kbc-x:hover{background:var(--rbg);color:var(--red)}
+
+/* TRAINING CARDS */
+.train-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:8px}
+.train-card{background:var(--p);border:1.5px solid var(--ln);border-radius:var(--r);padding:16px;transition:all var(--a);cursor:pointer}.train-card:hover{box-shadow:var(--sh);transform:translateY(-2px);border-color:var(--ok)}
+.train-icon{font-size:24px;margin-bottom:8px}.train-title{font-size:14px;font-weight:800;margin-bottom:4px}.train-desc{font-size:11px;color:var(--i3);margin-bottom:8px}.train-duration{font-size:9px;color:var(--ok);font-weight:600}
+.lb{font-size:11px;font-weight:600;color:var(--red);cursor:pointer;background:none;border:none}.lb:hover{text-decoration:underline}
+.dt{width:100%;border-collapse:collapse;font-size:12px}
+.dt th{text-align:left;font-size:9px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.4px;padding:0 6px 7px 0;border-bottom:1px solid var(--ln)}
+.dt td{padding:8px 6px 8px 0;border-bottom:1px solid var(--ln);vertical-align:middle}.dt tr:last-child td{border-bottom:none}
+
+/* MODAL */
+.mo{position:fixed;inset:0;background:rgba(10,30,54,.5);display:none;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(2px)}.mo.open{display:flex}
+.ml2{background:var(--p);border-radius:var(--r);width:450px;max-height:85vh;overflow-y:auto;box-shadow:var(--shl);animation:su .2s ease}
+@keyframes su{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.mlh{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--ln)}.mlt{font-size:14px;font-weight:700}
+.mlx{width:26px;height:26px;border-radius:5px;border:1px solid var(--ln);background:var(--p);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--i3)}.mlx:hover{background:var(--rbg);color:var(--red)}
+.mlb{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.mf{display:flex;flex-direction:column;gap:3px}.mfl{font-size:11px;font-weight:700;color:var(--i2)}
+.mi2{height:36px;border:1.5px solid var(--ln);border-radius:var(--rs);padding:0 10px;font-size:12px;background:var(--bg);outline:none}.mi2:focus{border-color:var(--red);background:var(--p)}
+.mta2{height:70px;border:1.5px solid var(--ln);border-radius:var(--rs);padding:7px 10px;font-size:12px;background:var(--bg);outline:none;resize:none;line-height:1.5}
+.mfd{background:var(--obg);border:1.5px solid var(--ok);border-radius:var(--rs);padding:8px 10px;display:none;gap:6px}.mfd.vis{display:flex}
+.btn-sec{background:var(--bg);border:1.5px solid var(--ln);border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600;color:var(--i2);cursor:pointer}.btn-sec:hover{background:var(--nbg)}
+.btn-pri{background:var(--ok);border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;color:white;cursor:pointer}.btn-pri:hover{opacity:.9}
+</style>
+</head>
+<body>
+
+<div class="view" id="loginView"><div style="display:flex;align-items:center;justify-content:center;min-height:100vh">
+<div class="card" style="width:360px;padding:30px 34px;border-radius:14px;box-shadow:var(--shl)">
+  <div style="display:flex;align-items:center;justify-content:center;gap:2px;margin-bottom:22px"><span style="font-size:16px;font-weight:800;color:var(--ink)">WIFI</span><svg width="28" height="28" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="var(--red)"/><path d="M50 15 C30 15 15 35 20 55 C22 62 30 70 40 72 C35 60 33 48 38 38 C43 28 50 25 50 25 C50 25 43 35 45 50 C47 62 55 72 55 72 C55 72 48 65 47 55 C46 48 50 42 55 38 C60 34 65 38 65 48 C65 58 58 68 50 72 C62 70 72 60 75 50 C78 38 70 20 50 15Z" fill="#0A1E36"/><circle cx="52" cy="58" r="6" fill="#0A1E36"/></svg><span style="font-size:16px;font-weight:800;color:var(--ink)">ТОЧКА</span></div>
+  <div style="font-size:17px;font-weight:700;text-align:center;margin-bottom:18px">Вход</div>
+  <div style="margin-bottom:8px"><input class="mi2" style="width:100%" type="email" id="loginEmail" placeholder="Email"></div>
+  <div style="margin-bottom:8px"><input class="mi2" style="width:100%" type="password" id="loginPass" placeholder="Пароль" onkeydown="if(event.key==='Enter')doLogin()"></div>
+  <button onclick="doLogin()" style="width:100%;height:40px;border:none;border-radius:var(--rs);background:var(--red);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Войти</button>
+  <div id="loginError" style="font-size:10px;color:var(--red);text-align:center;min-height:14px;margin-top:5px"></div>
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--ln)"><div class="tl" style="padding:5px 8px" onclick="qL()"><span class="tag tn">КЦ демо</span><span style="font-size:10px;color:var(--i2);flex:1">cc@wifitochka.ru</span><span style="color:var(--i3)">→</span></div></div>
+</div></div></div>
+
+<!-- CC -->
+<div class="view" id="ccView">
+<nav class="nav">
+  <div class="logo"><span class="logo-wifi">WIFI</span><svg class="logo-mark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="var(--red)"/><path d="M50 15 C30 15 15 35 20 55 C22 62 30 70 40 72 C35 60 33 48 38 38 C43 28 50 25 50 25 C50 25 43 35 45 50 C47 62 55 72 55 72 C55 72 48 65 47 55 C46 48 50 42 55 38 C60 34 65 38 65 48 C65 58 58 68 50 72 C62 70 72 60 75 50 C78 38 70 20 50 15Z" fill="var(--nvb)"/><circle cx="52" cy="58" r="6" fill="var(--nvb)"/></svg><span class="logo-tochka">ТОЧКА</span></div>
+  <div class="nr">
+    <button class="ib" onclick="toggleN()" id="bellB"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 2a5 5 0 00-5 5v3l-1.5 2.5h13L15 10V7a5 5 0 00-5-5z"/><path d="M8 16.5a2 2 0 004 0"/></svg><span class="dot"></span><div class="ndd" id="ndd"><div class="ndh">Уведомления</div><div class="ndi" onclick="goChat(301,'Карекин П.А.','Не удается подключиться','new')"><span style="color:var(--red)">●</span> Карекин П.А. — 47 мин<div class="ndt">2 мин назад</div></div><div class="ndi" onclick="goChat(300,'Иванова О.Н.','Сменить тариф','new')"><span style="color:var(--red)">●</span> Иванова О.Н.<div class="ndt">12 мин назад</div></div></div></button>
+    <button class="ib" onclick="toggleTheme()"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.3 11.3A8 8 0 118.7 2.7a6 6 0 008.6 8.6z"/></svg></button>
+    <div class="user-block">
+      <div class="user-avatar">СА</div>
+      <div><div class="user-name">Светлана А.</div><div class="user-role">оператор КЦ</div></div>
+    </div>
+    <button class="tb" onclick="logout()">Выйти</button>
+  </div>
+</nav>
+
+<div class="tabs" id="ccT">
+  <button class="tab on" onclick="goTab('home',this)">Главная</button>
+  <button class="tab" onclick="goTab('call',this)">Регистрация звонка</button>
+  <button class="tab" onclick="goTab('chats',this)">Чат <span class="c">5</span></button>
+  <button class="tab" onclick="goTab('stats',this)">Статистика</button>
+  <button class="tab" onclick="goTab('kb',this)">База знаний</button>
+  <button class="tab" onclick="goTab('train',this)">Обучение</button>
+</div>
+
+<!-- HOME -->
+<div class="tp on" id="tp-home"><div class="pg">
+  <div style="text-align:center;padding:8px 0 4px"><div style="font-size:17px;font-weight:800;margin-bottom:10px">Найдите <span style="color:var(--red)">абонента</span> или ответ в <span style="color:var(--red)">базе знаний</span></div>
+  <div class="sw" style="max-width:620px;margin:0 auto"><input class="si" type="text" id="mainSearch" placeholder="ФИО, ID, адрес · или запрос: «платёж не пришёл», «перезагрузка роутера»…" oninput="uniS(this.value)" onkeydown="if(event.key==='Enter')enterS()" autocomplete="off"><svg class="sic" width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M14 14l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div class="sd" id="mainDrop"></div></div></div>
+  <div class="kbc" id="kbCard"><button class="kbc-x" onclick="this.parentElement.classList.remove('vis')">×</button><div class="kbc-t" id="kbcT"></div><div class="kbc-b" id="kbcB"></div></div>
+  <p style="font-size:12px;color:var(--i2);text-align:center">Сегодня <strong style="color:var(--ink)">10 заявок</strong> — <span style="color:var(--red);font-weight:600">2 ждут ответа</span></p>
+  <div><div style="font-size:10px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px">Ждут ответа</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="ug" onclick="goChat(301,'Карекин П.А.','Не удается подключиться','new')"><div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:3px;display:flex;align-items:center;gap:3px"><div class="pulse"></div> 47 мин <span class="tag tn" style="margin-left:3px">Превышено</span></div><div style="font-size:12px;font-weight:700;margin-bottom:2px">Карекин П.А.</div><div style="font-size:10px;color:var(--i2)">Не удается подключиться</div><div style="display:inline-flex;margin-top:7px;font-size:10px;font-weight:700;color:var(--red);background:var(--rbg);border-radius:4px;padding:2px 7px">Ответить →</div></div>
+    <div class="ug" onclick="goChat(300,'Иванова О.Н.','Сменить тариф','new')"><div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:3px;display:flex;align-items:center;gap:3px"><div class="pulse"></div> 32 мин</div><div style="font-size:12px;font-weight:700;margin-bottom:2px">Иванова О.Н.</div><div style="font-size:10px;color:var(--i2)">Сменить тариф</div><div style="display:inline-flex;margin-top:7px;font-size:10px;font-weight:700;color:var(--red);background:var(--rbg);border-radius:4px;padding:2px 7px">Ответить →</div></div>
+  </div></div>
+  <div><div style="font-size:10px;font-weight:700;color:var(--i3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px">Открытые заявки</div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <div class="tl" onclick="goChat(302,'Соколовчик А.П.','Посмотреть расходы','wait')"><div class="tln">#302</div><div class="tld" style="background:var(--wn)"></div><div class="tlnm">Соколовчик А.П.</div><div class="tltp">Посмотреть расходы</div><span class="tag tw">Ожидание</span><div class="tlt">Вчера 14:03</div></div>
+    <div class="tl" onclick="goChat(298,'Жаркова М.В.','Не помню пароль','work')"><div class="tln">#298</div><div class="tld" style="background:var(--i2)"></div><div class="tlnm">Жаркова М.В.</div><div class="tltp">Не помню пароль</div><span class="tag tk">В работе</span><div class="tlt">Сегодня 11:20</div></div>
+    <div class="tl" onclick="goChat(297,'Петров И.С.','Медленная скорость','work')"><div class="tln">#297</div><div class="tld" style="background:var(--i2)"></div><div class="tlnm">Петров И.С.</div><div class="tltp">Медленная скорость</div><span class="tag tk">В работе</span><div class="tlt">Сегодня 10:45</div></div>
+  </div></div>
+  <div class="card"><div class="ct">Низкие оценки</div><div class="cs2">Рекомендуется связаться повторно</div>
+    <table class="dt"><thead><tr><th>Клиент</th><th>Причина</th><th>Оценка</th><th>Дата</th><th></th></tr></thead><tbody>
+      <tr><td><strong>Иванова О.Н.</strong></td><td style="color:var(--i2)">Долгое ожидание</td><td style="color:var(--red);font-weight:700">1</td><td style="color:var(--i3)">28 мар</td><td><button class="lb" onclick="openW('Иванова О.Н.','#300')">Написать</button></td></tr>
+      <tr><td><strong>Максимов А.В.</strong></td><td style="color:var(--i2)">40 мин ожидания</td><td style="color:var(--wn);font-weight:700">2</td><td style="color:var(--i3)">27 мар</td><td><button class="lb" onclick="openW('Максимов А.В.','#295')">Написать</button></td></tr>
+    </tbody></table>
+  </div>
+</div></div>
+
+<!-- CALL (без красного цвета) -->
+<div class="tp" id="tp-call"><div class="pg" style="max-width:600px">
+  <div style="font-size:16px;font-weight:800;margin-bottom:8px">Регистрация звонка</div>
+  <div style="font-size:11px;color:var(--i3);background:var(--bg);padding:8px 12px;border-radius:var(--rs);border:1px solid var(--ln);margin-bottom:16px">Входящие звонки 8-800. Категория обращения выбирается при завершении заявки.</div>
+  <div class="mf"><div class="mfl">1. Абонент</div><input class="mi2" style="width:100%" type="text" id="callS" placeholder="ФИО, ID, адрес…" oninput="callSFn(this.value)"><div class="mfd" id="callF"><div><div style="font-size:12px;font-weight:700" id="callFN"></div><div style="font-size:10px;color:var(--i2)" id="callFM"></div></div></div></div>
+  <div class="mf"><div class="mfl">2. Что говорит клиент</div><textarea class="mta2" style="width:100%;height:80px" id="callDesc" placeholder="С утра нет интернета, не загружается страница авторизации…"></textarea></div>
+  <div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-sec" onclick="goTab('home',document.querySelector('#ccT .tab'))">Отмена</button><button class="btn-pri" onclick="submitCall2()">Создать заявку</button></div>
+</div></div>
+
+<!-- CHATS (упрощённо) -->
+<div class="tp" id="tp-chats"><div class="pg">
+  <div style="font-size:16px;font-weight:800;margin-bottom:8px">Диалоги</div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <div class="tl" onclick="goChat(301,'Карекин П.А.','Не удается подключиться','new')"><div class="tln">#301</div><div class="tld" style="background:var(--red)"></div><div class="tlnm">Карекин П.А.</div><div class="tltp">Не удается подключиться</div><span class="tag tn">Новая</span><div class="tlt">47 мин</div></div>
+    <div class="tl" onclick="goChat(300,'Иванова О.Н.','Сменить тариф','new')"><div class="tln">#300</div><div class="tld" style="background:var(--red)"></div><div class="tlnm">Иванова О.Н.</div><div class="tltp">Сменить тариф</div><span class="tag tn">Новая</span><div class="tlt">32 мин</div></div>
+    <div class="tl" onclick="goChat(302,'Соколовчик А.П.','Посмотреть расходы','wait')"><div class="tln">#302</div><div class="tld" style="background:var(--wn)"></div><div class="tlnm">Соколовчик А.П.</div><div class="tltp">Посмотреть расходы</div><span class="tag tw">Ожидание</span><div class="tlt">Вчера 14:03</div></div>
+    <div class="tl" onclick="goChat(298,'Жаркова М.В.','Не помню пароль','work')"><div class="tln">#298</div><div class="tld" style="background:var(--i2)"></div><div class="tlnm">Жаркова М.В.</div><div class="tltp">Не помню пароль</div><span class="tag tk">В работе</span><div class="tlt">Сегодня 11:20</div></div>
+  </div>
+</div></div>
+
+<!-- STATS -->
+<div class="tp" id="tp-stats"><div class="pg">
+  <div style="font-size:16px;font-weight:800;margin-bottom:8px">Статистика</div>
+  <div class="g6">
+    <div class="mc"><div class="ml">Обработано заявок</div><div class="mv nv">278 <span class="tag tn">↑14%</span></div></div>
+    <div class="mc"><div class="ml">Время первого ответа</div><div class="mv red">38 мин</div></div>
+    <div class="mc"><div class="ml">Повторные обращения</div><div class="mv wn">18%</div></div>
+    <div class="mc"><div class="ml">Передано инженерам</div><div class="mv nv">43%</div></div>
+    <div class="mc"><div class="ml">Оценка обслуживания</div><div class="mv ok">4.1</div></div>
+  </div>
+</div></div>
+
+<!-- KB -->
+<div class="tp" id="tp-kb"><div class="pg">
+  <div style="font-size:16px;font-weight:800;margin-bottom:8px">База знаний</div>
+  <div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Нет интернета — алгоритм действий</div><div class="kbid">1. Проверить баланс. 2. Проверить статус станции. 3. Перезагрузить роутер. 4. Создать заявку инженерам.</div></div>
+  <div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Способы оплаты</div><div class="kbid">Карта — мгновенно. СБП — до 24ч. ЮMoney — до 1ч.</div></div>
+  <div class="kbi" onclick="this.classList.toggle('open')"><div class="kbit">Турбо-кнопка</div><div class="kbid">Сброс суточного лимита. Стоимость 100–200 ₽ в ЛК.</div></div>
+</div></div>
+
+<!-- TRAINING -->
+<div class="tp" id="tp-train"><div class="pg">
+  <div style="font-size:16px;font-weight:800;margin-bottom:8px">Обучение оператора</div>
+  <div class="train-grid">
+    <div class="train-card" onclick="alert('Откроется видео «Стандарты общения с абонентами»')"><div class="train-icon">🎧</div><div class="train-title">Стандарты общения</div><div class="train-desc">Скрипты, приветствия, завершение диалога</div><div class="train-duration">15 мин · видео</div></div>
+    <div class="train-card" onclick="alert('Откроется видео «Диагностика подключения»')"><div class="train-icon">🔧</div><div class="train-title">Диагностика подключения</div><div class="train-desc">Как быстро найти причину проблемы</div><div class="train-duration">12 мин · видео</div></div>
+    <div class="train-card" onclick="alert('Откроется статья «Тарифные планы»')"><div class="train-icon">📊</div><div class="train-title">Тарифные планы и опции</div><div class="train-desc">Безлимиты, турбо-кнопка, заморозка</div><div class="train-duration">10 мин · чтение</div></div>
+    <div class="train-card" onclick="alert('Откроется тестирование')"><div class="train-icon">📝</div><div class="train-title">Итоговое тестирование</div><div class="train-desc">Проверка знаний после обучения</div><div class="train-duration">20 мин · тест</div></div>
+  </div>
+</div></div>
+</div>
+
+<div class="mo" id="wMo"><div class="ml2"><div class="mlh"><div class="mlt" id="wmT">Написать</div><div class="mlx" onclick="closeW()">×</div></div><div class="mlb"><div class="mf"><div style="font-size:13px;font-weight:600" id="wmN"></div><div style="font-size:10px;color:var(--i3)" id="wmM"></div></div><div class="mf"><div class="mfl">Сообщение</div><textarea class="mta2" style="width:100%;height:90px" placeholder="Здравствуйте! Хотим разобраться…"></textarea></div><div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-sec" onclick="closeW()">Отмена</button><button class="btn-pri" onclick="closeW();alert('Отправлено')">Отправить</button></div></div></div></div>
+
+<script>
+function toggleTheme(){document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light'}
+function doLogin(){const e=document.getElementById('loginEmail').value.trim().toLowerCase();if(e==='cc@wifitochka.ru'&&document.getElementById('loginPass').value==='cc2024'){showV('ccView')}else{document.getElementById('loginError').textContent='Неверные данные'}}
+function qL(){document.getElementById('loginEmail').value='cc@wifitochka.ru';document.getElementById('loginPass').value='cc2024';doLogin()}
+function logout(){showV('loginView')}
+function showV(id){document.querySelectorAll('.view').forEach(v=>{v.classList.remove('active');v.style.display='none'});const t=document.getElementById(id);t.classList.add('active');t.style.display='flex'}
+function toggleN(){document.getElementById('ndd').classList.toggle('open')}
+document.addEventListener('click',e=>{if(!document.getElementById('bellB')?.contains(e.target))document.getElementById('ndd')?.classList.remove('open');document.querySelectorAll('.sd').forEach(d=>{if(!d.parentElement.contains(e.target))d.classList.remove('vis')})})
+function goTab(id,btn){document.querySelectorAll('#ccT .tab').forEach(b=>b.classList.remove('on'));if(btn)btn.classList.add('on');else{const tabs=document.querySelectorAll('#ccT .tab');const map={home:0,call:1,chats:2,stats:3,kb:4,train:5};if(map[id]!==undefined)tabs[map[id]].classList.add('on')}document.querySelectorAll('#ccView > .tp').forEach(p=>p.classList.remove('on'));document.getElementById('tp-'+id).classList.add('on')}
+const SUBS=[{n:'Соколовчик А.П.',id:13807},{n:'Жаркова М.В.',id:6784},{n:'Карекин П.А.',id:2201},{n:'Иванова О.Н.',id:9934},{n:'Максимов А.В.',id:4421}];
+const KB2=[{t:'Нет интернета',b:'Баланс → станция → роутер → инженерам.'},{t:'Способы оплаты',b:'Карта — мгновенно. СБП — до 24ч.'},{t:'Турбо-кнопка',b:'Сброс лимита. 100–200 ₽.'}];
+let _kbH=[];
+function uniS(v){const el=document.getElementById('mainDrop');document.getElementById('kbCard').classList.remove('vis');if(!v.trim()||v.length<2){el.classList.remove('vis');el.innerHTML='';return}const q=v.toLowerCase();const sh=SUBS.filter(s=>s.n.toLowerCase().includes(q)||String(s.id).includes(q));const kh=KB2.filter(k=>k.t.toLowerCase().includes(q));_kbH=kh;if(!sh.length&&!kh.length){el.classList.remove('vis');el.innerHTML='';return}let h='';if(sh.length){h+='<div class="ssc">Абоненты</div>';h+=sh.map(s=>`<div class="si2" onclick="document.getElementById('mainDrop').classList.remove('vis');document.getElementById('mainSearch').value='${s.n}'"><div class="sav">${s.n[0]}</div><div style="flex:1"><div class="sn">${s.n}</div><div class="sm">ID ${s.id}</div></div></div>`).join('')}if(kh.length){h+='<div class="ssc">База знаний</div>';h+=kh.slice(0,5).map((k,i)=>`<div class="si2" onclick="showKBC(${i})"><div class="sav kb">БЗ</div><div style="flex:1"><div class="sn">${k.t}</div><div class="sm">${k.b.slice(0,50)}…</div></div></div>`).join('')}el.innerHTML=h;el.classList.add('vis')}
+function enterS(){const v=document.getElementById('mainSearch').value;if(!v.trim())return;document.getElementById('mainDrop').classList.remove('vis');const q=v.toLowerCase();const kh=KB2.filter(k=>k.t.toLowerCase().includes(q));if(kh.length){_kbH=kh;showKBC(0)}else{const sh=SUBS.filter(s=>s.n.toLowerCase().includes(q)||String(s.id).includes(q));if(sh.length){document.getElementById('mainSearch').value=sh[0].n}else alert('Не найдено: «'+v+'»')}}
+function showKBC(i){const k=_kbH[i];if(!k)return;document.getElementById('mainDrop').classList.remove('vis');document.getElementById('mainSearch').value='';document.getElementById('kbcT').innerHTML=k.t+' <span class="kbc-tag">Инструкция</span>';document.getElementById('kbcB').innerHTML=k.b;document.getElementById('kbCard').classList.add('vis');document.getElementById('kbCard').scrollIntoView({behavior:'smooth'})}
+let curT='';
+function goChat(id,n,topic,st){curT=id;goTab('chats');alert('Чат с '+n+'\nТема: '+topic)}
+function callSFn(v){const f=document.getElementById('callF');if(v.length<2){f.classList.remove('vis');return}const q=v.toLowerCase();const h=SUBS.find(s=>s.n.toLowerCase().includes(q)||String(s.id).includes(q));if(h){document.getElementById('callFN').textContent=h.n;document.getElementById('callFM').textContent='ID '+h.id;f.classList.add('vis')}else f.classList.remove('vis')}
+function submitCall2(){const desc=document.getElementById('callDesc');if(!desc||!desc.value.trim()){alert('Опишите обращение клиента');return}alert('Заявка создана');goTab('home',document.querySelector('#ccT .tab'))}
+function openW(n,t){document.getElementById('wmN').textContent=n;document.getElementById('wmM').textContent='Заявка '+t;document.getElementById('wMo').classList.add('open')}
+function closeW(){document.getElementById('wMo').classList.remove('open')}
+window.addEventListener('DOMContentLoaded',()=>showV('loginView'))
+</script>
+</body>
+</html>
