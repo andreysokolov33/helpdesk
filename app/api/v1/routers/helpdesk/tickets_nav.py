@@ -21,7 +21,7 @@ async def get_unread_tickets_count(
     user: dict[str, Any] = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> UnreadTicketsResponse:
-    """Количество открытых тикетов с непрочитанными сообщениями абонента."""
+    """Счётчик вкладки «Тикеты»: админ — открытые; оператор — тикеты, где нужен ответ."""
     user_id = int(user["user_id"])
     cache_key = f"unread_stats:{user_id}"
     try:
@@ -33,7 +33,12 @@ async def get_unread_tickets_count(
     except Exception:
         pass
 
-    count = await ticket_svc.count_open_unread_tickets(db)
+    count = await ticket_svc.count_tickets_nav_badge(
+        db,
+        viewer_id=user_id,
+        viewer_role=user.get("role"),
+        viewer_level=user.get("level"),
+    )
     result = UnreadTicketsResponse(unread_count=count)
     try:
         await redis_client.setex(cache_key, _UNREAD_CACHE_TTL, result.model_dump_json())

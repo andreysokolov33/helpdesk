@@ -5,6 +5,7 @@ import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
 import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
 import { fetchChatUnread } from "@/api/chat";
+import { ticketsListPollDelayMs } from "@/utils/ticketsListPoll";
 import { getBellUnreadCount, MOCK_NOTIFS } from "@/data/mockCc";
 import { useTheme } from "@/theme/ThemeContext";
 import { themeToggleHint } from "@/theme/themeMeta";
@@ -84,6 +85,7 @@ export default function DashboardShell() {
 
   useEffect(() => {
     let cancelled = false;
+    let pollTimer: number | null = null;
 
     async function loadUnread() {
       try {
@@ -94,8 +96,16 @@ export default function DashboardShell() {
       }
     }
 
+    const schedulePoll = () => {
+      pollTimer = window.setTimeout(() => {
+        void loadUnread().finally(() => {
+          if (!cancelled) schedulePoll();
+        });
+      }, ticketsListPollDelayMs());
+    };
+
     void loadUnread();
-    const timer = window.setInterval(loadUnread, 30_000);
+    schedulePoll();
 
     function onVisible() {
       if (document.visibilityState === "visible") void loadUnread();
@@ -105,7 +115,7 @@ export default function DashboardShell() {
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (pollTimer != null) window.clearTimeout(pollTimer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", loadUnread);
     };
@@ -277,7 +287,16 @@ export default function DashboardShell() {
                   const badge =
                     t.to === "/tickets" ? ticketsUnread : t.to === "/chat" ? chatUnread : t.badge;
                   return typeof badge === "number" && badge > 0 ? (
-                    <span className="tab-badge tab-badge--alert" aria-label={`Непрочитанных: ${badge}`}>
+                    <span
+                      className="tab-badge tab-badge--alert"
+                      aria-label={
+                        t.to === "/tickets"
+                          ? authMe?.is_support_admin
+                            ? `Открытых тикетов: ${badge}`
+                            : `Требуют ответа: ${badge}`
+                          : `Непрочитанных: ${badge}`
+                      }
+                    >
                       {badge > 99 ? "99+" : badge}
                     </span>
                   ) : null;

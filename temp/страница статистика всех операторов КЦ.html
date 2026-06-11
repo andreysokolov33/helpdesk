@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<title>WiFi Точка — Кабинет Руководителя КЦ</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --red:      #FF1300; --dark:     #0A1E36;
+  --bg:       #F5F5F3; --card:     #FFFFFF;
+  --text:     #3D5068; --head:     #0A1E36;
+  --ok:       #1B5299; --ok-bg:    #EAF2F9;
+  --err-bg:   #FFF0EE; --line:     #E2E2DC;
+  --muted:    #7A8B9A; --bar:      #E2E2DC;
+  --f:        'Manrope', sans-serif;
+}
+[data-theme="dark"] {
+  --bg:      #0A1E36; --card:    #11283F;
+  --text:    #CBD5E0; --head:    #FFFFFF;
+  --ok:      #F0A830; --ok-bg:   rgba(240, 168, 48, 0.1);
+  --err-bg:  rgba(255, 68, 51, 0.15);
+  --line:    #1E3A58; --muted:   #8A9EB1;
+  --red:     #FF4433;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;transition:background 0.3s, color 0.2s}
+body{font-family:var(--f);background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+
+/* ПОДСКАЗКИ */
+[data-hint] { position: relative; cursor: help; }
+[data-hint]::after {
+    content: attr(data-hint); position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%);
+    background: var(--dark); color: #fff; padding: 10px 14px; border-radius: 8px;
+    font-size: 11px; width: 240px; opacity: 0; pointer-events: none; transition: 0.2s; z-index: 1000;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3); font-weight: 400;
+}
+[data-hint]:hover::after { opacity: 1; }
+
+/* TOPBAR */
+.top{background:var(--card);border-bottom:1px solid var(--line);padding:0 32px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{font-weight:800;font-size:14px;color:var(--head)}
+.user-badge{margin-left:20px;font-size:11px;font-weight:700;color:var(--text);background:var(--bg);padding:4px 12px;border-radius:20px;display:flex;align-items:center;gap:6px}
+.user-badge::before{content:'';width:6px;height:6px;background:var(--ok);border-radius:50%}
+
+.page{max-width:1300px;margin:0 auto;padding:24px 32px}
+
+/* FILTERS */
+.controls-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; gap: 15px; flex-wrap: wrap; }
+.filter-group { display: flex; gap: 10px; align-items: center; background: var(--card); padding: 10px 15px; border-radius: 12px; border: 1px solid var(--line); }
+.sel-op { border: 1px solid var(--line); background: var(--bg); padding: 5px 12px; border-radius: 6px; font-weight: 700; font-family: inherit; color: var(--head); cursor: pointer; }
+
+/* TABS */
+.tab-row{display:flex;gap:4px;background:rgba(10,30,54,0.06);padding:4px;border-radius:10px;width:fit-content;margin-bottom:24px}
+.tab{padding:8px 20px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;color:var(--text);background:none;border:none}
+.tab.on{background:var(--card);color:var(--ok);box-shadow: 0 2px 8px rgba(0,0,0,0.05)}
+
+/* METRICS */
+.metrics-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:25px}
+.mc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;text-align:center}
+.m-label{font-size:9px;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:8px;letter-spacing:1px}
+.mv{font-size:26px;font-weight:800;color:var(--head);line-height:1}
+.mv.red{color:var(--red)}
+
+/* TABLES */
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:25px;margin-bottom:20px}
+.dt{width:100%;border-collapse:collapse}
+.dt th{text-align:left;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;padding-bottom:12px;border-bottom:2px solid var(--line)}
+.dt td{padding:14px 0;border-bottom:1px solid var(--line);font-weight:600;font-size:14px;color:var(--head)}
+.dt tr:hover { background: var(--bg); }
+
+/* RANKING TAGS */
+.rank { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; background: var(--bg); color: var(--muted); }
+.rank.top1 { background: var(--ok); color: #fff; }
+
+.status-tag { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 800; }
+.st-good { background: var(--ok-bg); color: var(--ok); }
+.st-bad { background: var(--err-bg); color: var(--red); }
+
+</style>
+</head>
+<body>
+
+<div class="top">
+    <div class="logo">WIFI <span style="color:var(--red)">ТОЧКА</span> · ПАНЕЛЬ РУКОВОДИТЕЛЯ</div>
+    <div class="nr" style="display:flex; align-items:center; gap:15px">
+        <div class="user-badge">Администратор: Ольга М.</div>
+        <button class="tab" style="font-size:11px; border:1px solid var(--line)" onclick="toggleTheme()">🌓 Тема</button>
+    </div>
+</div>
+
+<div class="page">
+    
+    <!-- ФИЛЬТРЫ И ВЫБОР -->
+    <div class="controls-row">
+        <div>
+            <h1 style="font-size:22px; font-weight:800">Общая аналитика КЦ</h1>
+            <p style="font-size:12px; color:var(--muted)">Мониторинг 12 операторов в режиме реального времени</p>
+        </div>
+        <div class="filter-group">
+            <span class="filter-label">ОПЕРАТОР:</span>
+            <select class="sel-op" onchange="selectOperator(this.value)">
+                <option value="all">Все сотрудники</option>
+                <option value="alex">Александр Р.</option>
+                <option value="maria">Мария С.</option>
+                <option value="igor">Игорь Н.</option>
+            </select>
+            <span class="filter-label" style="margin-left:10px">ДАТЫ:</span>
+            <input type="date" class="sel-op" value="2026-03-23">
+            <span style="font-weight:800; color:var(--line)">—</span>
+            <input type="date" class="sel-op" value="2026-03-29">
+        </div>
+    </div>
+
+    <div class="tab-row">
+        <button class="tab on" id="btn-work" onclick="switchPane('work')">Эффективность команды</button>
+        <button class="tab" id="btn-learn" onclick="switchPane('learn')">Контроль обучения</button>
+    </div>
+
+    <!-- PANE: WORK PERFORMANCE -->
+    <div id="pane-work">
+        <div class="metrics-grid">
+            <div class="mc" data-hint="Среднее количество заявок на одного оператора за смену.">
+                <div class="m-label">Нагрузка (ср)</div>
+                <div class="mv">34</div>
+            </div>
+            <div class="mc" data-hint="Общий командный SLA. Норма — 90%+.">
+                <div class="m-label">Скорость ответа</div>
+                <div class="mv">4.1м</div>
+            </div>
+            <div class="mc" data-hint="Доля заявок, решенных без инженеров. Цель — 80%.">
+                <div class="m-label">Автономность</div>
+                <div class="mv" style="color:var(--ok)">76%</div>
+            </div>
+            <div class="mc" data-hint="Процент брошенных звонков/чатов.">
+                <div class="m-label">Потеря обращения</div>
+                <div class="mv red">12%</div>
+            </div>
+            <div class="mc" data-hint="Средний балл всей команды от абонентов.">
+                <div class="m-label">Средний CSAT</div>
+                <div class="mv ok">4.6</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="m-label" style="margin-bottom:20px">Сравнительная таблица операторов</div>
+            <table class="dt">
+                <thead>
+                    <tr>
+                        <th style="width:50px">Место</th>
+                        <th>Сотрудник</th>
+                        <th>Закрыто</th>
+                        <th>Скорость</th>
+                        <th>Автономность</th>
+                        <th>Оценка</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody id="op-table-body">
+                    <tr>
+                        <td><div class="rank top1">1</div></td>
+                        <td><b>Мария С.</b></td>
+                        <td>312</td>
+                        <td>2.8м</td>
+                        <td style="color:var(--ok)">89%</td>
+                        <td style="color:var(--ok)">4.9</td>
+                        <td><span class="status-tag st-good">Лидер смены</span></td>
+                    </tr>
+                    <tr>
+                        <td><div class="rank">2</div></td>
+                        <td><b>Александр Р.</b></td>
+                        <td>278</td>
+                        <td>3.5м</td>
+                        <td>78%</td>
+                        <td style="color:var(--ok)">4.8</td>
+                        <td><span class="status-tag st-good">В норме</span></td>
+                    </tr>
+                    <tr style="background:var(--err-bg)">
+                        <td><div class="rank" style="color:var(--red)">12</div></td>
+                        <td><b>Игорь Н.</b></td>
+                        <td>198</td>
+                        <td style="color:var(--red)">6.2м</td>
+                        <td style="color:var(--red)">41%</td>
+                        <td style="color:var(--red)">3.8</td>
+                        <td><span class="status-tag st-bad">Нужна помощь</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- PANE: LEARNING CONTROL -->
+    <div id="pane-learn" style="display:none">
+        <div class="metrics-grid">
+            <div class="mc"><div class="m-label">Общая успеваемость</div><div class="mv">94%</div></div>
+            <div class="mc"><div class="m-label">Статей изучено (ср)</div><div class="mv">5 / 6</div></div>
+            <div class="mc"><div class="m-label">Контрольные вопросы</div><div class="mv ok">100%</div></div>
+            <div class="mc"><div class="m-label">Активность в БЗ</div><div class="mv ok">Высокая</div></div>
+            <div class="mc"><div class="m-label">Нужна коррекция</div><div class="mv red">2 чел.</div></div>
+        </div>
+
+        <div class="card">
+            <div class="m-label" style="margin-bottom:20px">Прогресс обучения команды</div>
+            <table class="dt">
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Балл тестов</th>
+                        <th>Изучено статей</th>
+                        <th>Вопрос дня</th>
+                        <th>Слабый блок</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><b>Александр Р.</b></td>
+                        <td style="color:var(--ok)">98%</td>
+                        <td>6 / 6</td>
+                        <td style="color:var(--ok)">Пройден</td>
+                        <td>—</td>
+                    </tr>
+                    <tr>
+                        <td><b>Мария С.</b></td>
+                        <td style="color:var(--ok)">100%</td>
+                        <td>6 / 6</td>
+                        <td style="color:var(--ok)">Пройден</td>
+                        <td>—</td>
+                    </tr>
+                    <tr>
+                        <td><b>Игорь Н.</b></td>
+                        <td style="color:var(--red)">72%</td>
+                        <td>3 / 6</td>
+                        <td style="color:var(--red)">Не отвечен</td>
+                        <td style="color:var(--red)">Роутеры</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function switchPane(id) {
+    document.getElementById('pane-work').style.display = (id === 'work' ? 'block' : 'none');
+    document.getElementById('pane-learn').style.display = (id === 'learn' ? 'block' : 'none');
+    
+    document.getElementById('btn-work').classList.toggle('on', id === 'work');
+    document.getElementById('btn-learn').classList.toggle('on', id === 'learn');
+}
+
+function selectOperator(val) {
+    if(val !== 'all') {
+        alert("Загрузка детальной статистики оператора: " + val);
+        // Здесь логика перехода на страницу конкретного оператора
+    }
+}
+
+function toggleTheme() {
+    const root = document.documentElement;
+    root.setAttribute('data-theme', root.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+}
+</script>
+
+</body>
+</html>

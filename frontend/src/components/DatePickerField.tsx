@@ -42,16 +42,22 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   minDate?: string;
+  maxDate?: string;
   id?: string;
   placeholder?: string;
+  className?: string;
+  calendarClassName?: string;
 };
 
 export default function DatePickerField({
   value,
   onChange,
   minDate,
+  maxDate,
   id,
   placeholder = "Выберите дату",
+  className,
+  calendarClassName,
 }: Props) {
   const uid = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -113,6 +119,7 @@ export default function DatePickerField({
   const month = view.getMonth();
   const todayYmd = toYmd(new Date());
   const min = minDate && parseYmd(minDate) ? minDate : undefined;
+  const max = maxDate && parseYmd(maxDate) ? maxDate : undefined;
 
   const first = new Date(year, month, 1);
   const startPad = (first.getDay() + 6) % 7;
@@ -125,14 +132,17 @@ export default function DatePickerField({
 
   function pick(ymd: string) {
     if (min && ymd < min) return;
+    if (max && ymd > max) return;
     onChange(ymd);
     setOpen(false);
   }
 
+  const calClass = ["up-dp-cal", calendarClassName].filter(Boolean).join(" ");
+
   const calendar = open ? (
     <div
       id={`dp-cal-${uid}`}
-      className="up-dp-cal"
+      className={calClass}
       style={{ top: pos.top, left: pos.left, width: pos.width }}
       role="dialog"
       aria-label="Календарь"
@@ -176,11 +186,12 @@ export default function DatePickerField({
                 c.ymd === value ? "selected" : "",
                 c.ymd === todayYmd ? "today" : "",
                 min && c.ymd < min ? "disabled" : "",
+                max && c.ymd > max ? "disabled" : "",
                 [0, 6].includes((startPad + c.day - 1) % 7) ? "weekend" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
-              disabled={!!(min && c.ymd < min)}
+              disabled={!!((min && c.ymd < min) || (max && c.ymd > max))}
               onClick={() => pick(c.ymd)}
             >
               {c.day}
@@ -205,8 +216,10 @@ export default function DatePickerField({
     </div>
   ) : null;
 
+  const wrapClass = ["up-dp-wrap", className].filter(Boolean).join(" ");
+
   return (
-    <div className="up-dp-wrap" ref={wrapRef}>
+    <div className={wrapClass} ref={wrapRef}>
       <button
         id={id}
         type="button"

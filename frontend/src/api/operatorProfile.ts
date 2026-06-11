@@ -95,16 +95,16 @@ export function getDefaultProfilePeriod(now = new Date()): { year: number; month
 
 export function ticketsListUrl(opts: {
   closed: boolean;
-  assignedTo: number;
   dateFrom: string;
   dateTo: string;
+  assignedTo?: number;
 }): string {
   const sp = new URLSearchParams({
-    assigned_to: String(opts.assignedTo),
     date_from: opts.dateFrom,
     date_to: opts.dateTo,
   });
   if (opts.closed) sp.set("closed", "true");
+  if (opts.assignedTo != null) sp.set("assigned_to", String(opts.assignedTo));
   return `/tickets?${sp.toString()}`;
 }
 

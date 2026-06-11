@@ -233,14 +233,23 @@ async def auth_me(
     uid = int(user["user_id"])
     login = user.get("login")
     full_name = user.get("full_name")
-    if login is None or full_name is None:
+    level = user.get("level")
+    role = user.get("role")
+    if login is None or full_name is None or level is None:
         row = await SkystreamUsersDAO.find_one_or_none(db, id=uid)
         if row:
             login = login or row.get("login")
             full_name = full_name or row.get("full_name")
+            if level is None and row.get("level") is not None:
+                level = int(row["level"])
+            if role is None:
+                role = row.get("role")
+    lvl = int(level) if level is not None else None
     return AuthMeResponse(
         user_id=uid,
-        role=user.get("role"),
+        role=role,
+        level=lvl,
         login=login,
         full_name=full_name,
+        is_support_admin=role == "support" and lvl == 2,
     )

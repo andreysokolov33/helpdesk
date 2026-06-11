@@ -14,6 +14,7 @@ import {
 import TicketAssigneePill from "@/components/TicketAssigneePill";
 import {
   formatRatingAvg,
+  formatTicketListDate,
   formatTicketUpdatedLocal,
   formatWorkDurationBetween,
   formatWorkDurationSince,
@@ -26,13 +27,10 @@ import {
   saveTicketsPerPage,
   type TicketsListPerPage,
 } from "@/utils/ticketsListPrefs";
+import { TICKETS_LIST_POLL_JITTER_MS, TICKETS_LIST_POLL_MS } from "@/utils/ticketsListPoll";
 import { MOCK_KB, MOCK_SUBSCRIBERS, MOCK_TICKETS_OPEN, MOCK_TICKETS_URGENT, type TicketRow } from "@/data/mockCc";
 
 type ChatMsg = { id: string; side: "cl" | "ag" | "note"; text: string; time: string };
-
-/** Базовый интервал поллинга + джиттер, чтобы 20 операторов не били в БД синхронно. */
-const TICKETS_LIST_POLL_MS = 12_000;
-const TICKETS_LIST_POLL_JITTER_MS = 6_000;
 
 const initialMsgs: ChatMsg[] = [
   { id: "1", side: "cl", text: "Здравствуйте! Где посмотреть детализацию?", time: "14:03" },
@@ -473,7 +471,7 @@ export default function ChatsTab() {
               {row.priority_label ?? "Средний"}
             </span>
           ) : null}
-          <div className="ch-status-cell">
+          <div className={`ch-status-cell${closedMode ? " ch-col-status" : ""}`}>
             {statusCol.kind === "comm" ? (
               <span className={`ch-comm ch-comm--${statusCol.state}`} title={statusCol.label}>
                 {statusCol.label}
@@ -503,16 +501,25 @@ export default function ChatsTab() {
             </>
           ) : (
             <>
-              <span className="ch-muted ch-mono">{formatTicketUpdatedLocal(row.date_of_create)}</span>
-              <span className="ch-muted ch-mono">{workDuration}</span>
-              <div className="ch-rating-cell" title={row.rating_comment ?? undefined}>
+              <span className="ch-col-date ch-muted ch-mono" title={formatTicketUpdatedLocal(row.date_of_create)}>
+                {formatTicketListDate(row.date_of_create)}
+              </span>
+              <span className="ch-col-duration ch-muted ch-mono" title="Время в работе">
+                {workDuration}
+              </span>
+              <div className="ch-col-rating ch-rating-cell">
                 <RatingStars value={row.rating} />
                 {row.rating_comment ? (
-                  <span className="ch-rating-comment">{row.rating_comment}</span>
+                  <span className="ch-rating-comment" title={row.rating_comment}>
+                    {row.rating_comment}
+                  </span>
                 ) : null}
               </div>
-              <span className="ch-muted ch-time ch-mono">
-                {formatTicketUpdatedLocal(row.date_of_close || row.updated_at || row.date_of_create)}
+              <span
+                className="ch-col-closed ch-muted ch-time ch-mono"
+                title={formatTicketUpdatedLocal(row.date_of_close || row.updated_at || row.date_of_create)}
+              >
+                {formatTicketListDate(row.date_of_close || row.updated_at || row.date_of_create)}
               </span>
             </>
           )}
@@ -624,11 +631,11 @@ export default function ChatsTab() {
               <span>Тикет</span>
               {closedMode ? (
                 <>
-                  <span>Статус</span>
-                  <span>Открыт</span>
-                  <span>В работе</span>
-                  <span>Оценка</span>
-                  <span>Закрыт</span>
+                  <span className="ch-col-status">Статус</span>
+                  <span className="ch-col-date">Открыт</span>
+                  <span className="ch-col-duration">В работе</span>
+                  <span className="ch-col-rating">Оценка</span>
+                  <span className="ch-col-closed">Закрыт</span>
                 </>
               ) : (
                 <>

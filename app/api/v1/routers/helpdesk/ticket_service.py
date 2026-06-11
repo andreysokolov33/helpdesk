@@ -1549,6 +1549,95 @@ async def count_open_unread_tickets(db: AsyncSession) -> int:
     return int(row["cnt"] if row else 0)
 
 
+def _is_support_admin_view(*, role: str | None, level: int | None) -> bool:
+    return (role or "").strip().lower() == "support" and int(level or 0) == 2
+
+
+def _viewer_tickets_need_attention_sql(viewer_role: str) -> str:
+    """SQL на queue q: тикет требует ответа зрителя (как list_highlight=chat или has_unread на его линии)."""
+    role = (viewer_role or "support").strip().lower()
+    if role == "engineer":
+        return """(
+            (q.chat_turn = 'staff'::users.tracker_chat_turn
+             AND q.action_by = 'engineers'::users.tracker_action_by
+             AND q.queue_line = 'engineers'::users.tracker_queue_line)
+            OR (q.calc_has_unread AND q.queue_line = 'engineers'::users.tracker_queue_line)
+        )"""
+    if role in ("partner", "technician"):
+        return """(
+            (q.chat_turn = 'staff'::users.tracker_chat_turn
+             AND q.action_by = 'partner'::users.tracker_action_by
+             AND q.queue_line = 'partner'::users.tracker_queue_line)
+            OR (q.calc_has_unread AND q.queue_line = 'partner'::users.tracker_queue_line)
+        )"""
+    return """(
+        q.support_line <> 4
+        AND (
+            (COALESCE(q.source, 'call_center') = 'lk'
+             AND q.chat_turn = 'staff'::users.tracker_chat_turn
+             AND q.action_by IN (
+                 'cs'::users.tracker_action_by,
+                 'engineers'::users.tracker_action_by,
+                 'partner'::users.tracker_action_by))
+            OR (q.chat_turn = 'staff'::users.tracker_chat_turn
+                AND q.action_by = 'cs'::users.tracker_action_by
+                AND q.queue_line = 'cs'::users.tracker_queue_line)
+            OR (q.calc_has_unread AND q.queue_line = 'cs'::users.tracker_queue_line)
+        )
+    )"""
+
+
+async def count_tickets_nav_badge(
+    db: AsyncSession,
+    *,
+    viewer_id: int,
+    viewer_role: str | None,
+    viewer_level: int | None,
+) -> int:
+    """Счётчик вкладки «Тикеты»: админ — все открытые; оператор — нужен ответ."""
+    hide_manager = await _viewer_hides_manager_line(db, viewer_id)
+    filter_sql, filter_params = _tracker_list_filter_sql(
+        closed=False,
+        subscriber_q=None,
+        date_from=None,
+        date_to=None,
+        hide_manager_line=hide_manager,
+        assigned_to=None,
+    )
+
+    if _is_support_admin_view(role=viewer_role, level=viewer_level):
+        row = (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*)::int AS cnt
+                    FROM users.tracker_tickets tt
+                    WHERE {filter_sql}
+                    """
+                ),
+                filter_params,
+            )
+        ).mappings().first()
+        return int(row["cnt"] if row else 0)
+
+    needs_sql = _viewer_tickets_need_attention_sql(viewer_role or "support")
+    queue_ctes = _build_tracker_list_queue_ctes_sql(filter_sql=filter_sql)
+    row = (
+        await db.execute(
+            text(
+                f"""
+                {queue_ctes}
+                SELECT COUNT(*)::int AS cnt
+                FROM queue q
+                WHERE {needs_sql}
+                """
+            ),
+            filter_params,
+        )
+    ).mappings().first()
+    return int(row["cnt"] if row else 0)
+
+
 def _moscow_ts() -> int:
     return int(datetime.now(_MOSCOW).timestamp())
 

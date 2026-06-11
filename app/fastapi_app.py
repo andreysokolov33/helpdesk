@@ -28,6 +28,7 @@ from app.api.v1.routers.helpdesk.search import router as helpdesk_search_router
 from app.api.v1.routers.helpdesk.user_profile import router as helpdesk_user_profile_router
 from app.api.v1.routers.helpdesk.tickets_nav import router as helpdesk_tickets_nav_router
 from app.api.v1.routers.helpdesk.operator_profile import router as helpdesk_operator_profile_router
+from app.api.v1.routers.helpdesk.stats import router as helpdesk_stats_router
 from app.api.v1.routers.helpdesk.tracker import router as helpdesk_tracker_router
 from app.api.v1.routers.helpdesk.chats import router as helpdesk_chats_router
 from app.config import BASE_DIR, settings
@@ -216,6 +217,7 @@ def create_app() -> FastAPI:
     app.include_router(helpdesk_chats_router, prefix="/api")
     app.include_router(helpdesk_search_router, prefix="/api")
     app.include_router(helpdesk_user_profile_router, prefix="/api")
+    app.include_router(helpdesk_stats_router, prefix="/api")
     app.include_router(web_router, tags=["Web"])
 
     logger.info("Helpdesk app created")

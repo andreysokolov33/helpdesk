@@ -15,6 +15,16 @@ export function formatTicketUpdatedLocal(iso: string | null | undefined): string
   return s.replace(",", "").replace(/\s+/g, " ").trim();
 }
 
+/** Компактная дата для колонок списка: «11.06. 14:30». */
+export function formatTicketListDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const day = d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${day} ${time}`;
+}
+
 /** Длительность с момента создания: «N мес. D дн HH:MM», пропуская пустые части. */
 export function formatWorkDurationSince(iso: string, nowMs: number = Date.now()): string {
   const start = new Date(iso).getTime();

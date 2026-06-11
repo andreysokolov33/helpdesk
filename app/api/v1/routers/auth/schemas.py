@@ -4,8 +4,10 @@ from pydantic import BaseModel, field_validator
 class AuthMeResponse(BaseModel):
     user_id: int
     role: str | None = None
+    level: int | None = None
     login: str | None = None
     full_name: str | None = None
+    is_support_admin: bool = False
 
 
 class LoginRequest(BaseModel):

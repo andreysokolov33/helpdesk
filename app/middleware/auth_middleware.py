@@ -270,7 +270,10 @@ class AuthMiddleware:
                 user_data = {
                     "user_id": user["id"],
                     "role": user.get("role"),
+                    "level": user.get("level"),
                     "admin": user.get("is_superuser", False),
+                    "full_name": user.get("full_name"),
+                    "login": user.get("login"),
                 }
 
                 # 4. ОБРАБОТКА GRACE PERIOD (Если токен уже отозван параллельным запросом)
@@ -381,6 +384,7 @@ class AuthMiddleware:
                     data = {
                         "user_id": user["id"],
                         "role": user.get("role"),
+                        "level": user.get("level"),
                         "admin": user.get("is_superuser", False),
                         "full_name": user.get("full_name"),
                         "login": user.get("login"),

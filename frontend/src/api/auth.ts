@@ -14,6 +14,8 @@ export async function logoutRequest(): Promise<void> {
 export type AuthMe = {
   user_id: number;
   role: string | null;
+  level?: number | null;
+  is_support_admin?: boolean;
   login?: string | null;
   full_name?: string | null;
 };
@@ -29,6 +31,8 @@ export async function fetchAuthMe(): Promise<AuthMe> {
   return {
     user_id: data.user_id,
     role: data.role ?? null,
+    level: data.level ?? null,
+    is_support_admin: Boolean(data.is_support_admin),
     login: data.login ?? null,
     full_name: data.full_name ?? null,
   };
