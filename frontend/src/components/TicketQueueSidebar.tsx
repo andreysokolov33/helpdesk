@@ -220,10 +220,12 @@ export default function TicketQueueSidebar({ activeTicketId }: Props) {
                 <span className="tk-cc-queue__item-name">{displayName(row)}</span>
                 <span className="tk-cc-queue__item-time">{formatQueueRelativeTime(timeIso)}</span>
               </div>
-              <div className="tk-cc-queue__item-preview">{preview}</div>
-              <span className={`tk-cc-queue__badge tk-cc-queue__badge--${badgeMod}`}>
-                {badgeLabel}
-              </span>
+              <div className="tk-cc-queue__item-bottom">
+                <div className="tk-cc-queue__item-preview">{preview}</div>
+                <span className={`tk-cc-queue__badge tk-cc-queue__badge--${badgeMod}`}>
+                  {badgeLabel}
+                </span>
+              </div>
             </button>
           );
         })}

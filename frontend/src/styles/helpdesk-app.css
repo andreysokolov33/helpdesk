@@ -2142,7 +2142,7 @@
   min-height: min-content;
 }
 
-/* Вступление: body тикета */
+/* Служебное сообщение: body тикета — всегда по центру ленты */
 #tp-ticket .tk-intro {
   align-self: center;
   width: min(92%, 520px);
@@ -2153,6 +2153,7 @@
   border: 1px solid var(--ln);
   background: var(--p);
   box-shadow: none;
+  flex-shrink: 0;
 }
 
 [data-theme="light"] #tp-ticket .tk-intro {
@@ -2161,16 +2162,14 @@
 }
 
 [data-theme="comfort"] #tp-ticket .tk-intro {
-  align-self: flex-start;
-  width: min(100%, 480px);
-  margin: 2px 0 14px;
-  padding: 10px 14px 12px;
-  text-align: left;
+  align-self: center;
+  width: min(92%, 520px);
+  margin: 4px auto 16px;
+  padding: 12px 16px;
+  text-align: center;
   background: var(--p);
   border: 1px solid var(--ln);
-  border-left: 3px solid var(--ok);
-  border-radius: 10px;
-  border-top-left-radius: 4px;
+  border-radius: 12px;
 }
 
 [data-theme="dark"] #tp-ticket .tk-intro {
@@ -4563,6 +4562,11 @@
   justify-content: center;
 }
 
+#tp-ticket .tk-cc-viewport--switching .tk-cc-helper-wrap,
+#tp-ticket .tk-cc-viewport--switching .tk-cc-chat__body {
+  pointer-events: none;
+}
+
 #tp-ticket .tk-cc-queue {
   width: 280px;
   flex-shrink: 0;
@@ -4576,26 +4580,26 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
+  padding: 10px 12px;
   border-bottom: 1.5px solid var(--ln);
 }
 
 #tp-ticket .tk-cc-queue__title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.7px;
+  letter-spacing: 0.6px;
   color: var(--ink);
 }
 
 #tp-ticket .tk-cc-queue__count {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
   background: var(--red);
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   display: inline-flex;
   align-items: center;
@@ -4608,8 +4612,8 @@
 }
 
 #tp-ticket .tk-cc-queue__hint {
-  padding: 16px;
-  font-size: 12px;
+  padding: 10px 12px;
+  font-size: 11px;
   color: var(--i3);
 }
 
@@ -4617,7 +4621,7 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: 14px 16px;
+  padding: 7px 10px 7px 12px;
   border: none;
   border-bottom: 1px solid var(--ln);
   background: transparent;
@@ -4625,6 +4629,7 @@
   position: relative;
   font-family: var(--f);
   color: inherit;
+  line-height: 1.25;
 }
 
 #tp-ticket .tk-cc-queue__item:hover {
@@ -4663,13 +4668,13 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 6px;
+  margin-bottom: 2px;
 }
 
 #tp-ticket .tk-cc-queue__item-name {
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4682,21 +4687,31 @@
   color: var(--i3);
 }
 
+#tp-ticket .tk-cc-queue__item-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 #tp-ticket .tk-cc-queue__item-preview {
-  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
   color: var(--i2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 8px;
 }
 
 #tp-ticket .tk-cc-queue__badge {
+  flex-shrink: 0;
   font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
   display: inline-block;
+  line-height: 1.2;
 }
 
 #tp-ticket .tk-cc-queue__badge--new {
@@ -4704,7 +4719,7 @@
 }
 
 #tp-ticket .tk-cc-queue__badge--work {
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 4px;
   background: var(--obg);
   color: var(--ok);
@@ -4716,14 +4731,14 @@
 }
 
 #tp-ticket .tk-cc-queue__badge--wait {
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 4px;
   background: #fdf3e0;
   color: #b86e10;
 }
 
 #tp-ticket .tk-cc-queue__badge--comm {
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 4px;
   background: var(--rbg);
   color: var(--red);
@@ -4734,6 +4749,13 @@
   display: flex;
   flex-shrink: 0;
   height: 100%;
+}
+
+#tp-ticket .tk-cc-helper--placeholder {
+  width: 360px;
+  min-height: 100%;
+  background: var(--p);
+  border-right: 1.5px solid var(--ln);
 }
 
 #tp-ticket .tk-cc-helper {

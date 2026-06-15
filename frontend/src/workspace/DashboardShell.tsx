@@ -21,6 +21,11 @@ type TabDef = {
   badge?: number;
 };
 
+function outletResetKey(pathname: string): string {
+  if (/^\/tickets\/\d+(?:\/|$)/.test(pathname)) return "/tickets/:ticketId";
+  return pathname;
+}
+
 function userMenuHead(me: AuthMe | null): { title: string; login: string | null } {
   const login = me?.login?.trim() || null;
   const fullName = me?.full_name?.trim() || null;
@@ -458,7 +463,7 @@ export default function DashboardShell() {
           </NavLink>
         ))}
       </div>
-      <Outlet key={location.pathname} />
+      <Outlet key={outletResetKey(location.pathname)} />
 
       <LogoutConfirmModal
         open={logoutOpen}

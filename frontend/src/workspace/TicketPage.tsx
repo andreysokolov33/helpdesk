@@ -162,6 +162,8 @@ export default function TicketPage() {
   const loadingNewerRef = useRef(false);
   const didInitialAutoscrollRef = useRef(false);
   const initialScrollCleanupRef = useRef<(() => void) | null>(null);
+  const loadGenRef = useRef(0);
+  const detailRef = useRef<TicketDetail | null>(null);
 
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
@@ -172,7 +174,6 @@ export default function TicketPage() {
   const [atBottom, setAtBottom] = useState(true);
   const [pendingNewCount, setPendingNewCount] = useState(0);
   const [highlightId, setHighlightId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editorEmpty, setEditorEmpty] = useState(true);
   const [sending, setSending] = useState(false);
@@ -330,16 +331,17 @@ export default function TicketPage() {
   const load = useCallback(async () => {
     if (!Number.isFinite(ticketId) || ticketId <= 0) {
       setError("Некорректный ID тикета");
-      setLoading(false);
       return;
     }
-    setLoading(true);
+    const gen = ++loadGenRef.current;
+    const isInitial = detailRef.current == null;
     setError(null);
     try {
       const [d, m] = await Promise.all([
         fetchTicketDetail(ticketId),
         fetchTicketMessages(ticketId, { limit: CHAT_PAGE_SIZE }),
       ]);
+      if (gen !== loadGenRef.current) return;
       const { receipts, readBy } = mergeIncomingReadState({}, {}, m);
       readReceiptsRef.current = receipts;
       readByReceiptsRef.current = readBy;
@@ -351,15 +353,19 @@ export default function TicketPage() {
       atBottomRef.current = true;
       setAtBottom(true);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Ошибка загрузки");
-      setDetail(null);
-      setMessages([]);
-      setHasOlder(false);
-      setHasNewer(false);
-      readReceiptsRef.current = {};
-      readByReceiptsRef.current = {};
-    } finally {
-      setLoading(false);
+      if (gen !== loadGenRef.current) return;
+      const msg = e instanceof Error ? e.message : "Ошибка загрузки";
+      if (isInitial) {
+        setError(msg);
+        setDetail(null);
+        setMessages([]);
+        setHasOlder(false);
+        setHasNewer(false);
+        readReceiptsRef.current = {};
+        readByReceiptsRef.current = {};
+      } else {
+        setToast({ message: msg, variant: "error" });
+      }
     }
   }, [ticketId]);
 
@@ -398,7 +404,7 @@ export default function TicketPage() {
 
   useLayoutEffect(() => {
     if (didInitialAutoscrollRef.current) return;
-    if (loading || error || !detail) return;
+    if (error || !detail || detail.id !== ticketId) return;
     const el = scrollRef.current;
     if (!el) return;
 
@@ -413,7 +419,7 @@ export default function TicketPage() {
       initialScrollCleanupRef.current?.();
       initialScrollCleanupRef.current = null;
     };
-  }, [loading, error, detail, messages.length]);
+  }, [error, detail, ticketId, messages.length]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -439,7 +445,6 @@ export default function TicketPage() {
     }
   }, [ticketId]);
 
-  const detailRef = useRef<TicketDetail | null>(null);
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
@@ -630,7 +635,7 @@ export default function TicketPage() {
     const root = scrollRef.current;
     const target = topSentinelRef.current;
     if (!root || !target) return;
-    if (loading || error || !detail) return;
+    if (error || !detail || detail.id !== ticketId) return;
     if (!didInitialAutoscrollRef.current) return;
 
     const obs = new IntersectionObserver(
@@ -647,7 +652,7 @@ export default function TicketPage() {
     );
     obs.observe(target);
     return () => obs.disconnect();
-  }, [loading, error, detail, chatPanel, loadOlderMessages, loadOlderComments]);
+  }, [error, detail, ticketId, chatPanel, loadOlderMessages, loadOlderComments]);
 
   const loadNewerMessages = useCallback(async () => {
     if (!hasNewer || loadingNewerRef.current) return;
@@ -760,23 +765,31 @@ export default function TicketPage() {
   );
 
   useEffect(() => {
-    if (loading || error || !detail) return;
+    if (error || !detail || detail.id !== ticketId) return;
     const id = window.setInterval(() => void pollMessages(), MSG_POLL_MS);
     return () => window.clearInterval(id);
-  }, [loading, error, detail, pollMessages]);
+  }, [error, detail, ticketId, pollMessages]);
 
   useEffect(() => {
-    if (loading || error || !detail) return;
+    if (error || !detail || detail.id !== ticketId) return;
     void pollReadReceipts();
     const id = window.setInterval(() => void pollReadReceipts(), READ_RECEIPTS_POLL_MS);
     return () => window.clearInterval(id);
-  }, [loading, error, detail, pollReadReceipts]);
+  }, [error, detail, ticketId, pollReadReceipts]);
 
   useEffect(() => {
-    if (loading || error || !detail || !isLkTicketSource(detail.source) || chatPanel !== "comments") return;
+    if (
+      error ||
+      !detail ||
+      detail.id !== ticketId ||
+      !isLkTicketSource(detail.source) ||
+      chatPanel !== "comments"
+    ) {
+      return;
+    }
     const id = window.setInterval(() => void pollComments(), MSG_POLL_MS);
     return () => window.clearInterval(id);
-  }, [loading, error, detail, chatPanel, pollComments]);
+  }, [error, detail, ticketId, chatPanel, pollComments]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -791,7 +804,7 @@ export default function TicketPage() {
     onScroll();
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [loading, detail?.id, loadOlderMessages, loadNewerMessages, hasNewer]);
+  }, [detail?.id, loadOlderMessages, loadNewerMessages, hasNewer]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowPulse(Date.now()), 60_000);
@@ -1251,25 +1264,46 @@ export default function TicketPage() {
     };
   }, [ticketId]);
 
-  if (loading) {
-    return (
-      <div className="tp on" id="tp-ticket">
-        <div className="tk-cc-viewport tk-cc-viewport--loading">
-          <p className="ch-list-loading">Загрузка тикета…</p>
-        </div>
-      </div>
-    );
-  }
+  const isSwitchingTicket = detail != null && detail.id !== ticketId;
 
-  if (error || !detail) {
+  if (!detail) {
     return (
       <div className="tp on" id="tp-ticket">
-        <div className="tk-cc-viewport tk-cc-viewport--loading">
-          <div className="ch-list-err">{error || "Тикет не найден"}</div>
-          <Link to="/tickets" className="tk-back-link">
-            ← К тикетам
-          </Link>
+        <div className="tk-cc-viewport">
+          <TicketQueueSidebar activeTicketId={ticketId} />
+          <div className="tk-cc-helper-wrap" aria-hidden>
+            <section className="tk-cc-helper tk-cc-helper--placeholder" />
+          </div>
+          <div className="tk-cc-chat">
+            <header className="tk-cc-chat__head">
+              <div className="tk-cc-chat__head-left">
+                <span className="tk-cc-chat__title">Тикет #{ticketId}</span>
+              </div>
+            </header>
+            <div className="tk-chat-main tk-cc-chat__body">
+              <div className="tk-chat-viewport">
+                <div className="cscrl tk-chat-scroll">
+                  {error ? (
+                    <div className="tk-chat-empty">
+                      <div className="ch-list-err">{error}</div>
+                      <Link to="/tickets" className="tk-back-link">
+                        ← К тикетам
+                      </Link>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+        {toast ? (
+          <ToastNotice
+            message={toast.message}
+            variant={toast.variant}
+            durationMs={3000}
+            onClose={() => setToast(null)}
+          />
+        ) : null}
       </div>
     );
   }
@@ -1382,8 +1416,8 @@ export default function TicketPage() {
 
   return (
     <div className="tp on" id="tp-ticket">
-      <div className="tk-cc-viewport">
-        <TicketQueueSidebar activeTicketId={detail.id} />
+      <div className={`tk-cc-viewport${isSwitchingTicket ? " tk-cc-viewport--switching" : ""}`}>
+        <TicketQueueSidebar activeTicketId={ticketId} />
 
         <TicketHelperPanel
           detail={detail}
