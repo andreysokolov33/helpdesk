@@ -1387,6 +1387,290 @@ async def fetch_tracker_list_page(
     return total, dict_rows, stats
 
 
+_HOME_URGENT_LIMIT = 3
+_HOME_SORTED_POOL = 10
+_HOME_ACTIVE_STATUSES = ("pending", "open", "in_progress")
+_HOME_STAFF_ACTION = frozenset({"cs", "engineers", "partner"})
+_HOME_INTERNAL_STAFF_CHAT_SOURCES = frozenset({"call_center", "abs"})
+
+
+def _home_row_show_needs_answer(row: dict[str, Any], *, viewer_role: str) -> bool:
+    """Статус «Нужен ответ» — как колонка статуса на /tickets (ticketListStatusColumn)."""
+    st = str(row.get("status") or "")
+    support_line = int(row.get("support_line") or 1)
+    if support_line == 4 or st in TRACKER_CLOSED_STATUSES:
+        return False
+
+    has_unread = bool(row.get("calc_has_unread"))
+    chat_turn = str(row.get("chat_turn") or "staff")
+    action_by = str(row.get("action_by") or "cs")
+    src = str(row.get("source") or "call_center").lower()
+    queue_line = str(row.get("queue_line") or "cs")
+
+    if row.get("action_by") == "external":
+        return False
+
+    queue_snap = {
+        "queue_line": queue_line,
+        "action_by": action_by,
+        "chat_turn": chat_turn,
+        "action_since": row.get("action_since"),
+    }
+    highlight = list_highlight_for_viewer(
+        queue_snap,
+        viewer_role=viewer_role or "support",
+        has_unread=has_unread,
+        workflow_status=st,
+        source=src,
+        support_line=support_line,
+    )
+    if highlight == "ops":
+        return False
+
+    comm_state = communication_state_from_v2(chat_turn, action_by, source=src)
+    if comm_state == "needs_reply":
+        return True
+    if comm_state == "awaiting_subscriber":
+        return False
+
+    internal_staff_chat = src in _HOME_INTERNAL_STAFF_CHAT_SOURCES
+    if internal_staff_chat and chat_turn == "subscriber" and st == "in_progress" and action_by == "cs":
+        return False
+    if internal_staff_chat and chat_turn == "subscriber":
+        return False
+    if chat_turn == "subscriber" and st == "in_progress" and action_by == "cs":
+        return False
+
+    if chat_turn == "staff" and action_by in _HOME_STAFF_ACTION:
+        if src == "lk" or highlight == "chat":
+            return True
+
+    return False
+
+
+def _home_support_assigned_sql() -> str:
+    return """
+        AND tt.assigned_to IS NOT NULL
+        AND EXISTS (
+            SELECT 1
+            FROM users.skystream_users su
+            WHERE su.id = tt.assigned_to
+              AND lower(COALESCE(su.role, '')) = 'support'
+        )
+    """
+
+
+def _build_home_longest_assigned_page_sql(*, filter_sql: str) -> str:
+    queue_ctes = _build_tracker_list_queue_ctes_sql(filter_sql=filter_sql)
+    return f"""
+    {queue_ctes}
+    SELECT
+        q.id,
+        q.title,
+        q.object_type,
+        q.status::text AS status,
+        q.priority::text AS priority,
+        q.support_line,
+        q.source,
+        q.user_id,
+        q.assigned_to,
+        q.engineer_id,
+        q.queue_line::text AS queue_line,
+        q.action_by::text AS action_by,
+        q.chat_turn::text AS chat_turn,
+        q.action_since,
+        q.date_of_create,
+        q.updated_at,
+        q.date_of_close,
+        q.calc_has_unread,
+        q.calc_awaiting_subscriber,
+        q.communication_state,
+        ttr.rating,
+        ttr.comment AS rating_comment,
+        u.login AS subscriber_login,
+        u.is_juridical AS sub_is_juridical,
+        ud.surname AS ud_surname,
+        ud.name AS ud_name,
+        ud.patronymic AS ud_patronymic,
+        jur.short_name_organization AS jur_short_name,
+        tc.name AS category_name,
+        tcp.name AS category_parent_name,
+        cs_op.full_name AS assignee_name,
+        cs_op.role AS assignee_role
+    FROM queue q
+    LEFT JOIN users."user" u ON q.user_id = u.id AND q.object_type = 'user'
+    LEFT JOIN LATERAL (
+        SELECT ud.surname, ud.name, ud.patronymic
+        FROM users.user_details ud
+        WHERE ud.user_id = u.id AND ud.is_actual IS TRUE
+        ORDER BY ud.id DESC
+        LIMIT 1
+    ) ud ON TRUE
+    LEFT JOIN oss.jur_client_list jur ON jur.id = u.juridical_id
+    LEFT JOIN users.ticket_categories tc ON q.category_id = tc.id
+    LEFT JOIN users.ticket_categories tcp ON tc.parent_id = tcp.id
+    LEFT JOIN users.skystream_users cs_op ON q.assigned_to = cs_op.id
+    LEFT JOIN users.tracker_tickets_ratings ttr ON ttr.ticket_id = q.id
+    ORDER BY
+        q.date_of_create ASC,
+        q.id ASC
+    LIMIT :per_page OFFSET :offset
+    """
+
+
+async def _fetch_home_longest_assigned_rows(
+    db: AsyncSession,
+    *,
+    viewer_id: int,
+    limit: int,
+) -> list[dict[str, Any]]:
+    hide_manager = await _viewer_hides_manager_line(db, viewer_id)
+    active_in = _enum_status_sql(_HOME_ACTIVE_STATUSES)
+    base = _tracker_list_status_sources_sql(closed=False)
+    manager_sql = "AND tt.support_line <> 4" if hide_manager else ""
+    filter_sql = f"""
+        {base}
+          AND tt.status IN ({active_in})
+          {_home_support_assigned_sql()}
+          {manager_sql}
+    """
+    params = {"viewer_id": viewer_id, "per_page": limit, "offset": 0}
+    page_sql = _build_home_longest_assigned_page_sql(filter_sql=filter_sql)
+    rows = (await db.execute(text(page_sql), params)).mappings().all()
+    dict_rows = [dict(r) for r in rows]
+    for row in dict_rows:
+        assigned = int(row["assigned_to"]) if row.get("assigned_to") is not None else None
+        row.update(
+            assignee_display_fields(
+                assigned_to=assigned,
+                full_name=row.get("assignee_name"),
+                role=row.get("assignee_role"),
+                viewer_id=viewer_id,
+            )
+        )
+    return dict_rows
+
+
+async def fetch_home_tickets_bundle(
+    db: AsyncSession,
+    *,
+    viewer_id: int,
+) -> dict[str, Any]:
+    """
+    Главная: до 3 «Нужен ответ» + остальные в таблице (суммарно ≤10).
+    Если «Нужен ответ» нет — до 10 самых старых in_progress у операторов КС.
+    """
+    viewer_role = await _viewer_role(db, viewer_id)
+    total, rows, _ = await fetch_tracker_list_page(
+        db,
+        viewer_id=viewer_id,
+        closed=False,
+        page=1,
+        per_page=_HOME_SORTED_POOL,
+    )
+    needs_reply_rows = [r for r in rows if _home_row_show_needs_answer(r, viewer_role=viewer_role)]
+    needs_reply_count = len(needs_reply_rows)
+
+    if needs_reply_rows:
+        urgent_rows = needs_reply_rows[:_HOME_URGENT_LIMIT]
+        urgent_ids = {int(r["id"]) for r in urgent_rows}
+        rest = [r for r in rows if int(r["id"]) not in urgent_ids]
+        open_limit = _HOME_SORTED_POOL - len(urgent_rows)
+        open_rows = rest[:open_limit]
+    else:
+        urgent_rows = []
+        open_rows = await _fetch_home_longest_assigned_rows(
+            db, viewer_id=viewer_id, limit=_HOME_SORTED_POOL,
+        )
+
+    return {
+        "total_open": total,
+        "needs_reply_count": needs_reply_count,
+        "needs_reply": urgent_rows,
+        "open": open_rows,
+    }
+
+
+def _home_tickets_digest_from_bundle(bundle: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("needs_reply", "open"):
+        for row in bundle.get(key) or []:
+            parts.append(
+                "|".join(
+                    [
+                        str(row.get("id")),
+                        str(row.get("status")),
+                        str(row.get("communication_state") or ""),
+                        str(bool(row.get("calc_has_unread"))),
+                        str(row.get("action_since") or ""),
+                        str(row.get("updated_at") or ""),
+                        str(row.get("assigned_to") or ""),
+                    ]
+                )
+            )
+    raw = ",".join(parts)
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+_HOME_TICKETS_DIGEST_CACHE_TTL = 8
+
+
+def _home_tickets_digest_cache_key(viewer_id: int) -> str:
+    return f"home_tickets_digest:{viewer_id}"
+
+
+async def fetch_home_tickets_digest(
+    db: AsyncSession,
+    *,
+    viewer_id: int,
+    client_digest: str | None = None,
+) -> dict[str, Any]:
+    cache_key = _home_tickets_digest_cache_key(viewer_id)
+    try:
+        cached_raw = await redis_client.get(cache_key)
+        if cached_raw:
+            cached = json.loads(cached_raw)
+            if isinstance(cached, dict) and cached.get("digest"):
+                digest = str(cached["digest"])
+                total_open = int(cached.get("total_open") or 0)
+                needs_reply_count = int(cached.get("needs_reply_count") or 0)
+                changed = not client_digest or client_digest != digest
+                return {
+                    "changed": changed,
+                    "digest": digest,
+                    "total_open": total_open,
+                    "needs_reply_count": needs_reply_count,
+                }
+    except Exception:
+        pass
+
+    bundle = await fetch_home_tickets_bundle(db, viewer_id=viewer_id)
+    digest = _home_tickets_digest_from_bundle(bundle)
+    total_open = int(bundle["total_open"])
+    needs_reply_count = int(bundle["needs_reply_count"])
+    try:
+        await redis_client.setex(
+            cache_key,
+            _HOME_TICKETS_DIGEST_CACHE_TTL,
+            json.dumps(
+                {
+                    "digest": digest,
+                    "total_open": total_open,
+                    "needs_reply_count": needs_reply_count,
+                }
+            ),
+        )
+    except Exception:
+        pass
+    changed = not client_digest or client_digest != digest
+    return {
+        "changed": changed,
+        "digest": digest,
+        "total_open": total_open,
+        "needs_reply_count": needs_reply_count,
+    }
+
+
 async def fetch_tracker_list_digest(
     db: AsyncSession,
     *,

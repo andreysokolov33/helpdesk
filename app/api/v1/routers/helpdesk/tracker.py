@@ -141,87 +141,10 @@ def _subscriber_list_fields(
     return (display, uid, ij)
 
 
-@router.get("/list", response_model=TrackerTicketListResponse)
-async def list_tracker_tickets(
-    db: AsyncSession = Depends(get_db),
-    user: dict[str, Any] = Depends(require_tracker_user),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    per_page: int = Query(20, ge=1, le=100, description="Размер страницы"),
-    closed: bool = Query(
-        False,
-        description="True — только закрытые/терминальные статусы; False — открытые (TRACKER_OPEN_STATUSES)",
-    ),
-    subscriber_q: Optional[str] = Query(
-        None,
-        description="Поиск по абоненту: ФИО, id, логин",
-    ),
-    date_from: Optional[date] = Query(
-        None,
-        description="Дата с (открытие для открытых, закрытие для закрытых)",
-    ),
-    date_to: Optional[date] = Query(
-        None,
-        description="Дата по включительно",
-    ),
-    assigned_to: Optional[int] = Query(
-        None,
-        description="Фильтр по исполнителю (assigned_to); только свой id",
-    ),
-) -> TrackerTicketListResponse:
-    """
-    Список тикетов `users.tracker_tickets` с пагинацией и tier-сортировкой (персонально по viewer_id).
-    По умолчанию только незакрытые (`closed=false`), источники lk / call_center / abs.
-    """
-    viewer_skystream_id = int(user["user_id"])
-    eff_assigned_to: int | None = None
-    if assigned_to is not None:
-        if int(assigned_to) != viewer_skystream_id:
-            raise HTTPException(status_code=403, detail="Можно фильтровать только свои тикеты")
-        eff_assigned_to = viewer_skystream_id
-
-    def _is_stale_prepared_cache(exc: BaseException) -> bool:
-        cur: BaseException | None = exc
-        while cur is not None:
-            if "InvalidCachedStatement" in type(cur).__name__:
-                return True
-            cur = cur.__cause__ or cur.__context__
-        return False
-
-    total = 0
-    rows: list[dict[str, Any]] = []
-    list_stats: dict[str, float | None] = {"avg_rating": None, "avg_rating_mine": None}
-    for attempt in range(2):
-        try:
-            total, rows, list_stats = await ticket_svc.fetch_tracker_list_page(
-                db,
-                viewer_id=viewer_skystream_id,
-                closed=closed,
-                page=page,
-                per_page=per_page,
-                subscriber_q=subscriber_q,
-                date_from=date_from,
-                date_to=date_to,
-                assigned_to=eff_assigned_to,
-            )
-            if not closed and rows:
-                await ticket_svc.reconcile_open_tickets_on_list_page(db, rows)
-                total, rows, list_stats = await ticket_svc.fetch_tracker_list_page(
-                    db,
-                    viewer_id=viewer_skystream_id,
-                    closed=closed,
-                    page=page,
-                    per_page=per_page,
-                    subscriber_q=subscriber_q,
-                    date_from=date_from,
-                    date_to=date_to,
-                    assigned_to=eff_assigned_to,
-                )
-            break
-        except NotSupportedError as exc:
-            if attempt == 0 and _is_stale_prepared_cache(exc):
-                continue
-            raise
-
+def map_tracker_list_rows_to_items(
+    rows: list[dict[str, Any]],
+    user: dict[str, Any],
+) -> list[TrackerTicketListItem]:
     items: list[TrackerTicketListItem] = []
     for m in rows:
         sub_login = m.get("subscriber_login")
@@ -324,6 +247,91 @@ async def list_tracker_tickets(
                 rating_comment=m.get("rating_comment"),
             )
         )
+    return items
+
+
+@router.get("/list", response_model=TrackerTicketListResponse)
+async def list_tracker_tickets(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    per_page: int = Query(20, ge=1, le=100, description="Размер страницы"),
+    closed: bool = Query(
+        False,
+        description="True — только закрытые/терминальные статусы; False — открытые (TRACKER_OPEN_STATUSES)",
+    ),
+    subscriber_q: Optional[str] = Query(
+        None,
+        description="Поиск по абоненту: ФИО, id, логин",
+    ),
+    date_from: Optional[date] = Query(
+        None,
+        description="Дата с (открытие для открытых, закрытие для закрытых)",
+    ),
+    date_to: Optional[date] = Query(
+        None,
+        description="Дата по включительно",
+    ),
+    assigned_to: Optional[int] = Query(
+        None,
+        description="Фильтр по исполнителю (assigned_to); только свой id",
+    ),
+) -> TrackerTicketListResponse:
+    """
+    Список тикетов `users.tracker_tickets` с пагинацией и tier-сортировкой (персонально по viewer_id).
+    По умолчанию только незакрытые (`closed=false`), источники lk / call_center / abs.
+    """
+    viewer_skystream_id = int(user["user_id"])
+    eff_assigned_to: int | None = None
+    if assigned_to is not None:
+        if int(assigned_to) != viewer_skystream_id:
+            raise HTTPException(status_code=403, detail="Можно фильтровать только свои тикеты")
+        eff_assigned_to = viewer_skystream_id
+
+    def _is_stale_prepared_cache(exc: BaseException) -> bool:
+        cur: BaseException | None = exc
+        while cur is not None:
+            if "InvalidCachedStatement" in type(cur).__name__:
+                return True
+            cur = cur.__cause__ or cur.__context__
+        return False
+
+    total = 0
+    rows: list[dict[str, Any]] = []
+    list_stats: dict[str, float | None] = {"avg_rating": None, "avg_rating_mine": None}
+    for attempt in range(2):
+        try:
+            total, rows, list_stats = await ticket_svc.fetch_tracker_list_page(
+                db,
+                viewer_id=viewer_skystream_id,
+                closed=closed,
+                page=page,
+                per_page=per_page,
+                subscriber_q=subscriber_q,
+                date_from=date_from,
+                date_to=date_to,
+                assigned_to=eff_assigned_to,
+            )
+            if not closed and rows:
+                await ticket_svc.reconcile_open_tickets_on_list_page(db, rows)
+                total, rows, list_stats = await ticket_svc.fetch_tracker_list_page(
+                    db,
+                    viewer_id=viewer_skystream_id,
+                    closed=closed,
+                    page=page,
+                    per_page=per_page,
+                    subscriber_q=subscriber_q,
+                    date_from=date_from,
+                    date_to=date_to,
+                    assigned_to=eff_assigned_to,
+                )
+            break
+        except NotSupportedError as exc:
+            if attempt == 0 and _is_stale_prepared_cache(exc):
+                continue
+            raise
+
+    items = map_tracker_list_rows_to_items(rows, user)
 
     stats = None
     if closed:

@@ -146,6 +146,39 @@ class TrackerTicketListDigestResponse(BaseModel):
     total: int = 0
 
 
+class HomeRatingItem(BaseModel):
+    ticket_id: int
+    rating: int
+    rating_comment: Optional[str] = None
+    rated_at: Optional[datetime] = None
+    subscriber_name: str
+
+
+class HomeDashboardResponse(BaseModel):
+    ratings: list[HomeRatingItem] = Field(default_factory=list)
+
+
+class HomeDashboardDigestResponse(BaseModel):
+    """Лёгкий поллинг оценок на главной: changed=false — полный /dashboard не нужен."""
+    changed: bool = True
+    digest: str
+    count: int = 0
+
+
+class HomeTicketsResponse(BaseModel):
+    total_open: int = 0
+    needs_reply_count: int = 0
+    needs_reply: list[TrackerTicketListItem] = Field(default_factory=list)
+    open: list[TrackerTicketListItem] = Field(default_factory=list)
+
+
+class HomeTicketsDigestResponse(BaseModel):
+    changed: bool = True
+    digest: str
+    total_open: int = 0
+    needs_reply_count: int = 0
+
+
 class DeskSearchSubscriberHit(BaseModel):
     id: int
     login: str
