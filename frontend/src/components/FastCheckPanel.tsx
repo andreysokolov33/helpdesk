@@ -5,6 +5,7 @@ import {
   type FastCheckStep,
   type ManagerContact,
 } from "@/api/userProfile";
+import FastCheckActionsHtml from "@/components/FastCheckActionsHtml";
 
 const INTRO =
   "Для быстрой проверки состояния УЗ пользователя нажмите кнопку «Проверить абонента». " +
@@ -327,9 +328,9 @@ export default function FastCheckPanel({
               })}
             </div>
             {phase === "done" && failedStep?.actions_html ? (
-              <div
+              <FastCheckActionsHtml
+                html={failedStep.actions_html}
                 className="tk-cc-diag-actions up-fc-html fc-block-wrap"
-                dangerouslySetInnerHTML={{ __html: failedStep.actions_html }}
               />
             ) : null}
             {phase === "done" && failedStep?.test_code === "session_limit" && onDisconnect ? (
@@ -382,10 +383,7 @@ export default function FastCheckPanel({
                 </ul>
               </div>
             ) : showActions ? (
-              <div
-                className="up-fc-html fc-block-wrap"
-                dangerouslySetInnerHTML={{ __html: activeStep!.actions_html! }}
-              />
+              <FastCheckActionsHtml html={activeStep!.actions_html!} className="up-fc-html fc-block-wrap" />
             ) : activeStep?.status === "pass" || activeStep?.status === "skip" ? (
               <p className="up-fc-ok-msg">
                 {activeStep.detail || "Проверка пройдена. Переходим к следующему шагу…"}

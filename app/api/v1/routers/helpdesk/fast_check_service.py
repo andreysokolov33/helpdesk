@@ -72,7 +72,7 @@ async def _load_instruction(
     if key not in cache:
         row = None
         variants_to_try = [variant]
-        if test_code == "tariff_state" and variant == 7:
+        if test_code == "tariff_state" and variant in (7, 9):
             variants_to_try.append(6)
         if 1 <= variant <= 7:
             variants_to_try.append(0)
@@ -464,14 +464,38 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
 
     if not connected:
         tariff_ended = (ctx.groupname or "").strip().lower() == "disabled"
-        variant = 26 if ctx.is_jur == 2 else (7 if tariff_ended else 6)
+        tariff_sufficient: Optional[bool] = None
+        tariff_min_price: Optional[float] = None
+        if ctx.is_jur == 2:
+            variant = 26
+        elif tariff_ended:
+            variant = 7
+        else:
+            tariff_min_price = await _min_tariff_price(session, ctx.id_grp)
+            tariff_sufficient = (
+                tariff_min_price is not None and ctx.balance >= tariff_min_price
+            )
+            variant = 6 if tariff_sufficient else 9
         instr = await _load_instruction(session, cache, "tariff_state", variant)
         extra = ""
         if ctx.is_jur == 2:
             managers = await _load_jur_managers(session)
             extra = _managers_html(managers)
+        elif tariff_sufficient is not None:
+            mp = f"{tariff_min_price:.2f}" if tariff_min_price is not None else None
+            if mp:
+                extra += (
+                    f"<p>Баланс: <strong>{ctx.balance:.2f} ₽</strong>, "
+                    f"нужно от <strong>{mp} ₽</strong> для минимального тарифа.</p>"
+                )
+            else:
+                extra += f"<p>Баланс: <strong>{ctx.balance:.2f} ₽</strong>.</p>"
         if tariff_ended and ctx.is_jur == 0:
             detail = "Тариф закончился"
+        elif tariff_sufficient is True:
+            detail = "Не подключен, на балансе достаточно средств"
+        elif tariff_sufficient is False:
+            detail = "Не подключен, недостаточно средств на балансе"
         else:
             detail = "Не подключен"
         steps.append(

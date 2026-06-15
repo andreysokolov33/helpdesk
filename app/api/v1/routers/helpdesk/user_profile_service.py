@@ -1369,14 +1369,14 @@ async def apply_freeze(
             "CALL radius.freeze_tariff(:uid, :reason)",
             {"uid": user_id, "reason": "2"},
         )
-        if date_unfreeze:
-            fr = await UserFreezeTariffDAO.find_one_or_none(session, user_id=user_id)
-            if fr:
-                await UserFreezeTariffDAO.update(
-                    session,
-                    filter_by={"user_id": user_id},
-                    date_unfreeze=date_unfreeze,
-                )
+        fr = await UserFreezeTariffDAO.find_one_or_none(session, user_id=user_id)
+        if fr:
+            await UserFreezeTariffDAO.update(
+                session,
+                filter_by={"user_id": user_id},
+                date_unfreeze=date_unfreeze,
+                auto_commit=False,
+            )
         await _log_tariff_action(
             session,
             operator=operator,
@@ -1402,6 +1402,7 @@ async def apply_freeze(
             reason_code=2,
             date_freeze=date_freeze,
             date_unfreeze=date_unfreeze,
+            auto_commit=False,
         )
     else:
         await UserFreezeTariffDAO.add(
@@ -1411,6 +1412,7 @@ async def apply_freeze(
             reason_code=2,
             date_freeze=date_freeze,
             date_unfreeze=date_unfreeze,
+            auto_commit=False,
         )
     await _log_tariff_action(
         session,
