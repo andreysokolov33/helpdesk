@@ -18,6 +18,7 @@ _T_NEWS_READ = f"{_NEWS_SCHEMA}.helpdesk_operator_news_read"
 
 _BELL_DIGEST_CACHE_TTL = 8
 _BELL_LIST_LIMIT = 30
+_BELL_UNREAD_MAX_AGE_DAYS = 14
 
 _VISIBLE_NEWS_SQL = """
     n.is_active IS TRUE
@@ -49,6 +50,12 @@ _UNREAD_NEWS_SQL = f"""
     )
 """
 
+# В колокольчике — только непрочитанные не старше 14 суток (на /news остаются «Новое»).
+_BELL_UNREAD_NEWS_SQL = f"""
+    {_UNREAD_NEWS_SQL}
+    AND n.published_at > NOW() - INTERVAL '{_BELL_UNREAD_MAX_AGE_DAYS} days'
+"""
+
 
 def _bell_digest_cache_key(operator_id: int) -> str:
     return f"helpdesk_news_bell_digest:{operator_id}"
@@ -72,7 +79,7 @@ async def fetch_operator_news_bell(
                     n.link_path,
                     n.published_at
                 FROM {_T_NEWS} n
-                WHERE {_UNREAD_NEWS_SQL}
+                WHERE {_BELL_UNREAD_NEWS_SQL}
                 ORDER BY n.published_at DESC, n.id DESC
                 LIMIT :limit
                 """
@@ -98,7 +105,7 @@ async def fetch_operator_news_bell(
                 f"""
                 SELECT COUNT(*)::int AS cnt
                 FROM {_T_NEWS} n
-                WHERE {_UNREAD_NEWS_SQL}
+                WHERE {_BELL_UNREAD_NEWS_SQL}
                 """
             ),
             {"operator_id": operator_id},
@@ -132,7 +139,7 @@ async def fetch_operator_news_bell_digest(
                 f"""
                 SELECT n.id
                 FROM {_T_NEWS} n
-                WHERE {_UNREAD_NEWS_SQL}
+                WHERE {_BELL_UNREAD_NEWS_SQL}
                 ORDER BY n.id
                 """
             ),

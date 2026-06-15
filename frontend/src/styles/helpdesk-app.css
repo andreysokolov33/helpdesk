@@ -1778,22 +1778,6 @@
   font-weight: 700;
 }
 
-.home-rating--bad {
-  color: var(--red);
-}
-
-.home-rating--poor {
-  color: var(--wn);
-}
-
-.home-rating--mid {
-  color: #8a6a08;
-}
-
-.home-rating--good {
-  color: var(--ok);
-}
-
 .home-accent {
   color: var(--red);
 }

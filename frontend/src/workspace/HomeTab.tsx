@@ -17,6 +17,7 @@ import {
   type HomeTicketsResponse,
 } from "@/api/home";
 import { formatTicketListDate, formatWorkDurationSince } from "@/utils/ticketFormat";
+import { ratingToneClass } from "@/utils/ratingTone";
 import { TICKETS_LIST_POLL_JITTER_MS, TICKETS_LIST_POLL_MS } from "@/utils/ticketsListPoll";
 
 const REPLY_SLA_MINUTES = 30;
@@ -48,13 +49,6 @@ function formatWaitLabel(row: TrackerTicketListItem, nowMs: number): { label: st
   const h = Math.floor(min / 60);
   const m = min % 60;
   return { label: m > 0 ? `${h} ч ${m} мин` : `${h} ч`, overdue };
-}
-
-function homeRatingClass(rating: number): string {
-  if (rating <= 2) return "home-rating--bad";
-  if (rating <= 3) return "home-rating--poor";
-  if (rating <= 4) return "home-rating--mid";
-  return "home-rating--good";
 }
 
 function formatRatingDate(iso: string | null): string {
@@ -475,8 +469,12 @@ export default function HomeTab() {
                       <strong>{r.subscriber_name}</strong>
                     </td>
                     <td style={{ color: "var(--i2)" }}>{r.rating_comment || "—"}</td>
-                    <td className={homeRatingClass(r.rating)} style={{ fontWeight: 700 }}>
-                      {r.rating}
+                    <td>
+                      <span
+                        className={`rating-tone rating-tone--pill ${ratingToneClass(r.rating, true)}`.trim()}
+                      >
+                        {r.rating}
+                      </span>
                     </td>
                     <td style={{ color: "var(--i3)" }}>{formatRatingDate(r.rated_at)}</td>
                   </tr>
