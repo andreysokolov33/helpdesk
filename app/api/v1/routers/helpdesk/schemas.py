@@ -537,3 +537,55 @@ class HelpdeskMacroItem(BaseModel):
 
 class HelpdeskMacrosResponse(BaseModel):
     items: list[HelpdeskMacroItem] = Field(default_factory=list)
+
+
+class OperatorNewsBellItem(BaseModel):
+    id: int
+    title: str
+    kind: str
+    importance: str
+    link_path: str | None = None
+    published_at: datetime
+
+
+class OperatorNewsBellResponse(BaseModel):
+    unread_count: int = 0
+    items: list[OperatorNewsBellItem] = Field(default_factory=list)
+
+
+class OperatorNewsListItem(BaseModel):
+    id: int
+    title: str
+    kind: str
+    importance: str
+    link_path: str | None = None
+    published_at: datetime
+    is_read: bool = False
+    read_at: datetime | None = None
+
+
+class OperatorNewsListResponse(BaseModel):
+    total: int = 0
+    unread_total: int = 0
+    items: list[OperatorNewsListItem] = Field(default_factory=list)
+
+
+class OperatorNewsBellDigestResponse(BaseModel):
+    changed: bool
+    digest: str
+    unread_count: int = 0
+
+
+class OperatorNewsDetailResponse(BaseModel):
+    id: int
+    title: str
+    body_html: str
+    kind: str
+    importance: str
+    link_path: str | None = None
+    published_at: datetime
+    is_read: bool = False
+
+
+class OperatorNewsMarkReadResponse(BaseModel):
+    ok: bool = True

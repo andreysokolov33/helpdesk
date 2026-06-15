@@ -1,0 +1,120 @@
+-- Новости / оповещения для операторов notification.
+-- Схема: notification
+-- Таблицы с общим префиксом helpdesk_operator_news* — лежат рядом в каталоге БД.
+--
+-- helpdesk_operator_news          — публикации (HTML-тело, заголовок, важность)
+-- helpdesk_operator_news_read     — факт прочтения оператором (не показывать повторно)
+
+BEGIN;
+
+-- Схема notification уже используется в проекте (news, articles и т.д.).
+
+-- Тип новости (для UI и фильтрации).
+CREATE TYPE notification.helpdesk_operator_news_kind AS ENUM (
+    'general',   -- общее информационное сообщение
+    'training',  -- обучение, тесты (/train)
+    'alert'      -- важное оповещение для операторов
+);
+
+-- Уровень важности.
+-- normal    — только в колокольчике
+-- important — акцент в колокольчике
+-- featured  — блок на главной + колокольчик
+CREATE TYPE notification.helpdesk_operator_news_importance AS ENUM (
+    'normal',
+    'important',
+    'featured'
+);
+
+CREATE TABLE notification.helpdesk_operator_news (
+    id              BIGSERIAL PRIMARY KEY,
+
+    title           TEXT NOT NULL,
+    body_html       TEXT NOT NULL DEFAULT '',
+
+    kind            notification.helpdesk_operator_news_kind NOT NULL DEFAULT 'general',
+    importance      notification.helpdesk_operator_news_importance NOT NULL DEFAULT 'normal',
+
+    -- Опциональная ссылка «Перейти» (например /train).
+    link_path       TEXT NULL,
+
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+    -- Видимость: published_at <= now() AND (expires_at IS NULL OR expires_at > now()).
+    published_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ NULL,
+
+    created_by      BIGINT NULL
+        REFERENCES users.skystream_users (id) ON DELETE SET NULL,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_helpdesk_operator_news_title_nonempty
+        CHECK (length(trim(title)) > 0),
+    CONSTRAINT chk_helpdesk_operator_news_link_path
+        CHECK (link_path IS NULL OR link_path ~ '^/')
+);
+
+COMMENT ON TABLE notification.helpdesk_operator_news IS
+    'Новости и оповещения для операторов helpdesk (колокольчик, при importance=featured — главная).';
+
+COMMENT ON COLUMN notification.helpdesk_operator_news.title IS
+    'Краткий заголовок для списка в колокольчике.';
+
+COMMENT ON COLUMN notification.helpdesk_operator_news.body_html IS
+    'Полный текст новости в HTML.';
+
+COMMENT ON COLUMN notification.helpdesk_operator_news.kind IS
+    'Категория: general, training (обучение), alert (срочное оповещение).';
+
+COMMENT ON COLUMN notification.helpdesk_operator_news.importance IS
+    'normal — колокольчик; important — выделение; featured — ещё и блок на главной.';
+
+COMMENT ON COLUMN notification.helpdesk_operator_news.link_path IS
+    'Относительный путь внутри приложения, например /train.';
+
+COMMENT ON COLUMN notification.helpdesk_operator_news.is_active IS
+    'FALSE — скрыта вручную, независимо от дат публикации.';
+
+CREATE INDEX idx_helpdesk_operator_news_published
+    ON notification.helpdesk_operator_news (published_at DESC, id DESC);
+
+CREATE INDEX idx_helpdesk_operator_news_featured_active
+    ON notification.helpdesk_operator_news (published_at DESC)
+    WHERE is_active
+      AND importance = 'featured';
+
+CREATE INDEX idx_helpdesk_operator_news_kind
+    ON notification.helpdesk_operator_news (kind);
+
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE notification.helpdesk_operator_news_read (
+    id              BIGSERIAL PRIMARY KEY,
+
+    news_id         BIGINT NOT NULL
+        REFERENCES notification.helpdesk_operator_news (id) ON DELETE CASCADE,
+
+    operator_id     BIGINT NOT NULL
+        REFERENCES users.skystream_users (id) ON DELETE CASCADE,
+
+    read_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_helpdesk_operator_news_read_operator
+        UNIQUE (news_id, operator_id)
+);
+
+COMMENT ON TABLE notification.helpdesk_operator_news_read IS
+    'Прочитанные оператором новости — чтобы не показывать повторно в колокольчике.';
+
+COMMENT ON COLUMN notification.helpdesk_operator_news_read.read_at IS
+    'Момент первого прочтения (повторная отметка не создаётся из-за UNIQUE).';
+
+CREATE INDEX idx_helpdesk_operator_news_read_operator
+    ON notification.helpdesk_operator_news_read (operator_id, read_at DESC);
+
+CREATE INDEX idx_helpdesk_operator_news_read_news
+    ON notification.helpdesk_operator_news_read (news_id);
+
+COMMIT;

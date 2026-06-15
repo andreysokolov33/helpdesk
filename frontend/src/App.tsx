@@ -9,6 +9,7 @@ import ChatSectionPage from "@/workspace/ChatSectionPage";
 import StatsTab from "@/workspace/StatsTab";
 import KbTab from "@/workspace/KbTab";
 import TrainTab from "@/workspace/TrainTab";
+import NewsTab from "@/workspace/NewsTab";
 import UserProfilePage from "@/workspace/UserProfilePage";
 import OperatorProfilePage from "@/workspace/OperatorProfilePage";
 import TicketPage from "@/workspace/TicketPage";
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="stats" element={<StatsTab />} />
             <Route path="kb" element={<KbTab />} />
             <Route path="train" element={<TrainTab />} />
+            <Route path="news" element={<NewsTab />} />
             <Route path="users/:userId" element={<UserProfilePage />} />
             <Route path="account" element={<OperatorProfilePage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

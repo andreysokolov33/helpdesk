@@ -1,15 +1,16 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
 import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
 import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
 import { sendOperatorPresence } from "@/api/operatorsManage";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
 import { fetchChatUnread } from "@/api/chat";
+import { fetchOperatorNewsBell, fetchOperatorNewsBellDigest, fetchOperatorNewsDetail, formatNewsRelativeTime, isOperatorNewsUrgent, markOperatorNewsRead, operatorNewsKindLabel, type OperatorNewsBellItem, type OperatorNewsDetail } from "@/api/news";
 import { ticketsListPollDelayMs } from "@/utils/ticketsListPoll";
-import { getBellUnreadCount, MOCK_NOTIFS } from "@/data/mockCc";
 import { useTheme } from "@/theme/ThemeContext";
 import LogoutConfirmModal from "@/components/LogoutConfirmModal";
+import OperatorNewsModal from "@/components/OperatorNewsModal";
 import { themeToggleHint } from "@/theme/themeMeta";
 
 type TabDef = {
@@ -55,13 +56,24 @@ export default function DashboardShell() {
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [ticketsUnread, setTicketsUnread] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
+  const [bellUnread, setBellUnread] = useState(0);
+  const [bellItems, setBellItems] = useState<OperatorNewsBellItem[]>([]);
+  const [newsModalOpen, setNewsModalOpen] = useState(false);
+  const [newsDetail, setNewsDetail] = useState<OperatorNewsDetail | null>(null);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const bellDigestRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const bellRef = useRef<HTMLButtonElement>(null);
   const userMenuRef = useRef<HTMLButtonElement>(null);
-  const bellUnread = getBellUnreadCount();
   const userHead = userMenuHead(authMe);
+  const hasUrgentUnread = useMemo(
+    () => bellItems.some(isOperatorNewsUrgent),
+    [bellItems],
+  );
+  const bellAttention = hasUrgentUnread && !notifOpen;
 
   useEffect(() => {
     function close(e: MouseEvent) {
@@ -127,6 +139,64 @@ export default function DashboardShell() {
 
   useEffect(() => {
     let cancelled = false;
+    let pollTimer: number | null = null;
+
+    async function loadBellFull() {
+      try {
+        const data = await fetchOperatorNewsBell();
+        if (!cancelled) {
+          setBellUnread(data.unread_count);
+          setBellItems(data.items);
+        }
+      } catch {
+        if (!cancelled) {
+          setBellUnread(0);
+          setBellItems([]);
+        }
+      }
+    }
+
+    async function pollBellDigest() {
+      try {
+        const digest = await fetchOperatorNewsBellDigest({
+          digest: bellDigestRef.current ?? undefined,
+        });
+        if (cancelled) return;
+        bellDigestRef.current = digest.digest;
+        setBellUnread(digest.unread_count);
+        if (digest.changed) await loadBellFull();
+      } catch {
+        if (!cancelled) await loadBellFull();
+      }
+    }
+
+    const schedulePoll = () => {
+      pollTimer = window.setTimeout(() => {
+        void pollBellDigest().finally(() => {
+          if (!cancelled) schedulePoll();
+        });
+      }, ticketsListPollDelayMs());
+    };
+
+    void loadBellFull();
+    schedulePoll();
+
+    function onVisible() {
+      if (document.visibilityState === "visible") void pollBellDigest();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", pollBellDigest);
+
+    return () => {
+      cancelled = true;
+      if (pollTimer != null) window.clearTimeout(pollTimer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", pollBellDigest);
+    };
+  }, [location.pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
 
     async function loadChatUnread() {
       try {
@@ -179,6 +249,35 @@ export default function DashboardShell() {
     };
   }, []);
 
+  async function openNewsItem(item: OperatorNewsBellItem) {
+    setNotifOpen(false);
+    setNewsModalOpen(true);
+    setNewsDetail(null);
+    setNewsError(null);
+    setNewsLoading(true);
+    try {
+      const detail = await fetchOperatorNewsDetail(item.id);
+      setNewsDetail(detail);
+      if (!detail.is_read) {
+        await markOperatorNewsRead(item.id);
+        setBellItems((prev) => prev.filter((n) => n.id !== item.id));
+        setBellUnread((c) => Math.max(0, c - 1));
+        bellDigestRef.current = null;
+      }
+    } catch (e) {
+      setNewsError(e instanceof Error ? e.message : "Не удалось загрузить новость");
+    } finally {
+      setNewsLoading(false);
+    }
+  }
+
+  function closeNewsModal() {
+    setNewsModalOpen(false);
+    setNewsDetail(null);
+    setNewsError(null);
+    setNewsLoading(false);
+  }
+
   async function performLogout() {
     setLogoutBusy(true);
     try {
@@ -210,36 +309,58 @@ export default function DashboardShell() {
         <div className="nav-actions">
           <button
             type="button"
-            className="nav-icon-btn nav-bell-btn"
+            className={`nav-icon-btn nav-bell-btn${bellAttention ? " nav-bell-btn--urgent" : ""}`}
             id="bellB"
             ref={bellRef}
             aria-expanded={notifOpen}
-            aria-label="Уведомления"
-            title="Уведомления"
+            aria-label={bellAttention ? "Срочные уведомления" : "Уведомления"}
+            title={bellAttention ? "Есть срочные непрочитанные уведомления" : "Уведомления"}
             onClick={() => setNotifOpen((v) => !v)}
           >
-            <svg className="nav-svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" aria-hidden>
-              <path d="M12 3a4.5 4.5 0 0 0-4.5 4.5v2.4L6 13h12l-1.5-3.1V7.5A4.5 4.5 0 0 0 12 3Z" strokeLinejoin="round" />
-              <path d="M9.2 18a2.8 2.8 0 0 0 5.6 0" strokeLinecap="round" />
-            </svg>
+            <span className="nav-bell-ico-wrap" aria-hidden>
+              <svg className="nav-svg-ico nav-bell-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85">
+                <path d="M12 3a4.5 4.5 0 0 0-4.5 4.5v2.4L6 13h12l-1.5-3.1V7.5A4.5 4.5 0 0 0 12 3Z" strokeLinejoin="round" />
+                <path d="M9.2 18a2.8 2.8 0 0 0 5.6 0" strokeLinecap="round" />
+              </svg>
+            </span>
             {bellUnread > 0 ? (
-              <span className="nav-counter" aria-live="polite">
+              <span className={`nav-counter${bellAttention ? " nav-counter--urgent" : ""}`} aria-live="polite">
                 {bellUnread > 99 ? "99+" : bellUnread}
               </span>
             ) : null}
             <div className={`ndd ${notifOpen ? "open" : ""}`}>
               <div className="ndh">Уведомления</div>
-              {MOCK_NOTIFS.map((n) => (
-                <NavLink
-                  key={n.id}
-                  className="ndi"
-                  to={`/tickets/${n.id}`}
-                  onClick={() => setNotifOpen(false)}
-                >
-                  <span className="ndi-dot">●</span> {n.name} — {n.topic}
-                  <div className="ndt">{n.ago}</div>
-                </NavLink>
-              ))}
+              {bellItems.length === 0 ? (
+                <div className="ndi ndi--empty">Нет новых уведомлений</div>
+              ) : (
+                bellItems.map((n) => {
+                  const kindLabel = operatorNewsKindLabel(n.kind);
+                  const important =
+                    n.importance === "important" || n.importance === "featured";
+                  return (
+                    <button
+                      key={n.id}
+                      type="button"
+                      className={`ndi ndi--news${important ? " ndi--important" : ""}`}
+                      onClick={() => void openNewsItem(n)}
+                    >
+                      {important ? <span className="ndi-dot">●</span> : null}
+                      {n.title}
+                      <div className="ndt">
+                        {kindLabel ? `${kindLabel} · ` : ""}
+                        {formatNewsRelativeTime(n.published_at)}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+              <NavLink
+                to="/news"
+                className="ndd-foot"
+                onClick={() => setNotifOpen(false)}
+              >
+                Все новости →
+              </NavLink>
             </div>
           </button>
 
@@ -348,6 +469,14 @@ export default function DashboardShell() {
           if (!logoutBusy) setLogoutOpen(false);
         }}
         onConfirm={() => void performLogout()}
+      />
+
+      <OperatorNewsModal
+        open={newsModalOpen}
+        detail={newsDetail}
+        loading={newsLoading}
+        error={newsError}
+        onClose={closeNewsModal}
       />
     </div>
   );

@@ -215,6 +215,113 @@
   font-weight: 600;
 }
 
+/* ——— Новости (/news) ——— */
+.news-page__head {
+  margin-bottom: 14px;
+}
+
+.news-page__title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.news-page__sub {
+  font-size: 12px;
+  color: var(--i3);
+  margin-top: 4px;
+}
+
+.news-page__error,
+.news-page__empty {
+  font-size: 13px;
+  color: var(--i3);
+  padding: 12px 0;
+}
+
+.news-page__card {
+  overflow: hidden;
+}
+
+.news-table {
+  width: 100%;
+}
+
+.news-table th:nth-child(2),
+.news-table td:nth-child(2) {
+  width: 110px;
+}
+
+.news-table th:nth-child(3),
+.news-table td:nth-child(3) {
+  width: 120px;
+}
+
+.news-table th:nth-child(4),
+.news-table td:nth-child(4) {
+  width: 110px;
+}
+
+.news-row {
+  cursor: pointer;
+}
+
+.news-row:hover td {
+  background: var(--bg);
+}
+
+.news-row--unread td {
+  font-weight: 600;
+}
+
+.news-row__title .tag {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.news-row__dot {
+  color: var(--red);
+  margin-right: 6px;
+  font-size: 10px;
+}
+
+.news-row__kind,
+.news-row__date,
+.news-row__status {
+  color: var(--i3);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.news-row--unread .news-row__kind,
+.news-row--unread .news-row__date {
+  font-weight: 500;
+}
+
+.news-row__unread {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.news-row__read {
+  color: var(--i3);
+}
+
+.news-page__pager {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--ln);
+}
+
+.news-page__pager .ch-page-btn {
+  padding: 6px 11px;
+  font-size: 12px;
+}
+
+.news-page__pager .ch-page-info {
+  font-size: 11px;
+}
+
 /* ——— Градация оценок (статистика и др.) ——— */
 :root,
 [data-theme="light"] {

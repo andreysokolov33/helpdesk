@@ -31,6 +31,7 @@ from app.api.v1.routers.helpdesk.operator_profile import router as helpdesk_oper
 from app.api.v1.routers.helpdesk.stats import router as helpdesk_stats_router
 from app.api.v1.routers.helpdesk.tracker import router as helpdesk_tracker_router
 from app.api.v1.routers.helpdesk.home import router as helpdesk_home_router
+from app.api.v1.routers.helpdesk.news import router as helpdesk_news_router
 from app.api.v1.routers.helpdesk.chats import router as helpdesk_chats_router
 from app.config import BASE_DIR, settings
 from app.core.validation_i18n import localize_validation_errors
@@ -215,6 +216,7 @@ def create_app() -> FastAPI:
     app.include_router(helpdesk_tickets_nav_router, prefix="/api")
     app.include_router(helpdesk_tracker_router, prefix="/api")
     app.include_router(helpdesk_home_router, prefix="/api")
+    app.include_router(helpdesk_news_router, prefix="/api")
     app.include_router(helpdesk_operator_profile_router, prefix="/api")
     app.include_router(helpdesk_chats_router, prefix="/api")
     app.include_router(helpdesk_search_router, prefix="/api")
