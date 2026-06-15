@@ -13,7 +13,7 @@ const STORAGE_KEY = "helpdesk-theme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<AppTheme>(() => {
-    if (typeof localStorage === "undefined") return "light";
+    if (typeof localStorage === "undefined") return "comfort";
     return parseStoredTheme(localStorage.getItem(STORAGE_KEY));
   });
 

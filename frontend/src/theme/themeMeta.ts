@@ -1,11 +1,11 @@
 export type AppTheme = "light" | "dark" | "comfort";
 
-/** 1. Солнце (основная) → 2. Солнце с тучкой → 3. Тёмная */
-export const THEME_ORDER: readonly AppTheme[] = ["light", "comfort", "dark"];
+/** 1. Солнце с тучкой (основная) → 2. Солнце → 3. Тёмная */
+export const THEME_ORDER: readonly AppTheme[] = ["comfort", "light", "dark"];
 
 export function parseStoredTheme(raw: string | null): AppTheme {
-  if (raw === "dark" || raw === "comfort") return raw;
-  return "light";
+  if (raw === "light" || raw === "dark") return raw;
+  return "comfort";
 }
 
 export function nextTheme(current: AppTheme): AppTheme {
@@ -17,12 +17,12 @@ export function nextTheme(current: AppTheme): AppTheme {
 export function themeToggleHint(current: AppTheme): string {
   const next = nextTheme(current);
   if (next === "dark") return "Включить тёмную тему";
-  if (next === "comfort") return "Включить тему «солнце с тучкой»";
-  return "Включить основную тему";
+  if (next === "light") return "Включить светлую тему";
+  return "Включить тему «солнце с тучкой»";
 }
 
 export function themeCurrentLabel(current: AppTheme): string {
   if (current === "dark") return "Тёмная тема";
-  if (current === "comfort") return "Солнце с тучкой";
-  return "Основная тема";
+  if (current === "light") return "Светлая тема";
+  return "Солнце с тучкой";
 }

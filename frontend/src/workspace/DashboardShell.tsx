@@ -376,11 +376,11 @@ export default function DashboardShell() {
             title={themeToggleHint(theme)}
             aria-label={themeToggleHint(theme)}
           >
-            <span className={`nav-theme-fade ${theme === "light" ? "is-on" : ""}`}>
-              <img className="nav-theme-svg" src={themeSunIcon} width={24} height={24} alt="" />
-            </span>
             <span className={`nav-theme-fade ${theme === "comfort" ? "is-on" : ""}`}>
               <img className="nav-theme-svg" src={themeComfortIcon} width={24} height={24} alt="" />
+            </span>
+            <span className={`nav-theme-fade ${theme === "light" ? "is-on" : ""}`}>
+              <img className="nav-theme-svg" src={themeSunIcon} width={24} height={24} alt="" />
             </span>
             <span className={`nav-theme-fade ${theme === "dark" ? "is-on" : ""}`}>
               <img className="nav-theme-svg" src={themeMoonIcon} width={24} height={24} alt="" />

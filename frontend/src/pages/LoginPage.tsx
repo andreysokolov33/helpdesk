@@ -77,11 +77,11 @@ export default function LoginPage() {
           title={themeToggleHint(theme)}
           aria-label={themeToggleHint(theme)}
         >
-          <span className={`${styles.themeFade} ${theme === "light" ? styles.themeFadeOn : ""}`}>
-            <img className={styles.themeIcon} src={themeSunIcon} width={22} height={22} alt="" />
-          </span>
           <span className={`${styles.themeFade} ${theme === "comfort" ? styles.themeFadeOn : ""}`}>
             <img className={styles.themeIcon} src={themeComfortIcon} width={22} height={22} alt="" />
+          </span>
+          <span className={`${styles.themeFade} ${theme === "light" ? styles.themeFadeOn : ""}`}>
+            <img className={styles.themeIcon} src={themeSunIcon} width={22} height={22} alt="" />
           </span>
           <span className={`${styles.themeFade} ${theme === "dark" ? styles.themeFadeOn : ""}`}>
             <img className={styles.themeIcon} src={themeMoonIcon} width={22} height={22} alt="" />

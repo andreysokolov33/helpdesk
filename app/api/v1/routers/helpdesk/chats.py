@@ -41,6 +41,13 @@ logger = logging.getLogger("abs")
 
 router = APIRouter(prefix="/v1/helpdesk/chats", tags=["Helpdesk — чат с абонентом"])
 
+# jur_id в users.user — varchar; пустая строка не приводится к int.
+_JCL_JOIN = (
+    "LEFT JOIN oss.jur_client_list jcl "
+    "ON jcl.id = CASE WHEN trim(coalesce(u.jur_id, '')) ~ '^[0-9]+$' "
+    "THEN trim(u.jur_id)::bigint ELSE NULL END"
+)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Константы
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,7 +237,7 @@ async def get_all_users_chats(
             LEFT JOIN wifitochka.ip_group ig ON ig.id = u.id_grp
             LEFT JOIN users.user_details ud ON ud.user_id = u.id
             LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
-            LEFT JOIN oss.jur_client_list jcl ON jcl.id = u.jur_id::int
+            {_JCL_JOIN}
             WHERE {where_clause}
             GROUP BY u.id, ud.surname, ud.name, ud.patronymic, sf.station_name, ig.name,
                      u.login, u.is_juridical, jcl.short_name_organization
@@ -255,7 +262,7 @@ async def get_all_users_chats(
 async def search_users_chats(db: AsyncSession, query: str, limit: int) -> List[dict]:
     is_id_search = query.isdigit()
     params: Dict[str, Any] = {"limit": limit}
-    base = """
+    base = f"""
         WITH latest_messages AS (
             SELECT
                 u.id as chat_id,
@@ -275,8 +282,8 @@ async def search_users_chats(db: AsyncSession, query: str, limit: int) -> List[d
             LEFT JOIN wifitochka.ip_group ig ON ig.id = u.id_grp
             LEFT JOIN users.user_details ud ON ud.user_id = u.id
             LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
-            LEFT JOIN oss.jur_client_list jcl ON jcl.id = u.jur_id::int
-            WHERE (ud."name" IS NOT NULL OR u.is_juridical = 2) AND {cond}
+            {_JCL_JOIN}
+            WHERE (ud."name" IS NOT NULL OR u.is_juridical = 2) AND {{cond}}
             GROUP BY u.id, ud.surname, ud.name, ud.patronymic, sf.station_name, ig.name,
                      u.login, u.is_juridical, jcl.short_name_organization
         )
@@ -308,7 +315,7 @@ async def search_users_chats(db: AsyncSession, query: str, limit: int) -> List[d
 
 async def find_or_create_chat(db: AsyncSession, user_id: int) -> Optional[dict]:
     row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 u.id AS chat_id,
                 CASE WHEN u.is_juridical = 0 THEN INITCAP(ud.surname) || ' ' || INITCAP(ud.name) || ' ' || INITCAP(ud.patronymic)
@@ -323,7 +330,7 @@ async def find_or_create_chat(db: AsyncSession, user_id: int) -> Optional[dict]:
             LEFT JOIN wifitochka.ip_group ig ON ig.id = u.id_grp
             LEFT JOIN users.user_details ud ON ud.user_id = u.id
             LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
-            LEFT JOIN oss.jur_client_list jcl ON jcl.id = u.jur_id::int
+            {_JCL_JOIN}
             WHERE u.id = :uid
             LIMIT 1
         """),
