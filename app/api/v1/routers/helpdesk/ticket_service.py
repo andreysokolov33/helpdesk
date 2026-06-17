@@ -2670,6 +2670,8 @@ async def load_ticket_detail(
         )
     ).mappings().first()
 
+    reopen_meta = await _fetch_ticket_reopen_meta(db, ticket_id)
+
     station = (d.get("station_name") or d.get("station_fallback_name") or "").strip() or None
     sub_login = (d.get("subscriber_login") or "").strip()
     uid = int(d["user_id"]) if d.get("user_id") is not None else None
@@ -2796,6 +2798,9 @@ async def load_ticket_detail(
         "date_of_create_iso": _iso(d.get("date_of_create")),
         "date_of_close_iso": _iso(date_of_close),
         "can_reopen": can_reopen,
+        "was_reopened": reopen_meta["was_reopened"],
+        "reopen_count": reopen_meta["reopen_count"],
+        "last_reopened_at_iso": reopen_meta["last_reopened_at_iso"],
         "updated_at": d.get("updated_at"),
         "updated_at_iso": _iso(d.get("updated_at")),
         "assigned_at_iso": _iso(assigned_at_row["start_time"]) if assigned_at_row else None,
@@ -3024,6 +3029,29 @@ async def _record_ticket_reopened_history(
         },
     )
     await db.flush()
+
+
+async def _fetch_ticket_reopen_meta(db: AsyncSession, ticket_id: int) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(*)::int AS reopen_count,
+                       MAX(start_time) AS last_reopened_at
+                FROM users.tracker_ticket_line_history
+                WHERE ticket_id = :ticket_id AND event_type = 'reopened'
+                """
+            ),
+            {"ticket_id": ticket_id},
+        )
+    ).mappings().first()
+    count = int((row or {}).get("reopen_count") or 0)
+    last = (row or {}).get("last_reopened_at")
+    return {
+        "reopen_count": count,
+        "was_reopened": count > 0,
+        "last_reopened_at_iso": _iso(last),
+    }
 
 
 async def _validate_leaf_category(

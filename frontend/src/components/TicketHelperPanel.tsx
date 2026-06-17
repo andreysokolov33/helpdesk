@@ -4,6 +4,7 @@ import type { TicketDetail } from "@/api/ticket";
 import type { FastCheckResponse, UserProfileResponse } from "@/api/userProfile";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import TicketStaffParticipants from "@/components/TicketStaffParticipants";
+import { formatDateTimeLocal } from "@/utils/dateTime";
 import { ticketListStatusColumn } from "@/api/tracker";
 import { formatWorkDurationSince } from "@/utils/ticketFormat";
 import { queueLineBadgeClass, queueLineShortLabel } from "@/utils/ticketLabels";
@@ -79,6 +80,21 @@ export default function TicketHelperPanel({
     "—";
   const workSince = detail.assigned_at_iso || detail.date_of_create_iso;
   const statusColumn = ticketListStatusColumn(detail);
+  const reopenLabel = (() => {
+    if (!detail.was_reopened) return null;
+    const count = detail.reopen_count ?? 0;
+    const when = formatDateTimeLocal(detail.last_reopened_at_iso);
+    const timesWord = (n: number) => {
+      const mod100 = n % 100;
+      const mod10 = n % 10;
+      if (mod10 === 1 && mod100 !== 11) return `${n} раз`;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} раза`;
+      return `${n} раз`;
+    };
+    if (count > 1 && when) return `${timesWord(count)} · ${when}`;
+    if (count > 1) return timesWord(count);
+    return when || "да";
+  })();
 
   return (
     <div className="tk-cc-helper-wrap">
@@ -226,6 +242,12 @@ export default function TicketHelperPanel({
                 {statusColumn.label}
               </span>
             </div>
+            {reopenLabel ? (
+              <div className="tk-cc-meta__row">
+                <span className="tk-cc-meta__label">Переоткрытие</span>
+                <span className="tk-cc-meta__value tk-cc-meta__value--reopened">{reopenLabel}</span>
+              </div>
+            ) : null}
             {workSince ? (
               <div className="tk-cc-meta__row">
                 <span className="tk-cc-meta__label">В работе</span>

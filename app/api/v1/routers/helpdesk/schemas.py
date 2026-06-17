@@ -412,6 +412,9 @@ class TicketDetailResponse(BaseModel):
     date_of_create_iso: str | None = None
     date_of_close_iso: str | None = None
     can_reopen: bool = False
+    was_reopened: bool = False
+    reopen_count: int = 0
+    last_reopened_at_iso: str | None = None
     updated_at_iso: str | None = None
     assigned_at_iso: str | None = None
     chat_mode: str

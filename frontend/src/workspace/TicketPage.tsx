@@ -2023,43 +2023,45 @@ export default function TicketPage() {
               aria-modal="true"
               onClick={() => setImgViewerOpen(false)}
             >
+              <button type="button" className="tk-imgv__close" aria-label="Закрыть" onClick={() => setImgViewerOpen(false)}>
+                ×
+              </button>
+              <button
+                type="button"
+                className="tk-imgv__nav tk-imgv__nav--prev"
+                aria-label="Предыдущее"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setImgViewerIndex((i) => {
+                    const newIdx = allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0;
+                    imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+                    return newIdx;
+                  });
+                }}
+              >
+                ‹
+              </button>
               <div className="tk-imgv__box" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="tk-imgv__close" aria-label="Закрыть" onClick={() => setImgViewerOpen(false)}>
-                  ×
-                </button>
-                <button
-                  type="button"
-                  className="tk-imgv__nav tk-imgv__nav--prev"
-                  aria-label="Предыдущее"
-                  onClick={() =>
-                    setImgViewerIndex((i) => {
-                      const newIdx = allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0;
-                      imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
-                      return newIdx;
-                    })
-                  }
-                >
-                  ‹
-                </button>
                 <img className="tk-imgv__img" src={allImageUrls[Math.min(imgViewerIndex, allImageUrls.length - 1)]} alt="Просмотр" />
-                <button
-                  type="button"
-                  className="tk-imgv__nav tk-imgv__nav--next"
-                  aria-label="Следующее"
-                  onClick={() =>
-                    setImgViewerIndex((i) => {
-                      const newIdx = allImageUrls.length ? (i + 1) % allImageUrls.length : 0;
-                      imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
-                      return newIdx;
-                    })
-                  }
-                >
-                  ›
-                </button>
                 <div className="tk-imgv__counter" aria-live="polite">
                   {imgViewerIndex + 1} / {allImageUrls.length}
                 </div>
               </div>
+              <button
+                type="button"
+                className="tk-imgv__nav tk-imgv__nav--next"
+                aria-label="Следующее"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setImgViewerIndex((i) => {
+                    const newIdx = allImageUrls.length ? (i + 1) % allImageUrls.length : 0;
+                    imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+                    return newIdx;
+                  });
+                }}
+              >
+                ›
+              </button>
             </div>
           ) : null}
 

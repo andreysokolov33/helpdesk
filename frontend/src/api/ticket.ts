@@ -115,6 +115,9 @@ export type TicketDetail = {
   date_of_create_iso?: string | null;
   date_of_close_iso?: string | null;
   can_reopen?: boolean;
+  was_reopened?: boolean;
+  reopen_count?: number;
+  last_reopened_at_iso?: string | null;
   updated_at_iso?: string | null;
   assigned_at_iso?: string | null;
   chat_mode: "mail" | "tracker" | string;
