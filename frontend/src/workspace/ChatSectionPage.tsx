@@ -624,24 +624,32 @@ export default function ChatSectionPage() {
             ) : null}
             <MessageBody text={m.text ?? ""} className="cs-msg-text" />
             {m.attachments.length ? (
-              <div className="cs-att">
-                {images.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    className="cs-att-img"
-                    onClick={() => setLightbox(a.file_path)}
-                    title={a.original_filename}
-                  >
-                    <img src={a.file_path} alt={a.original_filename} loading="lazy" />
-                  </button>
-                ))}
-                {files.map((a) => (
-                  <a key={a.id} href={a.file_path} target="_blank" rel="noreferrer" className="cs-att-file">
-                    <FileBadge filename={a.original_filename} ext={resolveFileExt(a.original_filename)} />
-                    <span className="cs-att-file__name">{truncateFilename(a.original_filename || "Файл")}</span>
-                  </a>
-                ))}
+              <div className="tk-att">
+                {images.length ? (
+                  <div className={`tk-att-grid tk-att-grid--n${Math.min(5, images.length)}`}>
+                    {images.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        className="tk-att-img"
+                        onClick={() => setLightbox(a.file_path)}
+                        title={a.original_filename}
+                      >
+                        <img src={a.file_path} alt={a.original_filename} loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {files.length ? (
+                  <div className="tk-att-files">
+                    {files.map((a) => (
+                      <a key={a.id} href={a.file_path} target="_blank" rel="noreferrer" className="tk-att-file">
+                        <FileBadge filename={a.original_filename} ext={resolveFileExt(a.original_filename)} />
+                        <span className="tk-att-file__name">{truncateFilename(a.original_filename || "Файл")}</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

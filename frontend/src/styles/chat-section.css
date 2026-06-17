@@ -691,9 +691,12 @@
 }
 
 #cs-page .cs-msg-text--html img {
-  max-width: 100%;
+  max-width: min(100%, var(--chat-att-max, 288px));
+  max-height: 280px;
+  width: auto;
   height: auto;
-  border-radius: 6px;
+  object-fit: contain;
+  border-radius: 8px;
   margin-top: 6px;
 }
 
@@ -759,53 +762,9 @@
   text-overflow: ellipsis;
 }
 
-/* Вложения */
-#cs-page .cs-att {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* Вложения — общие стили tk-att* из helpdesk-app.css */
+#cs-page .tk-att {
   margin-top: 6px;
-}
-
-#cs-page .cs-att-img {
-  max-width: 240px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ln);
-  cursor: pointer;
-  padding: 0;
-  background: none;
-  display: block;
-}
-
-#cs-page .cs-att-img img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-#cs-page .cs-att-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-decoration: none;
-  color: var(--ink);
-  font-size: 12px;
-  padding: 6px 8px;
-  border: 1px solid var(--ln);
-  border-radius: 8px;
-  background: var(--bg);
-}
-
-#cs-page .cs-att-file:hover {
-  background: var(--nbg);
-}
-
-#cs-page .cs-att-file__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 180px;
 }
 
 /* ----------------------------- Композер ----------------------------- */
