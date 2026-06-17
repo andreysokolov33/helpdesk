@@ -28,6 +28,7 @@ type Props = {
   onTakeBack: () => void;
   onReopen: () => void;
   onLinkSubscriber: () => void;
+  onMobileClose?: () => void;
 };
 
 export default function TicketHelperPanel({
@@ -46,6 +47,7 @@ export default function TicketHelperPanel({
   onTakeBack,
   onReopen,
   onLinkSubscriber,
+  onMobileClose,
 }: Props) {
   const [diagOpen, setDiagOpen] = useState(false);
   const [runNonce, setRunNonce] = useState(0);
@@ -84,6 +86,14 @@ export default function TicketHelperPanel({
         className={`tk-cc-helper${collapsed ? " tk-cc-helper--collapsed" : ""}`}
         aria-label="Данные абонента и тикета"
       >
+        {onMobileClose ? (
+          <div className="tk-cc-mobile-drawer-head">
+            <span>Абонент и тикет</span>
+            <button type="button" className="tk-cc-drawer-close" onClick={onMobileClose} aria-label="Закрыть">
+              ×
+            </button>
+          </div>
+        ) : null}
         <div className="tk-cc-helper__section">
           <div className="tk-cc-helper__section-title">Данные активного абонента</div>
           {detail.user_id == null ? (

@@ -31,15 +31,15 @@ function decodeHtmlEntities(text: string): string {
 }
 
 /** Нормализует текст сообщения перед рендером (экранированный HTML → разметка). */
-export function normalizeMessageContent(text: string): string {
-  const trimmed = text.trim();
+export function normalizeMessageContent(text: string | null | undefined): string {
+  const trimmed = (text ?? "").trim();
   if (!trimmed) return "";
   const decoded = decodeHtmlEntities(trimmed);
   return HTML_TAG_RE.test(decoded) ? decoded : trimmed;
 }
 
 /** Есть ли в строке HTML-разметка. */
-export function messageLooksLikeHtml(text: string): boolean {
+export function messageLooksLikeHtml(text: string | null | undefined): boolean {
   return HTML_TAG_RE.test(normalizeMessageContent(text));
 }
 

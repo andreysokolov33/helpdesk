@@ -25,12 +25,13 @@ export type ChatAttachment = {
 export type ChatMessage = {
   msg_id: number;
   date_iso?: string | null;
-  text: string;
+  text?: string | null;
   file_path?: string | null;
   answer: boolean;
   whose_message: string;
   author_kind?: "support" | "engineer" | "partner" | "subscriber" | string | null;
   has_read: boolean;
+  new?: boolean;
   user_id: number;
   subscriber_read_at?: string | null;
   relay_msg_id?: string | null;

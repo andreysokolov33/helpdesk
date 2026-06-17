@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import type { TicketMessageReplyPreview } from "@/api/ticket";
+import { formatStaffNameShort } from "@/utils/personName";
 
 type Props = {
   preview: TicketMessageReplyPreview;
@@ -25,7 +26,11 @@ export default function TicketMessageReplyQuote({ preview, onJump }: Props) {
     );
   }
 
-  const label = preview.author_name?.trim() || "Сообщение";
+  const raw = preview.author_name?.trim() || "Сообщение";
+  const label =
+    raw === "Сообщение" || raw === "Вы" || raw === "Абонент" || raw === "КЦ" || raw === "Инженер" || raw === "Партнёр"
+      ? raw
+      : formatStaffNameShort(raw);
   const snippetHtml = sanitizePreview(preview.text ?? "");
 
   return (

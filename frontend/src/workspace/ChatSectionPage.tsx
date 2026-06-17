@@ -62,6 +62,10 @@ function isAllowedChatImage(file: File): boolean {
   return ext === "jpg" || ext === "jpeg" || ext === "png" || ext === "gif" || ext === "webp" || ext === "bmp";
 }
 
+function incomingUnreadIds(msgs: ChatMessage[]): number[] {
+  return msgs.filter((m) => !m.answer && Boolean(m.new)).map((m) => m.msg_id);
+}
+
 function plainPreview(text: string): string {
   const t = (text || "").replace(/<[^>]+>/g, " ");
   const doc = t
@@ -103,6 +107,7 @@ export default function ChatSectionPage() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; msg: ChatMessage } | null>(null);
   const [viewerId, setViewerId] = useState<number | null>(null);
+  const [subscriberChatReadonly, setSubscriberChatReadonly] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [pendingNewCount, setPendingNewCount] = useState(0);
 
@@ -168,8 +173,14 @@ export default function ChatSectionPage() {
 
   useEffect(() => {
     fetchAuthMe()
-      .then((me) => setViewerId(me.user_id))
-      .catch(() => setViewerId(null));
+      .then((me) => {
+        setViewerId(me.user_id);
+        setSubscriberChatReadonly(Boolean(me.is_support_admin));
+      })
+      .catch(() => {
+        setViewerId(null);
+        setSubscriberChatReadonly(false);
+      });
   }, []);
 
   const loadMoreChats = useCallback(async () => {
@@ -245,6 +256,25 @@ export default function ChatSectionPage() {
     setParams(next);
   }
 
+  const markIncomingRead = useCallback(async (ids: number[]) => {
+    if (!activeId || !ids.length) return;
+    try {
+      await markChatRead(activeId, ids);
+      setMessages((prev) =>
+        prev.map((m) =>
+          ids.includes(m.msg_id) ? { ...m, new: false, has_read: true } : m,
+        ),
+      );
+      setChats((prev) =>
+        prev.map((c) =>
+          c.chat_id === activeId ? { ...c, has_unread: false, unread_count: 0 } : c,
+        ),
+      );
+    } catch {
+      /* тихо */
+    }
+  }, [activeId]);
+
   // ── Загрузка сообщений выбранного чата ────────────────────────────────────
   useEffect(() => {
     if (!activeId) {
@@ -275,6 +305,8 @@ export default function ChatSectionPage() {
         pendingScrollToBottomRef.current = true;
         atBottomRef.current = true;
         setAtBottom(true);
+        const unreadIds = incomingUnreadIds(sorted);
+        if (unreadIds.length) void markIncomingRead(unreadIds);
       } catch {
         if (!cancelled) {
           setMessages([]);
@@ -289,7 +321,7 @@ export default function ChatSectionPage() {
       initialScrollCleanupRef.current?.();
       initialScrollCleanupRef.current = null;
     };
-  }, [activeId]);
+  }, [activeId, markIncomingRead]);
 
   // ── Поллинг новых сообщений в открытом чате ───────────────────────────────
   useEffect(() => {
@@ -301,6 +333,8 @@ export default function ChatSectionPage() {
         const incoming = await fetchChatMessageUpdates(activeId, since);
         if (!incoming.length) return;
         setMessages((prev) => mergeChatMessages(prev, incoming));
+        const unreadIds = incomingUnreadIds(incoming);
+        if (unreadIds.length) void markIncomingRead(unreadIds);
         if (atBottomRef.current) {
           pendingScrollToBottomRef.current = true;
           setPendingNewCount(0);
@@ -313,7 +347,7 @@ export default function ChatSectionPage() {
     };
     const id = window.setInterval(() => void poll(), MSG_POLL_MS);
     return () => window.clearInterval(id);
-  }, [activeId]);
+  }, [activeId, markIncomingRead]);
 
   // ── Поллинг галочек прочтения для исходящих ───────────────────────────────
   useEffect(() => {
@@ -339,30 +373,14 @@ export default function ChatSectionPage() {
     return () => window.clearInterval(id);
   }, [activeId, readBy]);
 
-  // ── Авто-отметка прочтения входящих ───────────────────────────────────────
+  // ── Повторная отметка через 3 с после открытия чата (как в старом UI) ─────
   useEffect(() => {
     if (!activeId) return;
-    const t = window.setTimeout(async () => {
-      const unreadIncoming = messagesRef.current
-        .filter((m) => !m.answer && !m.has_read)
-        .map((m) => m.msg_id);
-      if (!unreadIncoming.length) return;
-      try {
-        await markChatRead(activeId, unreadIncoming);
-        setMessages((prev) =>
-          prev.map((m) => (unreadIncoming.includes(m.msg_id) ? { ...m, has_read: true } : m)),
-        );
-        setChats((prev) =>
-          prev.map((c) =>
-            c.chat_id === activeId ? { ...c, has_unread: false, unread_count: 0 } : c,
-          ),
-        );
-      } catch {
-        /* тихо */
-      }
+    const t = window.setTimeout(() => {
+      void markIncomingRead(incomingUnreadIds(messagesRef.current));
     }, AUTO_READ_DELAY_MS);
     return () => window.clearTimeout(t);
-  }, [activeId, messages]);
+  }, [activeId, markIncomingRead]);
 
   // ── Подгрузка истории при прокрутке вверх ─────────────────────────────────
   const loadOlder = useCallback(async () => {
@@ -379,6 +397,8 @@ export default function ChatSectionPage() {
       const res = await fetchChatMessages(activeId, { limit: PAGE_SIZE, beforeId: before });
       setHasOlder(Boolean(res.has_older) && res.messages.length > 0);
       setMessages((prev) => mergeChatMessages(prev, res.messages));
+      const unreadIds = incomingUnreadIds(res.messages);
+      if (unreadIds.length) void markIncomingRead(unreadIds);
       requestAnimationFrame(() => {
         const box = scrollRef.current;
         if (box) box.scrollTop = box.scrollHeight - prevHeight + prevTop;
@@ -389,7 +409,7 @@ export default function ChatSectionPage() {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
-  }, [activeId, hasOlder]);
+  }, [activeId, hasOlder, markIncomingRead]);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -459,7 +479,7 @@ export default function ChatSectionPage() {
 
   // ── Отправка / редактирование ──────────────────────────────────────────────
   async function handleSend() {
-    if (!activeId) return;
+    if (!activeId || subscriberChatReadonly) return;
     const text = input.trim();
 
     if (editing) {
@@ -526,7 +546,7 @@ export default function ChatSectionPage() {
   function handleMenuAction(action: ChatMenuAction, msg: ChatMessage) {
     setContextMenu(null);
     if (action === "copy") {
-      const plain = plainPreview(msg.text);
+      const plain = plainPreview(msg.text ?? "");
       if (plain) void navigator.clipboard.writeText(plain).catch(() => {});
       return;
     }
@@ -538,7 +558,7 @@ export default function ChatSectionPage() {
     if (action === "edit") {
       setReplyTo(null);
       setEditing(msg);
-      setInput(plainPreview(msg.text));
+      setInput(plainPreview(msg.text ?? ""));
       return;
     }
     if (action === "delete") {
@@ -602,7 +622,7 @@ export default function ChatSectionPage() {
                 <div className="cs-quote__text">{m.relay_snippet || ""}</div>
               </div>
             ) : null}
-            <MessageBody text={m.text} className="cs-msg-text" />
+            <MessageBody text={m.text ?? ""} className="cs-msg-text" />
             {m.attachments.length ? (
               <div className="cs-att">
                 {images.map((a) => (
@@ -744,6 +764,12 @@ export default function ChatSectionPage() {
               </div>
 
               <div className="cs-composer">
+                {subscriberChatReadonly ? (
+                  <div className="tk-no-reply" role="note">
+                    Режим просмотра — отправка сообщений абоненту недоступна
+                  </div>
+                ) : (
+                  <>
                 {editing ? (
                   <div className="cs-reply-strip cs-reply-strip--edit">
                     <div className="cs-reply-strip__body">
@@ -855,6 +881,8 @@ export default function ChatSectionPage() {
                     </svg>
                   </button>
                 </div>
+                  </>
+                )}
               </div>
             </>
           )}
@@ -866,6 +894,7 @@ export default function ChatSectionPage() {
           x={contextMenu.x}
           y={contextMenu.y}
           own={contextMenu.msg.answer && contextMenu.msg.user_id === viewerId}
+          readOnly={subscriberChatReadonly}
           onAction={(action) => handleMenuAction(action, contextMenu.msg)}
           onClose={() => setContextMenu(null)}
         />

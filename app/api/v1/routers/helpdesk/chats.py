@@ -32,6 +32,7 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
+from app.api.v1.routers.helpdesk.ticket_service import assert_subscriber_chat_write_allowed
 from app.config import settings
 from app.core.ticket_message_validation import html_to_plain_text
 from app.database import get_db, redis_client
@@ -362,6 +363,7 @@ _MESSAGE_SELECT = """
         um.id AS msg_id,
         um.date_tz AS date_ts,
         um."text",
+        um.new,
         CASE WHEN um.file_new IS NULL OR um.file_new = '0' OR um.file_new = '' THEN NULL ELSE um.file_new END AS file_path,
         CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
              THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
@@ -430,6 +432,8 @@ def _row_to_message(row: dict) -> dict:
     rs = d.get("relay_snippet")
     if rs is not None:
         d["relay_snippet"] = _plain_text_reply_snippet(rs)
+    d["text"] = d.get("text") or ""
+    d["new"] = bool(d.get("new"))
     return d
 
 
@@ -697,6 +701,7 @@ async def create_message(
     db: AsyncSession = Depends(get_db),
     user: Dict[str, Any] = Depends(require_tracker_user),
 ):
+    assert_subscriber_chat_write_allowed(role=user.get("role"), level=user.get("level"))
     operator = _operator(user)
     has_file = file is not None and bool(file.filename)
     has_text = bool(html_to_plain_text(text_field))
@@ -780,6 +785,7 @@ async def create_message(
             else "partner"
         ),
         "has_read": False,
+        "new": False,
         "user_id": operator["user_id"],
         "subscriber_read_at": None,
         "relay_msg_id": relay,
@@ -815,6 +821,7 @@ async def edit_message(
     db: AsyncSession = Depends(get_db),
     user: Dict[str, Any] = Depends(require_tracker_user),
 ):
+    assert_subscriber_chat_write_allowed(role=user.get("role"), level=user.get("level"))
     new_text = _sanitize_html(str(payload.get("text", "")))
     if not html_to_plain_text(new_text):
         raise HTTPException(status_code=400, detail="Текст сообщения не может быть пустым")
@@ -846,6 +853,7 @@ async def delete_message(
     db: AsyncSession = Depends(get_db),
     user: Dict[str, Any] = Depends(require_tracker_user),
 ):
+    assert_subscriber_chat_write_allowed(role=user.get("role"), level=user.get("level"))
     row = await db.execute(
         select(UserMail).where(
             UserMail.id == msg_id,

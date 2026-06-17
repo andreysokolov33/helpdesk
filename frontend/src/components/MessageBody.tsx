@@ -1,7 +1,7 @@
 import { messageLooksLikeHtml, normalizeMessageContent, sanitizeMessageHtml } from "@/utils/messageHtml";
 
 type MessageBodyProps = {
-  text: string;
+  text: string | null | undefined;
   className?: string;
 };
 

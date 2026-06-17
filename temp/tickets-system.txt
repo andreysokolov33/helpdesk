@@ -1,0 +1,654 @@
+================================================================================
+СИСТЕМА ТИКЕТОВ source='lk' — СПРАВКА ДЛЯ ТЗ (АБОНЕНТ ↔ ОПЕРАТОР)
+Проект helpdesk: операторский портал. Абонент пишет в ЛК; оператор видит /tickets.
+Дата анализа: 2026-06-15
+Код: app/models/users.py, app/api/v1/routers/helpdesk/ticket_service.py,
+      app/core/ticket_queue_state.py, app/constants.py, frontend/src/workspace/
+================================================================================
+
+0. КОНТЕКСТ И РАЗДЕЛЕНИЕ ОТВЕТСТВЕННОСТИ
+────────────────────────────────────────
+
+Этот репозиторий (helpdesk) — портал оператора КС/инженера:
+  • /tickets          — список тикетов (React: ChatsTab)
+  • /tickets/{id}     — карточка тикета + чат (React: TicketPage)
+
+Создание тикетов source='lk' в этом репозитории НЕ реализовано.
+Тикеты создаёт внешний личный кабинет абонента (lk.wifitochka.ru / abs-flask).
+Helpdesk только:
+  • читает тикеты и сообщения из общей БД PostgreSQL (схема users);
+  • отвечает абоненту (INSERT в user_mail);
+  • управляет очередью (queue v2), эскалацией, закрытием;
+  • синхронизирует v2-очередь с лентой сообщений (reconcile).
+
+Для ТЗ абонентского чата: ЛК должен писать в те же таблицы, что helpdesk читает.
+Публичный чат source='lk' хранится в users.user_mail, НЕ в users.tracker_messages.
+
+
+================================================================================
+1. ГЛАВНАЯ ТАБЛИЦА ТИКЕТА
+================================================================================
+
+1.1. Таблица: users.tracker_tickets
+────────────────────────────────────
+SQLAlchemy-модель: TrackerTickets (app/models/users.py)
+
+Ключевые поля для source='lk':
+
+  id                  bigint, PK, identity start=200
+  author              bigint — кто создал (для ЛК: user_id абонента)
+  user_id             bigint nullable — абонент (users.user.id)
+  title               text NOT NULL — тема обращения
+  body                text nullable — первоначальный текст (дублирует 1-е сообщение)
+  date_of_create      timestamptz
+  date_of_close       timestamptz nullable
+  updated_at          timestamptz nullable
+
+  source              varchar(20), default 'call_center'
+                      ДЛЯ ЛК: source = 'lk'
+
+  status              enum users.tracker_status (workflow, см. раздел 3)
+  priority            enum users.tracker_priority (low|middle|high|critical)
+  complexity          varchar L1|L2
+  category_id         bigint → users.ticket_categories
+
+  support_line        smallint 1=КС, 2=инженеры, 3=партнёр, 4=менеджер
+                      (legacy-дубль queue_line)
+
+  assigned_to         bigint nullable → users.skystream_users
+                      оператор КС (1-я линия); NULL = общая очередь
+  engineer_id         bigint nullable → users.skystream_users
+                      инженер при эскалации
+  closed_by           bigint nullable
+  locked_by, locked_until — блокировка карточки
+
+  object_type         'user' | 'station' | 'other'  (для ЛК обычно 'user')
+  person_type         'user' для абонентских тикетов
+  station_id, hotspot_id, vno — контекст станции (если привязан)
+
+  first_response_at   timestamptz — SLA: первый ответ оператора КС (только lk)
+  last_client_message_at — когда абонент последний раз писал (SLA ЛК)
+
+  sla_deadline, sla_paused_at, sla_pause_reason — SLA
+
+  ── Очередь v2 (коммуникационный слой, отдельно от status) ──
+  queue_line          enum: cs | engineers | partner
+  action_by           enum: cs | engineers | partner | subscriber | external
+  chat_turn           enum: staff | subscriber
+  action_since        timestamptz — с какого момента ждут действия (сортировка)
+
+Правило исполнителей: assigned_to и engineer_id оба NULL допустимы.
+Оба заполнены одновременно — нет.
+
+Связи ORM:
+  mail_associations → TrackerTicketMailLinks → UserMail (legacy M2M)
+  tracker_ticket_line_history → TrackerTicketLineHistory
+
+
+1.2. Справочник категорий: users.ticket_categories
+────────────────────────────────────────────────────
+SQLAlchemy: TicketCategory
+
+  id, parent_id (иерархия), name, slug
+  theme       enum: finance|network|equipment|traffic|other
+  complexity  L1|L2
+  priority    default priority
+  support_line 1|2
+  sla_minutes
+  source      varchar, default 'lk' — каталог для ЛК-тикетов
+  is_active, sort_order
+
+Для тикета lk каталог выбирается через catalog_source_for_ticket('lk') → 'lk'.
+
+
+1.3. Соисполнители: users.tracker_ticket_executors
+────────────────────────────────────────────────────
+SQLAlchemy: TrackerTicketExecutors
+
+  ticket_id   bigint PK (FK tracker_tickets)
+  abs_user_id bigint PK (FK skystream_users)
+
+Заполняется когда оператор КС отвечает или берёт тикет (_maybe_claim_cs_assignee,
+register_ticket_co_executor). Соисполнители видны в UI «Участники».
+
+
+1.4. Внутренние комментарии (НЕ видны абоненту): users.tracker_comments
+─────────────────────────────────────────────────────────────────────────
+SQLAlchemy: TrackerComments
+
+  id, ticket_id, author_id (skystream_users), text, created_at, updated_ad
+
+Используются на карточке LK-тикета в панели «Комментарии».
+При эскалации на инженеров комментарий КС пишется сюда, а не в user_mail.
+
+
+1.5. Оценка тикета: users.tracker_tickets_ratings
+──────────────────────────────────────────────────
+Нет ORM-модели в helpdesk; используется в SQL:
+  ticket_id, rating, comment, date
+
+Абонент оценивает закрытый тикет в ЛК (вне этого репозитория).
+
+
+================================================================================
+2. СООБЩЕНИЯ ТИКЕТА source='lk'
+================================================================================
+
+2.1. Основная таблица чата: users.user_mail
+────────────────────────────────────────────
+SQLAlchemy: UserMail (app/models/users.py)
+
+Публичная переписка абонент ↔ оператор для source='lk'.
+
+  id              bigint PK
+  text            text — тело сообщения
+  date_tz         timestamptz — основная метка времени (используется в UI)
+  date            bigint — legacy unix timestamp (Москва)
+  updated_at      timestamptz — время редактирования
+
+  ticket_id       bigint nullable — ПРЯМАЯ привязка к тикету (предпочтительно)
+  user_chat       bigint nullable — legacy группировка чата
+
+  id_user_from    bigint — отправитель (user_id абонента или skystream_users.id)
+  id_user_to      bigint — получатель
+
+  answer          int default 0
+                  0 = от абонента, 1 = от staff (legacy, если нет person_type)
+  person_type     varchar(20) nullable
+                  'user'     — сообщение абонента
+                  'skystream'— сообщение оператора/инженера
+  user_id         bigint nullable — skystream_users.id при ответе staff
+
+  read            enum '0'|'1' — legacy флаг прочтения
+  new             int — legacy
+  relay_msg_id    varchar — ID сообщения, на которое отвечают (цитата)
+
+  file_new, real_file — legacy одиночный файл (устарело)
+  ip_address      inet
+  view_from, view_to, cs_answer, file — legacy
+
+Определение «сообщение от абонента» (_MAIL_IS_CLIENT в ticket_service.py):
+  IF user_id IS NOT NULL AND person_type IS NOT NULL:
+    person_type = 'user' → абонент
+  ELSE:
+    answer = 0 → абонент
+
+Определение «сообщение от staff»:
+  person_type = 'skystream' OR answer = 1
+
+При создании тикета в ЛК (ожидаемый контракт):
+  INSERT user_mail:
+    text = текст сообщения
+    id_user_from = user_id абонента
+    id_user_to   = 0 или системный
+    answer = 0
+    person_type = 'user'
+    ticket_id = id нового тикета
+    date_tz = NOW()
+
+При ответе оператора (helpdesk, send_mail_reply):
+  INSERT user_mail:
+    text = текст
+    id_user_from = operator_id (skystream_users.id)
+    id_user_to   = user_id абонента (chat_id)
+    answer = 1
+    person_type = 'skystream'
+    user_id = operator_id
+    ticket_id = ticket_id
+    relay_msg_id = str(reply_to_id) если цитата
+    date_tz = NOW()
+
+
+2.2. Вложения: users.user_mail_attachments
+──────────────────────────────────────────
+SQLAlchemy: UserMailAttachment
+
+  id, msg_id (FK user_mail ON DELETE CASCADE)
+  file_path, original_filename, file_ext, file_size_bytes
+
+Новые вложения пишутся сюда. Поле user_mail.file_new — legacy, не используется
+для новых загрузок в helpdesk.
+
+
+2.3. Прочтения: users.user_mail_reads
+──────────────────────────────────────
+SQLAlchemy: UserMailReads
+
+  id, msg_id, user_id, person_type, read_time
+  UNIQUE (msg_id, user_id, person_type)
+
+person_type при прочтении оператором: 'skystream' или 'call_centre'.
+
+Важно: INSERT в user_mail_reads НЕ меняет queue_line/action_by/chat_turn/status.
+Только фиксирует факт прочтения.
+
+Непрочитанность для списка /tickets (has_unread):
+  EXISTS сообщение от абонента (user_mail, ticket_id или mail_links)
+  AND NOT EXISTS user_mail_reads с person_type IN ('skystream','call_centre')
+
+
+2.4. Legacy-связь M2M: users.tracker_ticket_mail_links
+────────────────────────────────────────────────────────
+SQLAlchemy: TrackerTicketMailLinks
+
+  ticket_id   bigint PK
+  user_mail_id bigint PK
+
+Используется для старых тикетов, где user_mail.ticket_id = NULL.
+Сообщения выбираются по диапазону id в link-таблице + subscriber_id.
+Новые LK-тикеты должны писать ticket_id напрямую в user_mail.
+
+
+2.5. Что НЕ используется для публичного чата lk
+────────────────────────────────────────────────
+  users.tracker_messages       — внутренний чат staff↔staff (call_center, abs)
+  users.tracker_message_attachments
+  users.tracker_messages_reads
+
+Для source='lk' chat_mode = 'mail' (функция chat_mode_for_source).
+
+
+================================================================================
+3. СОСТОЯНИЯ ТИКЕТА
+================================================================================
+
+Система использует ДВА независимых слоя состояния.
+
+3.1. Workflow-статус (поле status, enum users.tracker_status)
+─────────────────────────────────────────────────────────────
+Константы: app/constants.py
+
+ОТКРЫТЫЕ (TRACKER_OPEN_STATUSES):
+  pending           — ожидает обработки (начальный для новых)
+  open              — открыт
+  in_progress       — в работе
+  waiting_client    — ждём ответа абонента (после ответа staff)
+  waiting_technician— ждём техника
+  no_technician     — нет техника
+  waiting_parts     — ждём запчасти
+  waiting_logistics — ждём логистику
+  cc_handover       — передача в КС
+  waiting_cs        — ждём КС
+
+ЗАКРЫТЫЕ (TRACKER_CLOSED_STATUSES):
+  resolved          — решён
+  closed            — закрыт
+  cancelled         — отменён
+  deferred          — отложен
+  not_resolved      — нерешён
+
+ОПЕРАЦИОННЫЕ ПАУЗЫ (TRACKER_OPERATIONAL_WAIT_STATUSES):
+  waiting_technician, waiting_parts, waiting_logistics, waiting_cs, deferred
+  При этих статусах ответ staff НЕ переводит в waiting_client.
+
+UI-подписи: STATUS_DISPLAY в constants.py.
+
+
+3.2. Очередь v2 (queue_line, action_by, chat_turn, action_since)
+────────────────────────────────────────────────────────────────
+Логика: app/core/ticket_queue_state.py
+
+queue_line — на какой линии ТП тикет:
+  cs         — контакт-центр (1-я линия)
+  engineers  — инженеры (2-я линия)
+  partner    — партнёр (3-я линия)
+
+action_by — у кого «мяч», кто должен действовать:
+  cs, engineers, partner — staff должен ответить/обработать
+  subscriber             — ждём абонента
+  external               — внешняя пауза (запчасти, логистика)
+
+chat_turn — коммуникационный ход в чате с абонентом:
+  staff      — staff должен ответить («Нужен ответ»)
+  subscriber — ждём сообщение абонента
+
+action_since — timestamp начала ожидания (для сортировки очереди)
+
+
+3.3. Правила v2 для source='lk'
+───────────────────────────────
+
+Абонент написал (on_subscriber_public_message):
+  chat_turn      = 'staff'
+  action_by      = queue_line (cs → 'cs', engineers → 'engineers')
+  action_since   = NOW()
+  last_client_message_at = NOW()
+  status         → 'in_progress' (если был waiting_client/pending/open)
+
+Staff ответил абоненту (on_staff_public_reply):
+  chat_turn      = 'subscriber'
+  action_by      = 'subscriber'
+  action_since   = NOW()
+  status         → 'waiting_client' (если НЕ ops-пауза и НЕ закрыт)
+
+Эскалация на инженеров (on_escalate_to_engineers):
+  queue_line     = 'engineers'
+  action_by      = 'engineers' (сохраняет chat_turn если был staff)
+  support_line   = 2
+  status         = 'in_progress'
+
+Возврат на КС (on_return_to_cs):
+  queue_line     = 'cs'
+  action_by      = 'cs'
+  support_line   = 1
+
+Внешняя пауза (on_external_wait):
+  action_by      = 'external'
+  chat_turn      = 'subscriber'
+  reconcile НЕ перезаписывает v2 пока action_by='external'
+
+
+3.4. Колонка «Статус» в списке /tickets (коммуникационный слой)
+───────────────────────────────────────────────────────────────
+Вычисляется функцией communication_state_from_v2() — НЕ равен raw status:
+
+  chat_turn='staff' AND action_by IN (cs, engineers, partner)
+    → communication_state = 'needs_reply'     («Нужен ответ»)
+
+  chat_turn='subscriber' AND source='lk'
+    → communication_state = 'awaiting_subscriber' («Ждём абонента»)
+
+  action_by='external'
+    → показывается workflow-status (waiting_parts и т.д.)
+
+  Закрытые тикеты
+    → workflow-status (STATUS_DISPLAY)
+
+
+3.5. Подсветка строки (list_highlight)
+──────────────────────────────────────
+Функция list_highlight_for_viewer() в ticket_queue_state.py:
+
+Для оператора КС на lk-тикете:
+  list_highlight='chat' если chat_turn='staff' AND action_by IN (cs,engineers,partner)
+  (КС видит «нужен ответ» даже если тикет на линии инженеров)
+
+Дополнительно: has_unread=true на своей линии → 'chat'
+
+
+================================================================================
+4. ПЕРЕХОДЫ СОСТОЯНИЙ ПРИ ДЕЙСТВИЯХ (source='lk')
+================================================================================
+
+4.1. Абонент создаёт тикет (ЛК, вне helpdesk)
+─────────────────────────────────────────────
+Ожидаемые INSERT/UPDATE:
+
+  tracker_tickets:
+    source='lk', user_id=абонент, title, body
+    status='pending' или 'open'
+    support_line=1, queue_line='cs'
+    action_by='cs', chat_turn='staff', action_since=NOW()
+    object_type='user', person_type='user'
+
+  user_mail: первое сообщение (answer=0, person_type='user', ticket_id)
+
+  tracker_ticket_line_history:
+    сегмент support_line=1, state='active'
+    событие event_type='created', payload={status, source:'lk'}
+
+  (опционально) tracker_ticket_mail_links — только если ticket_id не в mail
+
+
+4.2. Абонент пишет в существующий тикет (ЛК)
+────────────────────────────────────────────
+  INSERT user_mail (от абонента)
+
+  UPDATE tracker_tickets:
+    chat_turn='staff'
+    action_by=queue_line
+    action_since=NOW()
+    last_client_message_at=NOW()
+    status='in_progress' (если был waiting_client)
+
+  Пример:
+    ДО:  action_by=subscriber, chat_turn=subscriber, status=waiting_client
+    ПОСЛЕ: action_by=cs (или engineers), chat_turn=staff, status=in_progress
+
+
+4.3. Оператор отвечает (helpdesk: POST /api/v1/helpdesk/tracker/{id}/messages)
+───────────────────────────────────────────────────────────────────────────────
+Функция send_mail_reply():
+
+  INSERT user_mail (answer=1, person_type='skystream', user_id=operator_id)
+
+  _apply_staff_chat_queue_update() → on_staff_public_reply():
+    chat_turn='subscriber', action_by='subscriber', action_since=NOW()
+    status → 'waiting_client' (если не ops-пауза)
+
+  maybe_set_first_response_at() — если role=support и source=lk:
+    first_response_at = NOW() (только первый раз)
+
+  _maybe_claim_cs_assignee() — если role=support:
+    assigned_to = operator_id, INSERT tracker_ticket_executors
+
+  Пример:
+    ДО:  action_by=cs, chat_turn=staff, status=in_progress
+    ПОСЛЕ: action_by=subscriber, chat_turn=subscriber, status=waiting_client
+
+
+4.4. Оператор открывает ленту / mark read
+─────────────────────────────────────────
+  INSERT user_mail_reads (msg_id, user_id, person_type='skystream')
+
+  v2 и status НЕ меняются.
+  has_unread может стать false, но «Нужен ответ» остаётся пока chat_turn='staff'.
+
+
+4.5. Эскалация на инженеров (transfer-to-engineers)
+────────────────────────────────────────────────────
+  on_escalate_to_engineers()
+  _change_ticket_support_line(1→2)
+  tracker_ticket_line_history:
+    закрытие сегмента support_line=1 (end_time)
+    открытие сегмента support_line=2
+    event_type='line_changed'
+    event_type='escalated_to_engineers'
+  Комментарий КС → tracker_comments (НЕ user_mail)
+
+
+4.6. Возврат на КС (take-back-to-ks)
+────────────────────────────────────
+  on_return_to_cs()
+  event_type='returned_to_cs', 'line_changed'
+
+
+4.7. Закрытие тикета
+────────────────────
+  status='closed' (или resolved), date_of_close=NOW(), closed_by=operator_id
+  _record_ticket_closed_history():
+    закрытие активного сегмента линии (end_time)
+    event_type='closed'
+    event_type='status_changed' (trigger='close')
+
+
+4.8. Переоткрытие (reopen, в течение 24ч)
+─────────────────────────────────────────
+  status → in_progress
+  _record_ticket_reopened_history():
+    новый сегмент линии
+    event_type='reopened'
+    event_type='status_changed' (trigger='reopen')
+
+
+4.9. Reconcile (автосинхронизация v2 с лентой)
+───────────────────────────────────────────────
+Вызывается при:
+  • открытии карточки тикета (load_ticket_detail)
+  • загрузке списка /tickets (reconcile_open_tickets_on_list_page)
+
+Функция reconcile_ticket_queue_from_thread():
+  1. Берёт последнее сообщение из user_mail (по ticket_id + mail_links)
+  2. Определяет from_subscriber (абонент или staff)
+  3. Если v2 не соответствует последнему сообщению — пересчитывает snapshot
+  4. Пропускает если action_by='external'
+
+Зачем: если ЛК записал сообщение, но не обновил v2-поля — helpdesk подтянет
+состояние при следующем просмотре оператором.
+
+
+================================================================================
+5. ИСТОРИЯ ТИКЕТА: users.tracker_ticket_line_history
+================================================================================
+
+5.1. Структура таблицы
+──────────────────────
+SQLAlchemy: TrackerTicketLineHistory (app/models/users.py)
+
+  id              bigint PK
+  ticket_id       bigint FK tracker_tickets ON DELETE CASCADE
+  support_line    smallint nullable (1=КС, 2=инженеры, 3=партнёр, 4=менеджер)
+  start_time      timestamptz
+  end_time        timestamptz nullable
+  changed_by      bigint → skystream_users.id
+  event_type      varchar(50) nullable
+  payload         jsonb nullable
+  state           varchar(20) default 'active'
+                  'active' — линия работает
+                  'waiting_client' — ждём ответа абонента (legacy/пауза SLA)
+
+Два типа записей:
+
+  A) СЕГМЕНТЫ ЛИНИИ (support_line IS NOT NULL, event_type IS NULL):
+     Фиксируют, на какой линии ТП находился тикет и когда.
+     Активный сегмент: end_time IS NULL.
+     При смене линии: закрывается старый сегмент (end_time=NOW), открывается новый.
+
+  B) СОБЫТИЯ (support_line IS NULL, event_type IS NOT NULL):
+     Точечные действия с payload.
+
+
+5.2. Типы событий (event_type)
+──────────────────────────────
+  created               — создание тикета
+                          payload: {status, source, connection_kind?}
+  line_changed          — смена линии ТП
+                          payload: {from_line, to_line}
+  escalated_to_engineers— эскалация на инженеров
+                          payload: {queue_line, action_by, chat_turn,
+                                    action_since, from_line, to_line}
+  returned_to_cs        — возврат на КС
+                          payload: аналогично эскалации
+  category_changed      — смена категории
+                          payload: {from_category_id, to_category_id}
+  closed                — закрытие
+                          payload: {status, from_status}
+  status_changed        — смена workflow-статуса
+                          payload: {from_status, status, trigger}
+                          trigger: 'close' | 'reopen' | ...
+  reopened              — переоткрытие
+                          payload: {from_status, status}
+
+Для lk-тикетов, созданных в ЛК, ожидается запись created + сегмент support_line=1.
+Helpdesk при register-call (call_center) пишет аналогично — эталон в tracker.py.
+
+
+5.3. Функции записи истории (ticket_service.py)
+───────────────────────────────────────────────
+  _open_line_segment()           — новый сегмент линии (state='active')
+  _close_active_line_segment()   — end_time на активном сегменте
+  _change_ticket_support_line()  — close + open + event line_changed
+  _add_line_history_event()      — точечное событие
+  _record_ticket_closed_history()— close сегмент + closed + status_changed
+  _record_ticket_reopened_history() — open сегмент + reopened + status_changed
+
+HTTP API для просмотра истории в текущем helpdesk отсутствует
+(есть только в legacy temp/router.py). Данные используются в stats_service.
+
+
+================================================================================
+6. API-КОНТРАКТЫ (ОПЕРАТОРСКАЯ СТОРОНА)
+================================================================================
+
+Для справки при проектировании абонентского API (зеркальные операции).
+
+Список тикетов:
+  GET /api/v1/helpdesk/tracker/list
+  Pydantic: TrackerTicketListItem, TrackerTicketListResponse
+
+Карточка тикета:
+  GET /api/v1/helpdesk/tracker/{ticket_id}
+  Pydantic: TicketDetailResponse (chat_mode='mail' для lk)
+
+Сообщения (пагинация по 20):
+  GET  /api/v1/helpdesk/tracker/{ticket_id}/messages
+  POST /api/v1/helpdesk/tracker/{ticket_id}/messages  — ответ оператора
+  POST /api/v1/helpdesk/tracker/{ticket_id}/messages/read
+  PATCH/DELETE .../messages/{message_id}
+
+Внутренние комментарии (только оператор):
+  GET/POST /api/v1/helpdesk/tracker/{ticket_id}/comments
+
+Workflow:
+  POST .../transfer-to-engineers
+  POST .../take-back-to-ks
+  POST .../reopen
+
+Pydantic модели сообщений: TicketMessageItem, TicketMessagesResponse
+  side: 'me' | 'subscriber' | 'support' | 'engineer'
+  has_read, read_by[], reply_to_id, reply_preview, attachments[]
+
+
+================================================================================
+7. СХЕМА ПОТОКА ДАННЫХ (source='lk')
+================================================================================
+
+  ┌──────────────┐                              ┌─────────────────────┐
+  │ ЛК абонента  │  INSERT tracker_tickets      │ users.tracker_tickets│
+  │  (внешний)   │  INSERT user_mail            │ source='lk'          │
+  └──────┬───────┘  (ticket_id, answer=0)       └──────────┬──────────┘
+         │                                                  │
+         │  абонент пишет ещё                               │
+         └──────────────────────────────────────────────────┤
+                                                            │
+  ┌──────────────┐  GET /tracker/list                      │
+  │  /tickets    │◄─────────────────────────────────────────┤
+  │  (оператор)  │  reconcile v2 из user_mail              │
+  └──────┬───────┘                                          │
+         │  открывает /tickets/{id}                         │
+         ▼                                                  │
+  ┌──────────────┐  GET messages (user_mail)                │
+  │ TicketPage   │  POST message → user_mail (staff)        │
+  │              │  UPDATE v2: chat_turn=subscriber         │
+  └──────────────┘  INSERT user_mail_reads при прочтении    │
+                                                            │
+  ┌──────────────┐                                          │
+  │ user_mail    │◄──── публичный чат ──────────────────────┘
+  │ user_mail_   │
+  │ attachments  │
+  │ user_mail_   │
+  │ reads        │
+  └──────────────┘
+
+  tracker_comments ── внутренние заметки (не в чате абонента)
+  tracker_ticket_line_history ── аудит линий и событий
+  tracker_ticket_executors ── соисполнители КС
+
+
+================================================================================
+8. ЧЕКЛИСТ ДЛЯ ТЗ АБОНЕНТСКОГО ЧАТА
+================================================================================
+
+Обязательные операции ЛК:
+
+  [ ] Создание тикета: INSERT tracker_tickets (source='lk') + user_mail
+  [ ] Отправка сообщения: INSERT user_mail (person_type='user', answer=0, ticket_id)
+  [ ] UPDATE v2 при сообщении абонента (или полагаться на reconcile в helpdesk)
+  [ ] UPDATE last_client_message_at
+  [ ] Запись в tracker_ticket_line_history (created + сегмент линии)
+  [ ] Чтение ответов staff из user_mail (person_type='skystream', answer=1)
+  [ ] Прочтения: INSERT user_mail_reads (person_type='user') — для галочек у staff
+  [ ] Вложения: user_mail_attachments
+  [ ] Оценка закрытого тикета: tracker_tickets_ratings
+
+НЕ делать в ЛК для публичного чата:
+
+  [ ] INSERT в tracker_messages (это внутренний чат staff)
+  [ ] Писать в tracker_comments (это только для операторов)
+
+Согласованность с оператором:
+
+  [ ] ticket_id на каждом user_mail (не только mail_links)
+  [ ] person_type='user' на сообщениях абонента (не только answer=0)
+  [ ] При ответе staff v2: chat_turn='subscriber' — абонент видит, что ждут его
+  [ ] При сообщении абонента v2: chat_turn='staff' — оператор видит «Нужен ответ»

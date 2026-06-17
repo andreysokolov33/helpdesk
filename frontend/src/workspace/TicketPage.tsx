@@ -73,6 +73,7 @@ import TicketLinkSubscriberModal from "@/workspace/TicketLinkSubscriberModal";
 import { fetchUserProfile, type UserProfileResponse } from "@/api/userProfile";
 import { macroTextToEditorHtml, type HelpdeskMacro } from "@/api/macros";
 import { validateTicketMessage } from "@/utils/ticketMessageValidation";
+import { useMediaQuery } from "@/utils/useMediaQuery";
 
 const MSG_POLL_MS = 5000;
 const READ_RECEIPTS_POLL_MS = 3000;
@@ -178,6 +179,8 @@ export default function TicketPage() {
   const [editorEmpty, setEditorEmpty] = useState(true);
   const [sending, setSending] = useState(false);
   const [helperCollapsed, setHelperCollapsed] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<null | "queue" | "info">(null);
+  const isMobileLayout = useMediaQuery("(max-width: 900px)");
   const [subscriberProfile, setSubscriberProfile] = useState<UserProfileResponse | null>(null);
   const [takeBackLoading, setTakeBackLoading] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
@@ -1066,6 +1069,7 @@ export default function TicketPage() {
     const hasAttachments = editingId ? editingAttachments.length > 0 : uploadSummary.hasReady;
     if (isEmpty && !hasAttachments && !editingId) return;
     if (!detail?.can_reply && detail?.chat_mode === "mail") return;
+    if (detail?.subscriber_chat_readonly && !isCommentsPanel) return;
     if (editingId && isEmpty && editingAttachments.length === 0) return;
     if (uploadSummary.pending > 0) {
       autoSendRef.current = true;
@@ -1266,18 +1270,99 @@ export default function TicketPage() {
 
   const isSwitchingTicket = detail != null && detail.id !== ticketId;
 
+  const closeMobilePanel = useCallback(() => setMobilePanel(null), []);
+
+  const toggleMobilePanel = useCallback((panel: "queue" | "info") => {
+    setMobilePanel((current) => (current === panel ? null : panel));
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileLayout) setMobilePanel(null);
+  }, [isMobileLayout]);
+
+  useEffect(() => {
+    setMobilePanel(null);
+  }, [ticketId]);
+
+  useEffect(() => {
+    if (!mobilePanel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMobilePanel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobilePanel, closeMobilePanel]);
+
+  const viewportPanelClass =
+    isMobileLayout && mobilePanel === "queue"
+      ? " tk-cc-viewport--panel-queue"
+      : isMobileLayout && mobilePanel === "info"
+        ? " tk-cc-viewport--panel-info"
+        : "";
+
+  function renderMobileQueueButton() {
+    if (!isMobileLayout) return null;
+    return (
+      <button
+        type="button"
+        className={`tk-cc-mobile-btn${mobilePanel === "queue" ? " tk-cc-mobile-btn--on" : ""}`}
+        aria-label="Очередь тикетов"
+        title="Очередь тикетов"
+        onClick={() => toggleMobilePanel("queue")}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
+    );
+  }
+
+  function renderMobileInfoButton() {
+    if (!isMobileLayout) return null;
+    return (
+      <button
+        type="button"
+        className={`tk-cc-mobile-btn${mobilePanel === "info" ? " tk-cc-mobile-btn--on" : ""}`}
+        aria-label="Данные абонента и тикета"
+        title="Данные абонента"
+        onClick={() => toggleMobilePanel("info")}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="2" />
+          <path d="M5 20c0-3.3 3.1-5 7-5s7 1.7 7 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
+    );
+  }
+
   if (!detail) {
     return (
       <div className="tp on" id="tp-ticket">
-        <div className="tk-cc-viewport">
-          <TicketQueueSidebar activeTicketId={ticketId} />
+        <div className={`tk-cc-viewport${viewportPanelClass}`}>
+          {isMobileLayout && mobilePanel ? (
+            <button
+              type="button"
+              className="tk-cc-mobile-backdrop"
+              aria-label="Закрыть панель"
+              onClick={closeMobilePanel}
+            />
+          ) : null}
+          <TicketQueueSidebar
+            activeTicketId={ticketId}
+            onTicketSelect={closeMobilePanel}
+            onClose={isMobileLayout ? closeMobilePanel : undefined}
+          />
           <div className="tk-cc-helper-wrap" aria-hidden>
             <section className="tk-cc-helper tk-cc-helper--placeholder" />
           </div>
           <div className="tk-cc-chat">
             <header className="tk-cc-chat__head">
-              <div className="tk-cc-chat__head-left">
-                <span className="tk-cc-chat__title">Тикет #{ticketId}</span>
+              <div className="tk-cc-chat__head-main">
+                {renderMobileQueueButton()}
+                <div className="tk-cc-chat__head-left">
+                  <span className="tk-cc-chat__title">Тикет #{ticketId}</span>
+                </div>
+                {renderMobileInfoButton()}
               </div>
             </header>
             <div className="tk-chat-main tk-cc-chat__body">
@@ -1321,6 +1406,7 @@ export default function TicketPage() {
   const chatMessages = messages.filter((m) => !m.is_initial);
   const isLkTicket = isLkTicketSource(detail.source);
   const isCommentsPanel = isLkTicket && chatPanel === "comments";
+  const subscriberChatReadonly = Boolean(detail.subscriber_chat_readonly) && !isCommentsPanel;
   const hideQuickReplies = !isLkTicket;
   const feedMessages = isCommentsPanel ? comments.map(commentToMessage) : chatMessages;
   const hasIntro = !isCommentsPanel && introBody.length > 0;
@@ -1360,13 +1446,21 @@ export default function TicketPage() {
     const authorLabel = isCommentsPanel
       ? m.author_name || ticketAuthorLabel(m, subscriberChatName)
       : ticketAuthorLabel(m, subscriberChatName);
-    const timeLabel = formatMsgTime(m.created_at_iso) || "—";
+    const displayTimeIso =
+      m.is_edited && m.updated_at_iso ? m.updated_at_iso : m.created_at_iso;
+    const timeLabel = formatMsgTime(displayTimeIso) || "—";
     const editedSuffix =
       m.is_edited ? (
-        <span className="tk-msg-edited" title={m.updated_at_iso || undefined}>
+        <span
+          className="tk-msg-edited"
+          title={
+            m.created_at_iso && m.updated_at_iso
+              ? `Создано: ${formatMsgTime(m.created_at_iso)}`
+              : m.updated_at_iso || undefined
+          }
+        >
           {" "}
-          · изменено
-          {m.updated_at_iso ? ` ${formatMsgTime(m.updated_at_iso)}` : ""}
+          · изм.
         </span>
       ) : null;
 
@@ -1400,29 +1494,41 @@ export default function TicketPage() {
           ) : null}
           <MessageBody text={m.text} />
           {!isCommentsPanel ? <AttachmentsBlock msg={m} onOpenImage={openImageViewer} /> : null}
+          {!isCommentsPanel && outgoing ? (
+            <div className="tk-tg-bubble__ticks">
+              <TicketDeliveryTicks
+                side={m.side}
+                recipientReadAtIso={m.recipient_read_at_iso}
+                readBy={m.read_by}
+              />
+            </div>
+          ) : null}
         </div>
-        {!isCommentsPanel ? (
-          <div className="tk-tg-bubble__ticks">
-            <TicketDeliveryTicks
-              side={m.side}
-              recipientReadAtIso={m.recipient_read_at_iso}
-              readBy={m.read_by}
-            />
-          </div>
-        ) : null}
       </div>
     );
   }
 
   return (
     <div className="tp on" id="tp-ticket">
-      <div className={`tk-cc-viewport${isSwitchingTicket ? " tk-cc-viewport--switching" : ""}`}>
-        <TicketQueueSidebar activeTicketId={ticketId} />
+      <div className={`tk-cc-viewport${isSwitchingTicket ? " tk-cc-viewport--switching" : ""}${viewportPanelClass}`}>
+        {isMobileLayout && mobilePanel ? (
+          <button
+            type="button"
+            className="tk-cc-mobile-backdrop"
+            aria-label="Закрыть панель"
+            onClick={closeMobilePanel}
+          />
+        ) : null}
+        <TicketQueueSidebar
+          activeTicketId={ticketId}
+          onTicketSelect={closeMobilePanel}
+          onClose={isMobileLayout ? closeMobilePanel : undefined}
+        />
 
         <TicketHelperPanel
           detail={detail}
           profile={subscriberProfile}
-          collapsed={helperCollapsed}
+          collapsed={isMobileLayout ? false : helperCollapsed}
           onToggle={() => setHelperCollapsed((v) => !v)}
           nowPulse={nowPulse}
           checkCache={checkCache}
@@ -1439,21 +1545,26 @@ export default function TicketPage() {
           onTakeBack={() => void handleTakeBackToKs()}
           onReopen={() => void handleReopenTicket()}
           onLinkSubscriber={() => setLinkSubscriberOpen(true)}
+          onMobileClose={isMobileLayout ? closeMobilePanel : undefined}
         />
 
         <div className={`tk-cc-chat${isCommentsPanel ? " tk-cc-chat--comments" : ""}`}>
           <header className="tk-cc-chat__head">
-            <div className="tk-cc-chat__head-left">
-              {detail.subscriber_profile_user_id != null ? (
-                <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-cc-chat__title">
-                  {subscriberSidebarName}
-                </Link>
-              ) : (
-                <span className="tk-cc-chat__title">{subscriberSidebarName}</span>
-              )}
-              <span className={`tk-cc-online${online ? " tk-cc-online--on" : " tk-cc-online--off"}`}>
-                {onlineStatusLabel}
-              </span>
+            <div className="tk-cc-chat__head-main">
+              {renderMobileQueueButton()}
+              <div className="tk-cc-chat__head-left">
+                {detail.subscriber_profile_user_id != null ? (
+                  <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-cc-chat__title">
+                    {subscriberSidebarName}
+                  </Link>
+                ) : (
+                  <span className="tk-cc-chat__title">{subscriberSidebarName}</span>
+                )}
+                <span className={`tk-cc-online${online ? " tk-cc-online--on" : " tk-cc-online--off"}`}>
+                  {onlineStatusLabel}
+                </span>
+              </div>
+              {renderMobileInfoButton()}
             </div>
             <div className="tk-cc-chat__head-right">
               <span className="tk-cc-chat__ticket-meta" title={detail.title}>
@@ -1619,6 +1730,10 @@ export default function TicketPage() {
                     </button>
                   </div>
                 </>
+              ) : subscriberChatReadonly ? (
+                <div className="tk-no-reply" role="note">
+                  Режим просмотра — отправка сообщений абоненту недоступна
+                </div>
               ) : !detail.can_reply && detail.chat_mode === "mail" ? (
                 <div className="tk-no-reply">
                   Абонент не определён — ответ в личном кабинете недоступен. Привяжите абонента в карточке
@@ -1953,9 +2068,9 @@ export default function TicketPage() {
               x={contextMenu.x}
               y={contextMenu.y}
               message={contextMenu.msg}
-              allowReply={!isCommentsPanel && detail.is_open}
+              allowReply={!isCommentsPanel && detail.is_open && !subscriberChatReadonly}
               commentMode={isCommentsPanel && detail.is_open}
-              readOnly={!detail.is_open}
+              readOnly={!detail.is_open || subscriberChatReadonly}
               onAction={handleMessageMenuAction}
               onClose={() => setContextMenu(null)}
             />

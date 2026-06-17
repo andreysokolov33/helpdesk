@@ -38,14 +38,40 @@ export default function TicketDeliveryTicks({ side, recipientReadAtIso, readBy }
       title={tooltip}
       aria-label={tooltip}
     >
-      <span className="tk-delivery__tick" aria-hidden>
-        ✓
-      </span>
-      {read ? (
-        <span className="tk-delivery__tick tk-delivery__tick--second" aria-hidden>
-          ✓
-        </span>
-      ) : null}
+      <svg className="tk-delivery__icon" width="15" height="10" viewBox="0 0 15 10" aria-hidden>
+        {read ? (
+          <>
+            <path
+              className="tk-delivery__path tk-delivery__path--first"
+              d="M1 5.5L3.8 8.3L6.2 5.9"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.45"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              className="tk-delivery__path"
+              d="M5.2 5.5L8 8.3L14 1.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.45"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </>
+        ) : (
+          <path
+            className="tk-delivery__path"
+            d="M1 5.5L4.5 9L14 1"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.45"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+      </svg>
     </span>
   );
 }

@@ -6,11 +6,19 @@ type Props = {
   x: number;
   y: number;
   own: boolean;
+  readOnly?: boolean;
   onAction: (action: ChatMenuAction) => void;
   onClose: () => void;
 };
 
-export default function ChatMessageContextMenu({ x, y, own, onAction, onClose }: Props) {
+export default function ChatMessageContextMenu({
+  x,
+  y,
+  own,
+  readOnly = false,
+  onAction,
+  onClose,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,24 +54,28 @@ export default function ChatMessageContextMenu({ x, y, own, onAction, onClose }:
       <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("copy")}>
         Копировать
       </button>
-      <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("reply")}>
-        Ответить
-      </button>
-      {own ? (
+      {readOnly ? null : (
         <>
-          <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("edit")}>
-            Изменить
+          <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("reply")}>
+            Ответить
           </button>
-          <button
-            type="button"
-            className="tk-msg-menu__item tk-msg-menu__item--danger"
-            role="menuitem"
-            onClick={() => onAction("delete")}
-          >
-            Удалить
-          </button>
+          {own ? (
+            <>
+              <button type="button" className="tk-msg-menu__item" role="menuitem" onClick={() => onAction("edit")}>
+                Изменить
+              </button>
+              <button
+                type="button"
+                className="tk-msg-menu__item tk-msg-menu__item--danger"
+                role="menuitem"
+                onClick={() => onAction("delete")}
+              >
+                Удалить
+              </button>
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
     </div>
   );
 }

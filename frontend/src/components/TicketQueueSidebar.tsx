@@ -37,9 +37,11 @@ function queueBadgeMod(row: TrackerTicketListItem): "new" | "work" | "wait" | "c
 
 type Props = {
   activeTicketId: number;
+  onTicketSelect?: () => void;
+  onClose?: () => void;
 };
 
-export default function TicketQueueSidebar({ activeTicketId }: Props) {
+export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onClose }: Props) {
   const navigate = useNavigate();
   const [rows, setRows] = useState<TrackerTicketListItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -168,6 +170,7 @@ export default function TicketQueueSidebar({ activeTicketId }: Props) {
   }, [prefsReady, pollList]);
 
   function openTicket(id: number) {
+    onTicketSelect?.();
     if (id === activeTicketId) return;
     navigate(`/tickets/${id}`);
   }
@@ -184,9 +187,21 @@ export default function TicketQueueSidebar({ activeTicketId }: Props) {
     <section className="tk-cc-queue" aria-label="Очередь тикетов">
       <div className="tk-cc-queue__head">
         <span className="tk-cc-queue__title">Очередь чатов</span>
-        <span className="tk-cc-queue__count" title={polling ? "Обновление…" : undefined}>
-          {total > 99 ? "99+" : total}
-        </span>
+        <div className="tk-cc-queue__head-actions">
+          <span className="tk-cc-queue__count" title={polling ? "Обновление…" : undefined}>
+            {total > 99 ? "99+" : total}
+          </span>
+          {onClose ? (
+            <button
+              type="button"
+              className="tk-cc-drawer-close"
+              onClick={onClose}
+              aria-label="Закрыть очередь"
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="tk-cc-queue__scroll">
         {loading && rows.length === 0 ? (

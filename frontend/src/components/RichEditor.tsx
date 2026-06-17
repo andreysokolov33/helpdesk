@@ -104,7 +104,11 @@ const PALETTE_COLOR_KEYS = [
 const TEXT_COLORS = [{ key: "", label: "Обычный" }, ...PALETTE_COLOR_KEYS];
 const BG_COLORS = [{ key: "", label: "Без фона" }, ...PALETTE_COLOR_KEYS];
 
-const HEADING_LEVELS = [1, 2, 3] as const;
+const HEADING_LEVELS = [
+  { level: 2, label: "H1" },
+  { level: 3, label: "H2" },
+  { level: 4, label: "H3" },
+] as const;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -147,6 +151,9 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
+        heading: {
+          levels: [2, 3, 4],
+        },
         link: {
           openOnClick: false,
           HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
@@ -280,7 +287,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   const isLink = editor.isActive("link");
   const activeColor = (editor.getAttributes("textColor").color as string | undefined) ?? "";
   const activeBg = (editor.getAttributes("bgColor").color as string | undefined) ?? "";
-  const activeHeading = HEADING_LEVELS.find((l) => editor.isActive("heading", { level: l }));
+  const activeHeading = HEADING_LEVELS.find((h) => editor.isActive("heading", { level: h.level }));
 
   return (
     <div className="tk-rte">
@@ -403,18 +410,18 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
         <div className="tk-rte__sep" />
 
         {/* Heading buttons */}
-        {HEADING_LEVELS.map((level) => (
+        {HEADING_LEVELS.map(({ level, label }) => (
           <button
             key={level}
             type="button"
-            className={`tk-rte__btn tk-rte__btn--h${activeHeading === level ? " tk-rte__btn--on" : ""}`}
-            title={`Заголовок H${level}`}
+            className={`tk-rte__btn tk-rte__btn--h${level}${activeHeading?.level === level ? " tk-rte__btn--on" : ""}`}
+            title={`Заголовок ${label}`}
             onMouseDown={(e) => {
               e.preventDefault();
               editor.chain().focus().toggleHeading({ level }).run();
             }}
           >
-            H{level}
+            {label}
           </button>
         ))}
 

@@ -577,6 +577,18 @@ def _staff_author_role(staff_role: str | None, side: str) -> str | None:
     return role or None
 
 
+def _format_staff_name_short(full_name: str | None) -> str:
+    """«Иванов Иван Иванович» → «Иванов И.И.»"""
+    parts = (full_name or "").strip().split()
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    surname = parts[0]
+    initials = "".join(f"{p[0].upper()}." for p in parts[1:] if p)
+    return f"{surname} {initials}" if initials else surname
+
+
 def _staff_side_and_name(
     *,
     author_id: int | None,
@@ -589,7 +601,7 @@ def _staff_side_and_name(
     if aid and aid == viewer_id:
         return ("me", "Вы")
     role_l = (role or "").strip().lower()
-    name = (full_name or "").strip()
+    name = _format_staff_name_short(full_name)
     if role_l == "support":
         return ("support", name or "КЦ")
     return ("engineer", "Инженер")
@@ -649,7 +661,7 @@ def _classify_tracker_message(
     if pt == "user":
         return ("client", subscriber_name)
     if pt in ("partner", "tech"):
-        return ("partner", staff_full_name or "Партнёр")
+        return ("partner", _format_staff_name_short(staff_full_name) or "Партнёр")
     if pt == "skystream" or pt in STAFF_READ_PERSON_TYPES:
         return _staff_side_and_name(
             author_id=author_id,
@@ -1837,6 +1849,29 @@ def _is_support_admin_view(*, role: str | None, level: int | None) -> bool:
     return (role or "").strip().lower() == "support" and int(level or 0) == 2
 
 
+SUBSCRIBER_CHAT_READONLY_DETAIL = (
+    "Режим просмотра — отправка сообщений абоненту недоступна"
+)
+
+
+def subscriber_chat_readonly(*, role: str | None, level: int | None) -> bool:
+    """role=support, level=2 — только просмотр чата с абонентом."""
+    return _is_support_admin_view(role=role, level=level)
+
+
+def assert_subscriber_chat_write_allowed(*, role: str | None, level: int | None) -> None:
+    if subscriber_chat_readonly(role=role, level=level):
+        raise HTTPException(status_code=403, detail=SUBSCRIBER_CHAT_READONLY_DETAIL)
+
+
+async def _assert_subscriber_chat_write_for_operator(
+    db: AsyncSession,
+    operator_id: int,
+) -> None:
+    role, level = await _viewer_access(db, operator_id)
+    assert_subscriber_chat_write_allowed(role=role, level=level)
+
+
 def _viewer_tickets_need_attention_sql(viewer_role: str) -> str:
     """SQL на queue q: тикет требует ответа зрителя (как list_highlight=chat или has_unread на его линии)."""
     role = (viewer_role or "support").strip().lower()
@@ -2524,14 +2559,21 @@ async def _ticket_detail_has_unread(db: AsyncSession, ticket_id: int) -> bool:
     return bool(row and row.get("has_unread"))
 
 
-async def _viewer_role(db: AsyncSession, viewer_id: int) -> str:
+async def _viewer_access(db: AsyncSession, viewer_id: int) -> tuple[str, int | None]:
     row = (
         await db.execute(
-            text("SELECT role FROM users.skystream_users WHERE id = :id"),
+            text("SELECT role, level FROM users.skystream_users WHERE id = :id"),
             {"id": viewer_id},
         )
     ).mappings().first()
-    return str(row["role"] if row and row.get("role") else "support")
+    if not row:
+        return "support", None
+    return str(row.get("role") or "support"), row.get("level")
+
+
+async def _viewer_role(db: AsyncSession, viewer_id: int) -> str:
+    role, _ = await _viewer_access(db, viewer_id)
+    return role
 
 
 async def _viewer_hides_manager_line(db: AsyncSession, viewer_id: int) -> bool:
@@ -2602,7 +2644,7 @@ async def load_ticket_detail(
     source = d.get("source") or "call_center"
     line = int(d.get("support_line") or 1)
 
-    viewer_role = await _viewer_role(db, viewer_id)
+    viewer_role, viewer_level = await _viewer_access(db, viewer_id)
     if viewer_role == "support" and not is_visible_to_cs_support(line):
         raise HTTPException(status_code=404, detail="Тикет не найден")
     queue_line = _coerce_queue_line(d)
@@ -2758,8 +2800,16 @@ async def load_ticket_detail(
         "updated_at_iso": _iso(d.get("updated_at")),
         "assigned_at_iso": _iso(assigned_at_row["start_time"]) if assigned_at_row else None,
         "chat_mode": chat_mode,
-        "can_reply": status_raw in TRACKER_OPEN_STATUSES
-        and (chat_mode == "tracker" or d.get("user_id") is not None),
+        "can_reply": (
+            status_raw in TRACKER_OPEN_STATUSES
+            and (chat_mode == "tracker" or d.get("user_id") is not None)
+            and not (
+                chat_mode == "mail"
+                and subscriber_chat_readonly(role=viewer_role, level=viewer_level)
+            )
+        ),
+        "subscriber_chat_readonly": chat_mode == "mail"
+        and subscriber_chat_readonly(role=viewer_role, level=viewer_level),
         "subscriber_account": subscriber_account,
     }
 
@@ -3884,6 +3934,7 @@ def ticket_poll_snapshot_from_detail(detail: dict[str, Any]) -> dict[str, Any]:
         "is_open": detail["is_open"],
         "can_reopen": bool(detail.get("can_reopen")),
         "can_reply": bool(detail.get("can_reply")),
+        "subscriber_chat_readonly": bool(detail.get("subscriber_chat_readonly")),
         "date_of_close_iso": detail.get("date_of_close_iso"),
         "updated_at_iso": detail.get("updated_at_iso"),
         "queue_line": detail.get("queue_line") or "cs",
@@ -4116,6 +4167,7 @@ async def edit_ticket_message(
     text_body = text_body.strip()
 
     if mode == "mail":
+        await _assert_subscriber_chat_write_for_operator(db, operator_id)
         await _assert_own_mail_message(db, ticket_id, message_id, operator_id)
         await db.execute(
             text(
@@ -4230,6 +4282,7 @@ async def delete_ticket_message(
     detail = await load_ticket_detail(db, ticket_id, operator_id)
     mode = detail["chat_mode"]
     if mode == "mail":
+        await _assert_subscriber_chat_write_for_operator(db, operator_id)
         await _assert_own_mail_message(db, ticket_id, message_id, operator_id)
         await db.execute(
             text("DELETE FROM users.user_mail WHERE id = :mid AND ticket_id = :tid"),
@@ -4274,6 +4327,7 @@ async def send_mail_reply(
     if not ticket:
         raise HTTPException(status_code=404, detail="Тикет не найден")
     await _assert_ticket_open_for_write(db, ticket_id)
+    await _assert_subscriber_chat_write_for_operator(db, operator_id)
     if int(ticket["user_id"] or 0) != chat_id:
         raise HTTPException(status_code=400, detail="Абонент не привязан к тикету")
 
@@ -4717,6 +4771,7 @@ async def detach_ticket_attachment(
     detail = await load_ticket_detail(db, ticket_id, operator_id)
     mode = detail["chat_mode"]
     if mode == "mail":
+        await _assert_subscriber_chat_write_for_operator(db, operator_id)
         await _assert_own_mail_message(db, ticket_id, message_id, operator_id)
         row = (
             await db.execute(

@@ -416,6 +416,7 @@ class TicketDetailResponse(BaseModel):
     assigned_at_iso: str | None = None
     chat_mode: str
     can_reply: bool = True
+    subscriber_chat_readonly: bool = False
     subscriber_account: TicketSubscriberAccountSummary | None = None
 
 
@@ -427,6 +428,7 @@ class TicketPollSnapshot(BaseModel):
     is_open: bool
     can_reopen: bool = False
     can_reply: bool = True
+    subscriber_chat_readonly: bool = False
     date_of_close_iso: str | None = None
     updated_at_iso: str | None = None
     queue_line: str = "cs"

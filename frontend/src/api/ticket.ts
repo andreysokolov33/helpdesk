@@ -119,6 +119,7 @@ export type TicketDetail = {
   assigned_at_iso?: string | null;
   chat_mode: "mail" | "tracker" | string;
   can_reply: boolean;
+  subscriber_chat_readonly?: boolean;
   subscriber_account?: TicketSubscriberAccountSummary | null;
 };
 
@@ -196,6 +197,7 @@ export type TicketPollSnapshot = Pick<
   | "is_open"
   | "can_reopen"
   | "can_reply"
+  | "subscriber_chat_readonly"
   | "date_of_close_iso"
   | "updated_at_iso"
   | "queue_line"
@@ -226,6 +228,7 @@ const TICKET_POLL_SNAPSHOT_KEYS: (keyof TicketPollSnapshot)[] = [
   "is_open",
   "can_reopen",
   "can_reply",
+  "subscriber_chat_readonly",
   "date_of_close_iso",
   "updated_at_iso",
   "queue_line",

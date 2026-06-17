@@ -1,3 +1,4 @@
+import { formatStaffNameShort } from "@/utils/personName";
 import {
   normalizeReadByReceipts,
   normalizeReadReceipts,
@@ -124,7 +125,12 @@ export function ticketMavClass(side: string, authorRole?: string | null): string
 }
 
 export function ticketAuthorLabel(msg: TicketMessage, subscriberName: string): string {
-  if (msg.author_name?.trim()) return msg.author_name.trim();
+  if (msg.author_name?.trim()) {
+    const raw = msg.author_name.trim();
+    if (msg.side === "client" || msg.side === "bot" || raw === "Вы") return raw;
+    if (raw === "КЦ" || raw === "Инженер" || raw === "Партнёр" || raw === "Контактный сервис") return raw;
+    return formatStaffNameShort(raw);
+  }
   if (msg.side === "bot") return "Бот";
   if (msg.side === "client") return subscriberName || "Абонент";
   if (msg.side === "partner") return "Партнёр";
