@@ -282,6 +282,7 @@ async def list_tracker_tickets(
     По умолчанию только незакрытые (`closed=false`), источники lk / call_center / abs.
     """
     viewer_skystream_id = int(user["user_id"])
+    viewer_role = str(user.get("role") or "support")
     eff_assigned_to: int | None = None
     if assigned_to is not None:
         if int(assigned_to) != viewer_skystream_id:
@@ -311,6 +312,7 @@ async def list_tracker_tickets(
                 date_from=date_from,
                 date_to=date_to,
                 assigned_to=eff_assigned_to,
+                viewer_role=viewer_role,
             )
             if not closed and rows:
                 await ticket_svc.reconcile_open_tickets_on_list_page(db, rows)
@@ -324,6 +326,7 @@ async def list_tracker_tickets(
                     date_from=date_from,
                     date_to=date_to,
                     assigned_to=eff_assigned_to,
+                    viewer_role=viewer_role,
                 )
             break
         except NotSupportedError as exc:
@@ -370,6 +373,7 @@ async def list_tracker_tickets_digest(
     При changed=false клиент не вызывает GET /list.
     """
     viewer_id = int(user["user_id"])
+    viewer_role = str(user.get("role") or "support")
     eff_assigned_to: int | None = None
     if assigned_to is not None:
         if int(assigned_to) != viewer_id:
@@ -387,6 +391,7 @@ async def list_tracker_tickets_digest(
         date_to=date_to,
         assigned_to=eff_assigned_to,
         client_digest=(digest or "").strip() or None,
+        viewer_role=viewer_role,
     )
     return TrackerTicketListDigestResponse(**data)
 

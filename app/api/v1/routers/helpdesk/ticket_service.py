@@ -68,6 +68,28 @@ _MAIL_IS_CLIENT = """
 """
 _TICKET_TBL = "users.tracker_tickets"
 _STAFF_READ_IN_SQL = ", ".join(f"'{t}'" for t in STAFF_READ_PERSON_TYPES)
+_MAIL_ANSWER_EXPR = """
+    CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
+         THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
+         ELSE um.answer END
+"""
+_MAIL_IN_TICKET_SQL = """
+    (
+        um.ticket_id = :tid
+        OR EXISTS (
+            SELECT 1 FROM users.tracker_ticket_mail_links l
+            WHERE l.ticket_id = :tid AND l.user_mail_id = um.id
+        )
+    )
+"""
+_MAIL_OWN_OUTGOING_SQL = f"""
+    ({_MAIL_ANSWER_EXPR}) = 1
+    AND COALESCE(NULLIF(TRIM(um.person_type), ''), 'skystream') NOT IN ('user', 'partner', 'tech')
+    AND (
+        um.user_id = :op_id
+        OR (um.user_id IS NULL AND um.id_user_from = :op_id)
+    )
+"""
 
 
 def _coerce_queue_line(row: dict[str, Any]) -> TrackerQueueLine:
@@ -981,34 +1003,89 @@ def _tracker_list_lk_staff_pending_sql() -> str:
     )"""
 
 
-def _tracker_list_sort_tier_sql() -> str:
+def _tracker_list_status_needs_answer_sql(viewer_role: str) -> str:
+    """Статус «Нужен ответ» в колонке списка (как ticketListStatusColumn / _home_row_show_needs_answer)."""
+    role = (viewer_role or "support").strip().lower()
+    staff_actions = (
+        "'cs'::users.tracker_action_by, "
+        "'engineers'::users.tracker_action_by, "
+        "'partner'::users.tracker_action_by"
+    )
+    internal_src = "COALESCE(q.source, 'call_center') IN ('call_center', 'abs')"
+    external_src = f"NOT ({internal_src})"
+    ops_pause = """(
+        q.action_by = 'cs'::users.tracker_action_by
+        AND q.status::text IN ('waiting_cs', 'cc_handover')
+    )"""
+
+    non_internal = f"""(
+        {external_src}
+        AND q.chat_turn = 'staff'::users.tracker_chat_turn
+        AND q.action_by IN ({staff_actions})
+    )"""
+    lk_staff = f"""(
+        COALESCE(q.source, 'call_center') = 'lk'
+        AND q.chat_turn = 'staff'::users.tracker_chat_turn
+        AND q.action_by IN ({staff_actions})
+    )"""
+
+    if role == "engineer":
+        internal_line = f"""(
+            {internal_src}
+            AND q.chat_turn = 'staff'::users.tracker_chat_turn
+            AND q.action_by = 'engineers'::users.tracker_action_by
+        )"""
+    elif role in ("partner", "technician"):
+        internal_line = f"""(
+            {internal_src}
+            AND q.chat_turn = 'staff'::users.tracker_chat_turn
+            AND q.action_by = 'partner'::users.tracker_action_by
+        )"""
+    else:
+        internal_line = f"""(
+            {internal_src}
+            AND q.chat_turn = 'staff'::users.tracker_chat_turn
+            AND q.action_by = 'cs'::users.tracker_action_by
+        )"""
+
+    return f"""(
+        q.support_line <> 4
+        AND q.action_by <> 'external'::users.tracker_action_by
+        AND NOT {ops_pause}
+        AND ({non_internal} OR {lk_staff} OR {internal_line})
+    )"""
+
+
+def _tracker_list_sort_tier_sql(*, viewer_role: str) -> str:
     """
-    Tier 0 — нужен ответ staff / непрочитанное (любая линия, любой исполнитель)
-    Tier 1 — мои, без ожидания ответа
-    Tier 2 — остальные без ожидания ответа
-    Tier 3 — external, операционная пауза
+    Tier 0 — «Нужен ответ», мои (исполнитель / соисполнитель)
+    Tier 1 — «Нужен ответ», остальные
+    Tier 2 — прочие, мои
+    Tier 3 — прочие, остальные
+    Tier 4 — external, операционная пауза
     """
     operational_in = _enum_status_sql(TRACKER_OPERATIONAL_WAIT_STATUSES)
     owner = _tracker_list_viewer_owner_sql()
-    needs = _tracker_list_staff_needs_reply_sql()
+    needs_answer = _tracker_list_status_needs_answer_sql(viewer_role)
     return f"""
         CASE
-            WHEN q.action_by = 'external'::users.tracker_action_by THEN 3
-            WHEN q.status IN ({operational_in}) AND NOT ({needs}) THEN 3
-            WHEN {needs} THEN 0
-            WHEN {owner} THEN 1
-            ELSE 2
+            WHEN q.action_by = 'external'::users.tracker_action_by THEN 4
+            WHEN q.status IN ({operational_in}) AND NOT ({needs_answer}) THEN 4
+            WHEN ({needs_answer}) AND ({owner}) THEN 0
+            WHEN ({needs_answer}) THEN 1
+            WHEN ({owner}) THEN 2
+            ELSE 3
         END
     """
 
 
-def _tracker_list_order_sql(*, closed: bool) -> str:
+def _tracker_list_order_sql(*, closed: bool, viewer_role: str = "support") -> str:
     if closed:
         return """
         COALESCE(q.date_of_close, q.updated_at, q.date_of_create) DESC NULLS LAST,
         q.id DESC
         """
-    sort_tier = _tracker_list_sort_tier_sql()
+    sort_tier = _tracker_list_sort_tier_sql(viewer_role=viewer_role)
     return f"""
         {sort_tier},
         CASE
@@ -1161,9 +1238,11 @@ def _tracker_list_digest_cache_key(
     return f"tracker_list_digest:{h}"
 
 
-def _build_tracker_list_digest_sql(*, closed: bool, filter_sql: str) -> str:
+def _build_tracker_list_digest_sql(
+    *, closed: bool, filter_sql: str, viewer_role: str = "support",
+) -> str:
     """Лёгкий отпечаток страницы списка (без join абонентов/категорий/исполнителей)."""
-    order_by = _tracker_list_order_sql(closed=closed)
+    order_by = _tracker_list_order_sql(closed=closed, viewer_role=viewer_role)
     queue_ctes = _build_tracker_list_queue_ctes_sql(filter_sql=filter_sql)
     return f"""
     {queue_ctes},
@@ -1208,9 +1287,11 @@ def _build_tracker_list_digest_sql(*, closed: bool, filter_sql: str) -> str:
     """
 
 
-def _build_tracker_list_page_sql(*, closed: bool, filter_sql: str) -> str:
+def _build_tracker_list_page_sql(
+    *, closed: bool, filter_sql: str, viewer_role: str = "support",
+) -> str:
     """Список /tickets: unread по user_mail только для id из filtered (без seq scan на 175k+)."""
-    order_by = _tracker_list_order_sql(closed=closed)
+    order_by = _tracker_list_order_sql(closed=closed, viewer_role=viewer_role)
     queue_ctes = _build_tracker_list_queue_ctes_sql(filter_sql=filter_sql)
     return f"""
     {queue_ctes}
@@ -1327,8 +1408,10 @@ async def fetch_tracker_list_page(
     date_from: date | None = None,
     date_to: date | None = None,
     assigned_to: int | None = None,
+    viewer_role: str | None = None,
 ) -> tuple[int, list[dict[str, Any]], dict[str, float | None]]:
     hide_manager = await _viewer_hides_manager_line(db, viewer_id)
+    role = (viewer_role or await _viewer_role(db, viewer_id)).strip().lower()
     filter_sql, filter_params = _tracker_list_filter_sql(
         closed=closed,
         subscriber_q=subscriber_q,
@@ -1353,7 +1436,9 @@ async def fetch_tracker_list_page(
     ).mappings().first()
     total = int(count_row["total"] if count_row else 0)
 
-    page_sql = _build_tracker_list_page_sql(closed=closed, filter_sql=filter_sql)
+    page_sql = _build_tracker_list_page_sql(
+        closed=closed, filter_sql=filter_sql, viewer_role=role,
+    )
     rows = (
         await db.execute(
             text(page_sql),
@@ -1695,6 +1780,7 @@ async def fetch_tracker_list_digest(
     date_to: date | None = None,
     assigned_to: int | None = None,
     client_digest: str | None = None,
+    viewer_role: str | None = None,
 ) -> dict[str, Any]:
     """
     Отпечаток страницы списка для поллинга: без join абонентов/категорий.
@@ -1723,6 +1809,7 @@ async def fetch_tracker_list_digest(
         pass
 
     hide_manager = await _viewer_hides_manager_line(db, viewer_id)
+    role = (viewer_role or await _viewer_role(db, viewer_id)).strip().lower()
     filter_sql, filter_params = _tracker_list_filter_sql(
         closed=closed,
         subscriber_q=subscriber_q,
@@ -1737,7 +1824,9 @@ async def fetch_tracker_list_digest(
         "per_page": per_page,
         "offset": (page - 1) * per_page,
     }
-    digest_sql = _build_tracker_list_digest_sql(closed=closed, filter_sql=filter_sql)
+    digest_sql = _build_tracker_list_digest_sql(
+        closed=closed, filter_sql=filter_sql, viewer_role=role,
+    )
     row = (await db.execute(text(digest_sql), params)).mappings().first()
     total = int(row["total"] if row and row.get("total") is not None else 0)
     digest = str(row["digest"] if row and row.get("digest") is not None else "")
@@ -2162,16 +2251,11 @@ async def _assert_own_mail_message(
     row = (
         await db.execute(
             text(
-                """
+                f"""
                 SELECT 1 FROM users.user_mail um
-                WHERE um.id = :mid AND um.ticket_id = :tid
-                  AND um.user_id = :op_id
-                  AND COALESCE(um.person_type, 'skystream') = 'skystream'
-                  AND (
-                    CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
-                         THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
-                         ELSE um.answer END
-                  ) = 1
+                WHERE um.id = :mid
+                  AND {_MAIL_IN_TICKET_SQL}
+                  AND {_MAIL_OWN_OUTGOING_SQL}
                 LIMIT 1
                 """
             ),
@@ -2195,7 +2279,6 @@ async def _assert_own_tracker_message(
                 SELECT 1 FROM users.tracker_messages tm
                 WHERE tm.id = :mid AND tm.ticket_id = :tid
                   AND tm.author_id = :op_id
-                  AND COALESCE(tm.person_type, 'skystream') = 'skystream'
                 LIMIT 1
                 """
             ),
@@ -4202,10 +4285,10 @@ async def edit_ticket_message(
                 """
                 UPDATE users.user_mail
                 SET text = :text, updated_at = NOW()
-                WHERE id = :mid AND ticket_id = :tid
+                WHERE id = :mid
                 """
             ),
-            {"text": text_body, "mid": message_id, "tid": ticket_id},
+            {"text": text_body, "mid": message_id},
         )
     else:
         await _assert_own_tracker_message(db, ticket_id, message_id, operator_id)
@@ -4234,10 +4317,10 @@ async def edit_ticket_message(
                     SELECT date_tz, updated_at, relay_msg_id,
                         CASE WHEN file_new IS NULL OR file_new IN ('0', '') THEN NULL
                              ELSE file_new END AS legacy_file
-                    FROM users.user_mail WHERE id = :mid AND ticket_id = :tid
+                    FROM users.user_mail WHERE id = :mid
                     """
                 ),
-                {"mid": message_id, "tid": ticket_id},
+                {"mid": message_id},
             )
         ).mappings().first()
         if not row:
@@ -4313,8 +4396,8 @@ async def delete_ticket_message(
         await _assert_subscriber_chat_write_for_operator(db, operator_id)
         await _assert_own_mail_message(db, ticket_id, message_id, operator_id)
         await db.execute(
-            text("DELETE FROM users.user_mail WHERE id = :mid AND ticket_id = :tid"),
-            {"mid": message_id, "tid": ticket_id},
+            text("DELETE FROM users.user_mail WHERE id = :mid"),
+            {"mid": message_id},
         )
     else:
         await _assert_own_tracker_message(db, ticket_id, message_id, operator_id)
