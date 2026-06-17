@@ -4755,6 +4755,14 @@
   margin-bottom: 2px;
 }
 
+#tp-ticket .tk-cc-queue__item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
 #tp-ticket .tk-cc-queue__item-name {
   font-size: 13px;
   font-weight: 700;
@@ -4762,6 +4770,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 #tp-ticket .tk-cc-queue__item-time {

@@ -94,3 +94,9 @@ export function sourceBadgeClass(source: string | null | undefined): SourceBadge
 export function isLkTicketSource(source: string | null | undefined): boolean {
   return (source ?? "").trim().toLowerCase() === "lk";
 }
+
+/** Тикет зарегистрирован после звонка на горячую линию. */
+export function isCallCenterTicketSource(source: string | null | undefined): boolean {
+  const s = (source ?? "").trim().toLowerCase();
+  return s === "call_center" || s === "call_centre";
+}

@@ -12,6 +12,7 @@ import {
   type TrackerTicketListStats,
 } from "@/api/tracker";
 import TicketAssigneePill from "@/components/TicketAssigneePill";
+import CallCenterPhoneIcon from "@/components/CallCenterPhoneIcon";
 import {
   formatRatingAvg,
   formatTicketListDate,
@@ -20,7 +21,7 @@ import {
   formatWorkDurationSince,
   ratingToneClass,
 } from "@/utils/ticketFormat";
-import { queueLineBadgeClass, queueLineShortLabel } from "@/utils/ticketLabels";
+import { queueLineBadgeClass, queueLineShortLabel, isCallCenterTicketSource } from "@/utils/ticketLabels";
 import {
   TICKETS_LIST_PER_PAGE_OPTIONS,
   loadTicketsPerPage,
@@ -36,19 +37,6 @@ const initialMsgs: ChatMsg[] = [
   { id: "1", side: "cl", text: "Здравствуйте! Где посмотреть детализацию?", time: "14:03" },
   { id: "2", side: "ag", text: "Здравствуйте! Сейчас помогу", time: "14:05" },
 ];
-
-function CallCenterPhoneIcon() {
-  return (
-    <svg className="ch-call-ico-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M6.5 4.5h3l2 4-2.5 1.5a11 11 0 005.5 5.5L15 13l4 2v3a2 2 0 01-2 2A15 15 0 014 6.5a2 2 0 012-2z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function RatingStars({ value }: { value: number | null }) {
   if (value == null) return <span className="ch-muted">—</span>;
@@ -406,7 +394,7 @@ export default function ChatsTab() {
       return (
         <div className="ch-row-main">
           <div className="ch-row-head">
-            {row.source === "call_center" ? (
+            {isCallCenterTicketSource(row.source) ? (
               <span className="ch-call-ico" title="Зарегистрирован после звонка на горячую линию">
                 <CallCenterPhoneIcon />
               </span>

@@ -9,6 +9,8 @@ import {
   ticketListStatusColumn,
   type TrackerTicketListItem,
 } from "@/api/tracker";
+import CallCenterPhoneIcon from "@/components/CallCenterPhoneIcon";
+import { isCallCenterTicketSource } from "@/utils/ticketLabels";
 import { loadTicketsPerPage, type TicketsListPerPage } from "@/utils/ticketsListPrefs";
 
 const POLL_MS = 12_000;
@@ -232,7 +234,17 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
               onClick={() => openTicket(row.id)}
             >
               <div className="tk-cc-queue__item-top">
-                <span className="tk-cc-queue__item-name">{displayName(row)}</span>
+                <div className="tk-cc-queue__item-name-row">
+                  {isCallCenterTicketSource(row.source) ? (
+                    <span
+                      className="ch-call-ico"
+                      title="Зарегистрирован после звонка на горячую линию"
+                    >
+                      <CallCenterPhoneIcon />
+                    </span>
+                  ) : null}
+                  <span className="tk-cc-queue__item-name">{displayName(row)}</span>
+                </div>
                 <span className="tk-cc-queue__item-time">{formatQueueRelativeTime(timeIso)}</span>
               </div>
               <div className="tk-cc-queue__item-bottom">
