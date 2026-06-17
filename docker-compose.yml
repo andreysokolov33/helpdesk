@@ -11,8 +11,11 @@ services:
       PORT: 8000
     volumes:
       - helpdesk_logs:/app/logs
-      # Медиа чата на диске проекта (nginx alias → ./uploads)
+      # Legacy: /media/{hash}.webp → ./uploads/
       - ./uploads:/app/uploads
+      # Чат ЛК + helpdesk: /media/chat/{user_id}/{ticket_id}/…
+      # Должен совпадать с nginx: location /media/chat/ → /opt/www/skystream_chat_media/
+      - /opt/www/skystream_chat_media:/app/uploads/chat
     restart: unless-stopped
 
 volumes:
