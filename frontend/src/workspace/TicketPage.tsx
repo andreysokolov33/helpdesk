@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import RichEditor, { type RichEditorHandle } from "@/components/RichEditor";
 import { Link, useParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
+import TicketCrossTicketMessageModal from "@/components/TicketCrossTicketMessageModal";
 import TicketDeleteMessageModal from "@/components/TicketDeleteMessageModal";
 import TicketDeliveryTicks from "@/components/TicketDeliveryTicks";
 import TicketMessageContextMenu, { type MessageMenuAction } from "@/components/TicketMessageContextMenu";
@@ -13,6 +14,7 @@ import { isLkTicketSource } from "@/utils/ticketLabels";
 import {
   fetchTicketDetail,
   fetchTicketMessages,
+  fetchMessageContext,
   fetchTicketReadReceipts,
   formatMsgTime,
   mergeTicketPollSnapshot,
@@ -29,6 +31,7 @@ import {
   type TicketDetail,
   type TicketMessage,
   type TicketMessageReadBy,
+  type TicketMessageReplyPreview,
   type TicketReadReceiptsResult,
 } from "@/api/ticket";
 import {
@@ -36,6 +39,7 @@ import {
   canMessageContextMenu,
   mergeIncomingReadState,
   mergeTicketMessages,
+  isEngineerTicketMessage,
   ticketAuthorLabel,
 } from "@/utils/ticketMessages";
 import {
@@ -52,7 +56,8 @@ import {
 } from "@/utils/ticketChatScroll";
 import { compressImageToWebp } from "@/utils/imageCompress";
 import { formatBytes } from "@/utils/formatBytes";
-import FileBadge, { resolveFileExt, truncateFilename } from "@/components/FileBadge";
+import TicketMessageAttachments, { collectMessageImageUrls } from "@/components/TicketMessageAttachments";
+import FileBadge from "@/components/FileBadge";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 import TicketMacroBar, { type TicketChatPanelMode } from "@/components/TicketMacroBar";
 import {
@@ -77,77 +82,6 @@ import { useMediaQuery } from "@/utils/useMediaQuery";
 
 const MSG_POLL_MS = 5000;
 const READ_RECEIPTS_POLL_MS = 3000;
-
-function AttachmentImage({ src, alt }: { src: string; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) {
-    return (
-      <span className="tk-att-img__nophoto">
-        <span className="tk-att-img__nophoto-icon">🖼</span>
-        Нет фото
-      </span>
-    );
-  }
-  return <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
-}
-
-type AttachBlockProps = { msg: TicketMessage };
-
-function AttachmentsBlock({
-  msg,
-  onOpenImage,
-}: AttachBlockProps & {
-  onOpenImage: (url: string) => void;
-}) {
-  const items = [
-    ...(msg.legacy_file_url
-      ? [
-          {
-            id: -1,
-            file_path: msg.legacy_file_url,
-            original_filename: "Файл",
-            is_image: /\.(jpe?g|png|gif|webp|bmp)$/i.test(msg.legacy_file_url),
-          },
-        ]
-      : []),
-    ...msg.attachments,
-  ];
-  if (!items.length) return null;
-  const images = items.filter((a) => Boolean(a.is_image));
-  const files = items.filter((a) => !a.is_image);
-  const n = images.length;
-  return (
-    <div className="tk-att">
-      {images.length ? (
-        <div className={`tk-att-grid tk-att-grid--n${Math.min(5, n)}`}>
-          {images.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              className="tk-att-img"
-              onClick={() => onOpenImage(a.file_path)}
-              title={a.original_filename || "Открыть изображение"}
-            >
-              <AttachmentImage src={a.file_path} alt={a.original_filename || "Вложение"} />
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {files.length ? (
-        <div className="tk-att-files">
-          {files.map((a) => (
-            <a key={a.id} href={a.file_path} target="_blank" rel="noreferrer" className="tk-att-file">
-              <FileBadge filename={a.original_filename} ext={resolveFileExt(a.original_filename)} />
-              <span className="tk-att-file__name" title={a.original_filename || undefined}>
-                {truncateFilename(a.original_filename || "Файл")}
-              </span>
-            </a>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 export default function TicketPage() {
   const { ticketId: ticketIdParam } = useParams();
@@ -175,6 +109,7 @@ export default function TicketPage() {
   const [atBottom, setAtBottom] = useState(true);
   const [pendingNewCount, setPendingNewCount] = useState(0);
   const [highlightId, setHighlightId] = useState<number | null>(null);
+  const [crossTicketMessageId, setCrossTicketMessageId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editorEmpty, setEditorEmpty] = useState(true);
   const [sending, setSending] = useState(false);
@@ -727,9 +662,27 @@ export default function TicketPage() {
     window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 2000);
   }, []);
 
-  const scrollToMessage = useCallback(
-    async (id: number) => {
-      if (id <= 0) return;
+  const jumpToReplyMessage = useCallback(
+    async (preview: TicketMessageReplyPreview) => {
+      const id = preview.id;
+      if (id <= 0 || preview.is_deleted) return;
+
+      if (preview.ticket_id && preview.ticket_id !== ticketId) {
+        setCrossTicketMessageId(id);
+        return;
+      }
+
+      if (!preview.ticket_id) {
+        const orphanInView = scrollRef.current?.querySelector(`[data-msg-id="${id}"]`);
+        if (orphanInView) {
+          orphanInView.scrollIntoView({ behavior: "smooth", block: "center" });
+          flashMessage(id);
+          return;
+        }
+        setCrossTicketMessageId(id);
+        return;
+      }
+
       const existing = scrollRef.current?.querySelector(`[data-msg-id="${id}"]`);
       if (existing) {
         existing.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -758,9 +711,30 @@ export default function TicketPage() {
           if (el) {
             el.scrollIntoView({ behavior: "smooth", block: "center" });
             flashMessage(id);
+            return;
           }
+          void fetchMessageContext(id)
+            .then((ctx) => {
+              if (!ctx.ticket_id || ctx.ticket_id !== ticketId) {
+                setCrossTicketMessageId(id);
+                return;
+              }
+              window.alert("Не удалось перейти к сообщению");
+            })
+            .catch((e: unknown) => {
+              window.alert(e instanceof Error ? e.message : "Не удалось перейти к сообщению");
+            });
         });
       } catch (e: unknown) {
+        try {
+          const ctx = await fetchMessageContext(id);
+          if (!ctx.ticket_id || ctx.ticket_id !== ticketId) {
+            setCrossTicketMessageId(id);
+            return;
+          }
+        } catch {
+          // fall through
+        }
         window.alert(e instanceof Error ? e.message : "Не удалось перейти к сообщению");
       }
     },
@@ -1470,30 +1444,33 @@ export default function TicketPage() {
           <div className="tk-tg-bubble__info">{authorLabel} · {timeLabel}</div>
           <div className="tk-tg-bubble__body tk-tg-bubble__body--bot">
             <MessageBody text={m.text} />
-            <AttachmentsBlock msg={m} onOpenImage={openImageViewer} />
+            <TicketMessageAttachments msg={m} onOpenImage={openImageViewer} />
           </div>
         </div>
       );
     }
 
     const outgoing = m.side === "me";
+    const engineer = isEngineerTicketMessage(m);
     return (
       <div
         key={m.id}
         data-msg-id={m.id}
-        className={`tk-tg-bubble${outgoing ? " tk-tg-bubble--out" : " tk-tg-bubble--in"}${highlightId === m.id ? " tk-tg-bubble--highlight" : ""}`}
+        className={`tk-tg-bubble${outgoing ? " tk-tg-bubble--out" : " tk-tg-bubble--in"}${engineer ? " tk-tg-bubble--engineer" : ""}${highlightId === m.id ? " tk-tg-bubble--highlight" : ""}`}
         onContextMenu={(e) => handleFeedContextMenu(e, m)}
       >
         <div className="tk-tg-bubble__info">
           {outgoing ? "Вы" : authorLabel} · {timeLabel}
           {editedSuffix}
         </div>
-        <div className={`tk-tg-bubble__body${outgoing ? " tk-tg-bubble__body--out" : ""}`}>
+        <div
+          className={`tk-tg-bubble__body${outgoing ? " tk-tg-bubble__body--out" : ""}${engineer ? " tk-tg-bubble__body--engineer" : ""}`}
+        >
           {!isCommentsPanel && m.reply_preview ? (
-            <TicketMessageReplyQuote preview={m.reply_preview} onJump={scrollToMessage} />
+            <TicketMessageReplyQuote preview={m.reply_preview} onJump={jumpToReplyMessage} />
           ) : null}
           <MessageBody text={m.text} />
-          {!isCommentsPanel ? <AttachmentsBlock msg={m} onOpenImage={openImageViewer} /> : null}
+          {!isCommentsPanel ? <TicketMessageAttachments msg={m} onOpenImage={openImageViewer} /> : null}
           {!isCommentsPanel && outgoing ? (
             <div className="tk-tg-bubble__ticks">
               <TicketDeliveryTicks
@@ -1762,7 +1739,7 @@ export default function TicketPage() {
                             text: replyTo.text,
                           }
                         }
-                        onJump={scrollToMessage}
+                        onJump={jumpToReplyMessage}
                       />
                       <button
                         type="button"
@@ -2101,6 +2078,14 @@ export default function TicketPage() {
           setDetail(next);
           setToast({ message: "Абонент привязан к тикету", variant: "success" });
         }}
+      />
+
+      <TicketCrossTicketMessageModal
+        open={crossTicketMessageId != null}
+        messageId={crossTicketMessageId ?? 0}
+        currentTicketId={ticketId}
+        subscriberName={subscriberChatName}
+        onClose={() => setCrossTicketMessageId(null)}
       />
 
       {toast ? (

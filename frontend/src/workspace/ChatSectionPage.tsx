@@ -28,6 +28,7 @@ import {
   scrollChatToBottom,
   watchChatScrollToBottom,
 } from "@/utils/ticketChatScroll";
+import { attachmentImageGridClass } from "@/utils/ticketMessages";
 import "@/styles/chat-section.css";
 
 const CHATS_POLL_MS = 10_000;
@@ -626,7 +627,7 @@ export default function ChatSectionPage() {
             {m.attachments.length ? (
               <div className="tk-att">
                 {images.length ? (
-                  <div className={`tk-att-grid tk-att-grid--n${Math.min(5, images.length)}`}>
+                  <div className={attachmentImageGridClass(images.length)}>
                     {images.map((a) => (
                       <button
                         key={a.id}

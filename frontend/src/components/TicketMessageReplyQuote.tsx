@@ -4,7 +4,7 @@ import { formatStaffNameShort } from "@/utils/personName";
 
 type Props = {
   preview: TicketMessageReplyPreview;
-  onJump?: (id: number) => void;
+  onJump?: (preview: TicketMessageReplyPreview) => void;
 };
 
 const PREVIEW_TAGS = ["b", "strong", "i", "em", "u", "s", "strike", "br", "span"];
@@ -37,7 +37,7 @@ export default function TicketMessageReplyQuote({ preview, onJump }: Props) {
     <button
       type="button"
       className="tk-reply-quote"
-      onClick={() => onJump?.(preview.id)}
+      onClick={() => onJump?.(preview)}
       title="Перейти к сообщению"
     >
       <span className="tk-reply-quote__author">{label}</span>

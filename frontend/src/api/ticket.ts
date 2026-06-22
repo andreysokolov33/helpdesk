@@ -14,6 +14,17 @@ export type TicketMessageReplyPreview = {
   author_name?: string | null;
   text: string;
   is_deleted?: boolean;
+  ticket_id?: number | null;
+};
+
+export type TicketMessageContext = {
+  ticket_id?: number | null;
+  ticket_title: string;
+  ticket_is_open: boolean;
+  focus_message_id: number;
+  messages: TicketMessage[];
+  has_older: boolean;
+  has_newer: boolean;
 };
 
 export type TicketMessageReadBy = {
@@ -293,6 +304,11 @@ export async function fetchTicketMessages(
   opts?: FetchTicketMessagesOpts,
 ): Promise<TicketMessagesResult> {
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/messages${buildMessagesQuery(opts)}`);
+}
+
+/** Контекст сообщения из другого (или текущего) тикета — ±10 сообщений вокруг. */
+export async function fetchMessageContext(messageId: number): Promise<TicketMessageContext> {
+  return apiJson(`/api/v1/helpdesk/tracker/messages/${messageId}/context`);
 }
 
 /** Поллинг галочек «прочитано» на исходящих сообщениях. */

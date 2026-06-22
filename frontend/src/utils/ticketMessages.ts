@@ -98,6 +98,19 @@ export function applyReadReceiptsToMessages<
   });
 }
 
+export function isEngineerTicketMessage(msg: { side: string; author_role?: string | null }): boolean {
+  if (msg.side === "engineer") return true;
+  if (msg.side === "me" && (msg.author_role || "").toLowerCase() === "engineer") return true;
+  return false;
+}
+
+/** Класс сетки вложений-картинок: 1–6 — фиксированные мозаики, 7+ — компактная авто-сетка. */
+export function attachmentImageGridClass(imageCount: number): string {
+  if (imageCount <= 0) return "tk-att-grid";
+  if (imageCount >= 7) return "tk-att-grid tk-att-grid--n7";
+  return `tk-att-grid tk-att-grid--n${imageCount}`;
+}
+
 export function ticketMsgRowClass(side: string, authorRole?: string | null): string {
   if (side === "bot") return "msg bot";
   if (isOwnTicketMessage(side)) {

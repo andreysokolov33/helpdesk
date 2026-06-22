@@ -2091,13 +2091,26 @@ def _parse_reply_to_id(raw: str | int | None) -> int | None:
     return val if val > 0 else None
 
 
-def _reply_preview_dict(msg: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _reply_preview_dict(msg: dict[str, Any], *, ticket_id: int | None = None) -> dict[str, Any]:
+    tid = ticket_id if ticket_id and ticket_id > 0 else None
+    if not tid:
+        raw_tid = msg.get("ticket_id")
+        if raw_tid is not None:
+            try:
+                tid = int(raw_tid)
+            except (TypeError, ValueError):
+                tid = None
+            if tid is not None and tid <= 0:
+                tid = None
+    out: dict[str, Any] = {
         "id": int(msg["id"]),
         "author_name": msg.get("author_name"),
         "text": _text_snippet(msg.get("text") or ""),
         "is_deleted": False,
     }
+    if tid:
+        out["ticket_id"] = tid
+    return out
 
 
 def _deleted_reply_preview(reply_id: int) -> dict[str, Any]:
@@ -2109,7 +2122,7 @@ def _deleted_reply_preview(reply_id: int) -> dict[str, Any]:
     }
 
 
-def enrich_reply_previews(messages: list[dict[str, Any]]) -> None:
+def enrich_reply_previews(messages: list[dict[str, Any]], *, ticket_id: int | None = None) -> None:
     by_id = {int(m["id"]): m for m in messages if int(m.get("id") or 0) > 0}
     for m in messages:
         rid = _parse_reply_to_id(m.get("reply_to_id"))
@@ -2117,7 +2130,7 @@ def enrich_reply_previews(messages: list[dict[str, Any]]) -> None:
             m["reply_preview"] = None
             continue
         ref = by_id.get(rid)
-        m["reply_preview"] = _reply_preview_dict(ref) if ref else None
+        m["reply_preview"] = _reply_preview_dict(ref, ticket_id=ticket_id) if ref else None
 
 
 async def fetch_reply_previews_missing(
@@ -2143,7 +2156,16 @@ async def fetch_reply_previews_missing(
                     SELECT um.id AS msg_id, um.id_user_from, um.text AS text_raw, um.person_type,
                         um.user_id, ({answer_expr}) AS answer,
                         su.full_name AS staff_full_name,
-                        su.role AS staff_role
+                        su.role AS staff_role,
+                        COALESCE(
+                            NULLIF(um.ticket_id, 0),
+                            (
+                                SELECT l.ticket_id
+                                FROM users.tracker_ticket_mail_links l
+                                WHERE l.user_mail_id = um.id
+                                LIMIT 1
+                            )
+                        ) AS ticket_id
                     FROM users.user_mail um
                     LEFT JOIN users.skystream_users su
                         ON um.user_id = su.id AND COALESCE(um.person_type, '') = 'skystream'
@@ -2171,6 +2193,7 @@ async def fetch_reply_previews_missing(
                 "author_name": author_name,
                 "text": _text_snippet(r.get("text_raw")),
                 "is_deleted": False,
+                "ticket_id": int(r["ticket_id"]) if r.get("ticket_id") else None,
             }
         return out
 
@@ -2178,7 +2201,7 @@ async def fetch_reply_previews_missing(
         await db.execute(
             text(
                 """
-                SELECT tm.id, tm.body, tm.author_id, tm.person_type,
+                SELECT tm.id, tm.body, tm.author_id, tm.person_type, tm.ticket_id,
                     su.full_name AS staff_full_name,
                     su.role AS staff_role
                 FROM users.tracker_messages tm
@@ -2205,6 +2228,7 @@ async def fetch_reply_previews_missing(
             "author_name": author_name,
             "text": _text_snippet(r.get("body")),
             "is_deleted": False,
+            "ticket_id": int(r["ticket_id"]) if r.get("ticket_id") else None,
         }
     return out
 
@@ -2216,8 +2240,9 @@ async def attach_reply_previews(
     chat_mode: str,
     viewer_id: int,
     subscriber_display_name: str,
+    ticket_id: int | None = None,
 ) -> None:
-    enrich_reply_previews(messages)
+    enrich_reply_previews(messages, ticket_id=ticket_id)
     missing: list[int] = []
     for m in messages:
         rid = _parse_reply_to_id(m.get("reply_to_id"))
@@ -3954,6 +3979,246 @@ async def load_mail_messages(
     return messages
 
 
+_MAIL_ANSWER_EXPR = """
+    CASE WHEN um.user_id IS NOT NULL AND um.person_type IS NOT NULL
+         THEN CASE WHEN um.person_type = 'user' THEN 0 ELSE 1 END
+         ELSE um.answer END
+"""
+
+_MAIL_CONTEXT_SELECT = f"""
+    SELECT um.id AS msg_id, um.id_user_from, um.date_tz, um.updated_at,
+        um.person_type, um.user_id,
+        ({_MAIL_ANSWER_EXPR}) AS answer,
+        um.text AS text_raw,
+        CASE WHEN um.file_new IS NULL OR um.file_new IN ('0', '') THEN NULL
+             ELSE um.file_new END AS legacy_file,
+        um.relay_msg_id,
+        su.full_name AS staff_full_name,
+        su.role AS staff_role
+    FROM users.user_mail um
+    LEFT JOIN users.skystream_users su
+        ON um.user_id = su.id AND COALESCE(um.person_type, '') = 'skystream'
+"""
+
+_MAIL_CHAT_SCOPE_WHERE = """
+    (um.user_chat = :chat_id
+     OR (um.user_chat IS NULL AND (um.id_user_from = :chat_id OR um.id_user_to = :chat_id)))
+"""
+
+ORPHAN_MAIL_CONTEXT_HALF = 5
+
+
+def _infer_mail_chat_id(row: dict[str, Any]) -> int | None:
+    """Абонентский chat_id для legacy user_mail без ticket_id."""
+    uc = row.get("user_chat")
+    if uc is not None:
+        try:
+            chat_id = int(uc)
+        except (TypeError, ValueError):
+            chat_id = 0
+        if chat_id > 0:
+            return chat_id
+    uf = int(row.get("id_user_from") or 0)
+    ut = int(row.get("id_user_to") or 0)
+    for cid in (uf, ut):
+        if cid > 1020:
+            return cid
+    if uf > 0 and uf not in (2,):
+        return uf
+    if ut > 0 and ut not in (2,):
+        return ut
+    return None
+
+
+async def _mail_rows_to_ticket_messages(
+    db: AsyncSession,
+    rows: list[Any],
+    *,
+    viewer_id: int,
+    subscriber_display_name: str,
+) -> list[dict[str, Any]]:
+    msg_ids = [int(r["msg_id"]) for r in rows]
+    att_map = await _attachments_map(db, msg_ids, tracker=False)
+
+    read_ids: set[int] = set()
+    if msg_ids:
+        read_rows = (
+            await db.execute(
+                text(
+                    """
+                    SELECT DISTINCT msg_id FROM users.user_mail_reads
+                    WHERE msg_id = ANY(:ids) AND person_type = ANY(:staff_types)
+                    """
+                ),
+                {"ids": msg_ids, "staff_types": list(STAFF_READ_PERSON_TYPES)},
+            )
+        ).scalars().all()
+        read_ids = {int(x) for x in read_rows}
+
+    messages: list[dict[str, Any]] = []
+    for r in rows:
+        mid = int(r["msg_id"])
+        is_bot = int(r.get("id_user_from") or 0) == 0
+        is_out = int(r["answer"] or 0) == 1
+        dt = r.get("date_tz")
+        legacy = r.get("legacy_file")
+        side, author_name = _classify_mail_message(
+            viewer_id=viewer_id,
+            is_bot=is_bot,
+            is_out=is_out,
+            person_type=r.get("person_type"),
+            author_id=int(r["user_id"]) if r.get("user_id") is not None else None,
+            staff_full_name=r.get("staff_full_name"),
+            staff_role=r.get("staff_role"),
+            subscriber_name=subscriber_display_name,
+        )
+        edit_meta = _message_edit_meta(updated_at=r.get("updated_at"))
+        messages.append(
+            {
+                "id": mid,
+                "side": side,
+                "text": (r.get("text_raw") or "").strip(),
+                "author_name": author_name,
+                "author_role": _staff_author_role(r.get("staff_role"), side),
+                "created_at_iso": _iso(dt) if isinstance(dt, datetime) else None,
+                "has_read": True if is_bot or side == "me" else mid in read_ids,
+                "reply_to_id": _parse_reply_to_id(r.get("relay_msg_id")),
+                **edit_meta,
+                "legacy_file_url": _media_url(legacy) if legacy else None,
+                "attachments": att_map.get(mid, []),
+            }
+        )
+    return messages
+
+
+async def _mail_exists_in_chat_beyond(
+    db: AsyncSession,
+    chat_id: int,
+    msg_id: int,
+    *,
+    older: bool,
+) -> bool:
+    op = "<" if older else ">"
+    row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT 1 FROM users.user_mail um
+                WHERE {_MAIL_CHAT_SCOPE_WHERE} AND um.id {op} :mid
+                LIMIT 1
+                """
+            ),
+            {"chat_id": chat_id, "mid": msg_id},
+        )
+    ).scalar()
+    return bool(row)
+
+
+async def _get_orphan_mail_message_context(
+    db: AsyncSession,
+    message_id: int,
+    viewer_id: int,
+    viewer_role: str,
+) -> dict[str, Any]:
+    """Контекст legacy-сообщения user_mail без привязки к тикету (±5 в переписке абонента)."""
+    del viewer_role
+    anchor = (
+        await db.execute(
+            text(
+                """
+                SELECT id, user_chat, id_user_from, id_user_to
+                FROM users.user_mail
+                WHERE id = :mid
+                LIMIT 1
+                """
+            ),
+            {"mid": message_id},
+        )
+    ).mappings().first()
+    if not anchor:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+
+    chat_id = _infer_mail_chat_id(dict(anchor))
+    if not chat_id:
+        raise HTTPException(status_code=404, detail="Не удалось определить переписку")
+
+    half = ORPHAN_MAIL_CONTEXT_HALF
+    params = {"chat_id": chat_id, "mid": message_id, "half": half}
+    older_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT * FROM (
+                    {_MAIL_CONTEXT_SELECT}
+                    WHERE {_MAIL_CHAT_SCOPE_WHERE} AND um.id < :mid
+                    ORDER BY um.id DESC
+                    LIMIT :half
+                ) sub ORDER BY msg_id ASC
+                """
+            ),
+            params,
+        )
+    ).mappings().all()
+    center_rows = (
+        await db.execute(
+            text(
+                f"""
+                {_MAIL_CONTEXT_SELECT}
+                WHERE {_MAIL_CHAT_SCOPE_WHERE} AND um.id = :mid
+                """
+            ),
+            params,
+        )
+    ).mappings().all()
+    if not center_rows:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено в переписке")
+
+    newer_rows = (
+        await db.execute(
+            text(
+                f"""
+                {_MAIL_CONTEXT_SELECT}
+                WHERE {_MAIL_CHAT_SCOPE_WHERE} AND um.id > :mid
+                ORDER BY um.id ASC
+                LIMIT :half
+                """
+            ),
+            params,
+        )
+    ).mappings().all()
+
+    rows = list(older_rows) + list(center_rows) + list(newer_rows)
+    sub_display = await fetch_subscriber_display_name(db, chat_id)
+    messages = await _mail_rows_to_ticket_messages(
+        db,
+        rows,
+        viewer_id=viewer_id,
+        subscriber_display_name=sub_display,
+    )
+    await attach_reply_previews(
+        db,
+        messages,
+        chat_mode="mail",
+        viewer_id=viewer_id,
+        subscriber_display_name=sub_display,
+        ticket_id=None,
+    )
+
+    ids = [int(m["id"]) for m in messages]
+    has_older = await _mail_exists_in_chat_beyond(db, chat_id, min(ids), older=True) if ids else False
+    has_newer = await _mail_exists_in_chat_beyond(db, chat_id, max(ids), older=False) if ids else False
+
+    return {
+        "ticket_id": None,
+        "ticket_title": "",
+        "ticket_is_open": False,
+        "focus_message_id": message_id,
+        "messages": messages,
+        "has_older": has_older,
+        "has_newer": has_newer,
+    }
+
+
 async def load_tracker_messages(
     db: AsyncSession,
     ticket_id: int,
@@ -4152,9 +4417,123 @@ async def list_ticket_messages(
         chat_mode=mode,
         viewer_id=viewer_id,
         subscriber_display_name=sub_display,
+        ticket_id=ticket_id,
     )
     ticket_snapshot = ticket_poll_snapshot_from_detail(detail) if since_id > 0 else None
     return raw, mode, receipts, read_by, has_older, has_newer, ticket_snapshot
+
+
+async def _resolve_message_ticket_id(
+    db: AsyncSession,
+    message_id: int,
+) -> tuple[int, str] | None:
+    """Возвращает (ticket_id, storage: tracker|mail) или None."""
+    tracker_row = (
+        await db.execute(
+            text("SELECT ticket_id FROM users.tracker_messages WHERE id = :mid LIMIT 1"),
+            {"mid": message_id},
+        )
+    ).mappings().first()
+    if tracker_row and tracker_row.get("ticket_id"):
+        return int(tracker_row["ticket_id"]), "tracker"
+
+    mail_row = (
+        await db.execute(
+            text(
+                """
+                SELECT COALESCE(
+                    NULLIF(um.ticket_id, 0),
+                    (
+                        SELECT l.ticket_id
+                        FROM users.tracker_ticket_mail_links l
+                        WHERE l.user_mail_id = um.id
+                        LIMIT 1
+                    )
+                ) AS ticket_id
+                FROM users.user_mail um
+                WHERE um.id = :mid
+                LIMIT 1
+                """
+            ),
+            {"mid": message_id},
+        )
+    ).mappings().first()
+    if mail_row and mail_row.get("ticket_id"):
+        return int(mail_row["ticket_id"]), "mail"
+    return None
+
+
+async def get_message_context(
+    db: AsyncSession,
+    message_id: int,
+    viewer_id: int,
+    viewer_role: str,
+) -> dict[str, Any]:
+    """Контекст цитируемого сообщения. Без пометки прочитанным."""
+    from app.api.v1.routers.helpdesk import ticket_chat_pages as chat_pages
+
+    resolved = await _resolve_message_ticket_id(db, message_id)
+    if resolved:
+        ticket_id, _storage = resolved
+        ticket_exists = (
+            await db.execute(
+                text("SELECT 1 FROM users.tracker_tickets WHERE id = :tid LIMIT 1"),
+                {"tid": ticket_id},
+            )
+        ).scalar()
+        if ticket_exists:
+            try:
+                detail = await load_ticket_detail(db, ticket_id, viewer_id)
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    raise
+                ticket_exists = False
+            else:
+                mode = detail["chat_mode"]
+                sub_display = detail.get("subscriber_display_name") or await fetch_subscriber_display_name(
+                    db, detail.get("user_id")
+                )
+
+                if mode == "tracker":
+                    raw, has_older, has_newer = await chat_pages.load_tracker_messages_paged(
+                        db,
+                        ticket_id,
+                        viewer_id,
+                        viewer_role,
+                        subscriber_display_name=sub_display,
+                        around_id=message_id,
+                    )
+                else:
+                    raw, has_older, has_newer = await chat_pages.load_mail_messages_paged(
+                        db,
+                        ticket_id,
+                        detail.get("user_id"),
+                        viewer_id,
+                        subscriber_display_name=sub_display,
+                        around_id=message_id,
+                        include_initial_body=detail.get("body"),
+                    )
+
+                if any(int(m["id"]) == message_id for m in raw):
+                    await attach_reply_previews(
+                        db,
+                        raw,
+                        chat_mode=mode,
+                        viewer_id=viewer_id,
+                        subscriber_display_name=sub_display,
+                        ticket_id=ticket_id,
+                    )
+                    return {
+                        "ticket_id": ticket_id,
+                        "ticket_title": (detail.get("title") or "").strip(),
+                        "ticket_is_open": bool(detail.get("is_open")),
+                        "focus_message_id": message_id,
+                        "messages": raw,
+                        "has_older": has_older,
+                        "has_newer": has_newer,
+                    }
+
+    return await _get_orphan_mail_message_context(db, message_id, viewer_id, viewer_role)
 
 
 async def get_ticket_read_receipts(
@@ -4379,6 +4758,7 @@ async def edit_ticket_message(
         chat_mode=mode,
         viewer_id=operator_id,
         subscriber_display_name=sub_display,
+        ticket_id=ticket_id,
     )
     return msg
 
@@ -4559,7 +4939,7 @@ async def send_mail_reply(
         "attachments": att_items,
     }
     if reply_to_id:
-        enrich_reply_previews([out])
+        enrich_reply_previews([out], ticket_id=ticket_id)
         if not out.get("reply_preview"):
             previews = await fetch_reply_previews_missing(
                 db,
@@ -4666,7 +5046,7 @@ async def send_tracker_reply(
         "attachments": att_items,
     }
     if reply_to_id:
-        enrich_reply_previews([out])
+        enrich_reply_previews([out], ticket_id=ticket_id)
         if not out.get("reply_preview"):
             previews = await fetch_reply_previews_missing(
                 db,

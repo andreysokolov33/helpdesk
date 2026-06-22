@@ -25,6 +25,7 @@ from app.api.v1.routers.helpdesk.schemas import (
     TicketCommentSendResponse,
     TicketCommentsResponse,
     TicketMarkReadRequest,
+    TicketMessageContextResponse,
     TicketMessageEditRequest,
     TicketMessageItem,
     TicketMessagesResponse,
@@ -739,6 +740,29 @@ async def delete_ticket_comment(
         int(user["user_id"]),
     )
     return {"status": "ok"}
+
+
+@router.get("/messages/{message_id}/context", response_model=TicketMessageContextResponse)
+async def get_message_context(
+    message_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketMessageContextResponse:
+    ctx = await ticket_svc.get_message_context(
+        db,
+        message_id,
+        int(user["user_id"]),
+        str(user.get("role") or ""),
+    )
+    return TicketMessageContextResponse(
+        ticket_id=ctx["ticket_id"],
+        ticket_title=ctx["ticket_title"],
+        ticket_is_open=ctx["ticket_is_open"],
+        focus_message_id=ctx["focus_message_id"],
+        messages=[TicketMessageItem(**m) for m in ctx["messages"]],
+        has_older=ctx["has_older"],
+        has_newer=ctx["has_newer"],
+    )
 
 
 @router.get("/{ticket_id}/messages", response_model=TicketMessagesResponse)

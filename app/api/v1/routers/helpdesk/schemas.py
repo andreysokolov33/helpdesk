@@ -336,6 +336,17 @@ class TicketMessageReplyPreview(BaseModel):
     author_name: str | None = None
     text: str = ""
     is_deleted: bool = False
+    ticket_id: int | None = None
+
+
+class TicketMessageContextResponse(BaseModel):
+    ticket_id: int | None = None
+    ticket_title: str = ""
+    ticket_is_open: bool = False
+    focus_message_id: int
+    messages: list[TicketMessageItem] = Field(default_factory=list)
+    has_older: bool = False
+    has_newer: bool = False
 
 
 class TicketMessageReadByItem(BaseModel):
