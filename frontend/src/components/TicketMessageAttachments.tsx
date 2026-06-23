@@ -1,7 +1,7 @@
 import { useState } from "react";
 import FileBadge, { resolveFileExt, truncateFilename } from "@/components/FileBadge";
 import type { TicketMessage } from "@/api/ticket";
-import { attachmentImageGridClass } from "@/utils/ticketMessages";
+import { attachmentImageGridClass, attachmentImageSpanClass } from "@/utils/ticketMessages";
 
 function AttachmentImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
@@ -43,17 +43,20 @@ export default function TicketMessageAttachments({ msg, onOpenImage }: Props) {
     <div className="tk-att">
       {images.length ? (
         <div className={attachmentImageGridClass(n)}>
-          {images.map((a) => (
+          {images.map((a, i) => {
+            const spanClass = attachmentImageSpanClass(i, n);
+            return (
             <button
               key={a.id}
               type="button"
-              className="tk-att-img"
+              className={spanClass ? `tk-att-img ${spanClass}` : "tk-att-img"}
               onClick={() => onOpenImage(a.file_path)}
               title={a.original_filename || "Открыть изображение"}
             >
               <AttachmentImage src={a.file_path} alt={a.original_filename || "Вложение"} />
             </button>
-          ))}
+            );
+          })}
         </div>
       ) : null}
       {files.length ? (

@@ -28,7 +28,7 @@ import {
   scrollChatToBottom,
   watchChatScrollToBottom,
 } from "@/utils/ticketChatScroll";
-import { attachmentImageGridClass } from "@/utils/ticketMessages";
+import { attachmentImageGridClass, attachmentImageSpanClass } from "@/utils/ticketMessages";
 import "@/styles/chat-section.css";
 
 const CHATS_POLL_MS = 10_000;
@@ -628,17 +628,20 @@ export default function ChatSectionPage() {
               <div className="tk-att">
                 {images.length ? (
                   <div className={attachmentImageGridClass(images.length)}>
-                    {images.map((a) => (
+                    {images.map((a, i) => {
+                      const spanClass = attachmentImageSpanClass(i, images.length);
+                      return (
                       <button
                         key={a.id}
                         type="button"
-                        className="tk-att-img"
+                        className={spanClass ? `tk-att-img ${spanClass}` : "tk-att-img"}
                         onClick={() => setLightbox(a.file_path)}
                         title={a.original_filename}
                       >
                         <img src={a.file_path} alt={a.original_filename} loading="lazy" />
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : null}
                 {files.length ? (

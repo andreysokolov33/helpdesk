@@ -104,11 +104,21 @@ export function isEngineerTicketMessage(msg: { side: string; author_role?: strin
   return false;
 }
 
-/** Класс сетки вложений-картинок: 1–6 — фиксированные мозаики, 7+ — компактная авто-сетка. */
+/** Класс сетки вложений-картинок: 1–6 — фиксированные мозаики, 7+ — 3 колонки без пустых ячеек. */
 export function attachmentImageGridClass(imageCount: number): string {
   if (imageCount <= 0) return "tk-att-grid";
-  if (imageCount >= 7) return "tk-att-grid tk-att-grid--n7";
+  if (imageCount >= 7) return "tk-att-grid tk-att-grid--mosaic";
   return `tk-att-grid tk-att-grid--n${imageCount}`;
+}
+
+/** Растягивание ячейки в последнем ряду мозаики (7+), чтобы не оставалось пустых мест. */
+export function attachmentImageSpanClass(index: number, total: number): string {
+  if (total < 7) return "";
+  const remainder = total % 3;
+  if (remainder === 0) return "";
+  if (remainder === 1 && index === total - 1) return "tk-att-img--span-full";
+  if (remainder === 2 && index >= total - 2) return "tk-att-img--span-wide";
+  return "";
 }
 
 export function ticketMsgRowClass(side: string, authorRole?: string | null): string {
