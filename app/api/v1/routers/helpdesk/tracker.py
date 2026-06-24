@@ -400,6 +400,7 @@ async def list_tracker_tickets_digest(
 _CALL_TITLE_EXISTING = "Звонок"
 _CALL_TITLE_NEW_SUBSCRIBER = "Новое подключение — абонент"
 _CALL_TITLE_NEW_PARTNER = "Новое подключение — партнёр"
+_CALL_PARTNER_CATEGORY_ID = 59
 
 
 @router.post("/register-call", response_model=RegisterCallResponse)
@@ -474,12 +475,15 @@ async def register_call(
         title = _CALL_TITLE_NEW_PARTNER
         queue_snap = on_register_partner_prospect(at=now)
 
+    category_id = _CALL_PARTNER_CATEGORY_ID if support_line == 4 else None
+
     ticket = TrackerTickets(
         author=author_id,
         assigned_to=assigned_to,
         engineer_id=None,
         user_id=ticket_user_id,
         support_line=support_line,
+        category_id=category_id,
         status=status,
         title=title,
         body=body_text,
