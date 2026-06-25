@@ -9,7 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import TRACKER_CLOSED_STATUSES, TRACKER_HELPDESK_LIST_SOURCES
-from app.api.v1.routers.helpdesk.ticket_service import _support_co_executor_exists_sql
+from app.api.v1.routers.helpdesk.ticket_service import (
+    _format_staff_name_short,
+    _support_co_executor_exists_sql,
+)
 
 _SOURCES_IN = ", ".join(f"'{s}'" for s in TRACKER_HELPDESK_LIST_SOURCES)
 _CLOSED_IN = ", ".join(f"'{s}'::users.tracker_status" for s in TRACKER_CLOSED_STATUSES)
@@ -287,8 +290,10 @@ async def fetch_recent_ratings(
     date_to: date,
     operator_id: int | None,
     limit: int = 10,
+    admin_view: bool = False,
 ) -> list[dict[str, Any]]:
     scope_sql, scope_params = _scope_sql(operator_id)
+    assigned_filter = " AND tt.assigned_to IS NOT NULL" if admin_view else ""
     params = {**_period_params(date_from, date_to), **scope_params, "limit": limit}
 
     rows = (
@@ -306,14 +311,17 @@ async def fetch_recent_ratings(
                     (
                         {_ENGINEER_LINE_HISTORY_SQL}
                         OR ({_ENGINEER_CHAT_MESSAGE_SQL})
-                    ) AS engineer_involved
+                    ) AS engineer_involved,
+                    COALESCE(NULLIF(TRIM(op.full_name), ''), op.login) AS assigned_operator_full_name
                 FROM users.tracker_tickets_ratings ttr
                 JOIN users.tracker_tickets tt ON tt.id = ttr.ticket_id
                 LEFT JOIN users.ticket_categories tc ON tc.id = tt.category_id
+                LEFT JOIN users.skystream_users op ON op.id = tt.assigned_to
                 WHERE COALESCE(tt.source, 'call_center') IN ({_SOURCES_IN})
                   AND tt.status IN ({_CLOSED_IN})
                   AND COALESCE(tt.date_of_close, tt.updated_at, tt.date_of_create) >= :date_from
                   AND COALESCE(tt.date_of_close, tt.updated_at, tt.date_of_create) < :date_to
+                  {assigned_filter}
                   {scope_sql}
                 ORDER BY rated_at DESC NULLS LAST
                 LIMIT :limit
@@ -330,6 +338,7 @@ async def fetch_recent_ratings(
         src = r.get("source") or "call_center"
         rated_at = r.get("rated_at")
         lifetime_sec = r.get("lifetime_sec")
+        assigned_name = _format_staff_name_short(r.get("assigned_operator_full_name"))
         out.append(
             {
                 "ticket_id": int(r["ticket_id"]),
@@ -341,6 +350,7 @@ async def fetch_recent_ratings(
                 "lifetime_sec": round(float(lifetime_sec), 1) if lifetime_sec is not None else None,
                 "category_label": (r.get("category_label") or "").strip() or None,
                 "engineer_involved": bool(r.get("engineer_involved")),
+                "assigned_operator_name": assigned_name or None,
             }
         )
     return out

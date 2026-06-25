@@ -10,6 +10,11 @@ import {
 } from "@/api/stats";
 import DatePickerField from "@/components/DatePickerField";
 import {
+  buildTrainingMetricCards,
+  fetchQuizTrainingStats,
+  type QuizTrainingDashboard,
+} from "@/api/statsQuizTraining";
+import {
   defaultStatsPeriod,
   detectStatsPeriodPreset,
   formatDurationSec,
@@ -19,6 +24,7 @@ import {
   type StatsPeriodPreset,
 } from "@/utils/formatDuration";
 import { ratingToneClass } from "@/utils/ratingTone";
+import StatsQuizTrainingPanel from "@/workspace/StatsQuizTrainingPanel";
 
 function formatRatedDate(iso: string | null): string {
   if (!iso) return "—";
@@ -90,6 +96,11 @@ export default function StatsTab() {
   const [viewerName, setViewerName] = useState("Оператор");
   const [viewerUserId, setViewerUserId] = useState<number | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [statsPane, setStatsPane] = useState<"work" | "training">("work");
+  const [trainingData, setTrainingData] = useState<QuizTrainingDashboard | null>(null);
+  const [trainingLoading, setTrainingLoading] = useState(false);
+  const [trainingError, setTrainingError] = useState<string | null>(null);
+  const [trainingExpandedId, setTrainingExpandedId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,6 +145,46 @@ export default function StatsTab() {
     };
   }, [dateFrom, dateTo, operatorId]);
 
+  const trainingDetailOperatorId =
+    operatorId === "all" ? trainingExpandedId : operatorId;
+
+  useEffect(() => {
+    if (!isAdmin || statsPane !== "training") return;
+    let cancelled = false;
+    setTrainingLoading(true);
+    setTrainingError(null);
+    fetchQuizTrainingStats({
+      dateFrom,
+      dateTo,
+      operatorId: trainingDetailOperatorId,
+    })
+      .then((payload) => {
+        if (!cancelled) setTrainingData(payload);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setTrainingData(null);
+          setTrainingError(
+            e instanceof Error ? e.message : "Не удалось загрузить статистику обучения",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTrainingLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, statsPane, dateFrom, dateTo, trainingDetailOperatorId]);
+
+  useEffect(() => {
+    if (operatorId !== "all") {
+      setTrainingExpandedId(operatorId);
+    } else {
+      setTrainingExpandedId(null);
+    }
+  }, [operatorId]);
+
   function applyPreset(preset: Exclude<StatsPeriodPreset, "custom">) {
     const p = statsPeriodForPreset(preset);
     setDateFrom(p.from);
@@ -168,6 +219,12 @@ export default function StatsTab() {
       m.label === "Закрыто" && closedLink ? { ...m, linkTo: closedLink } : m,
     );
   }, [data, dateFrom, dateTo, isAdmin, viewerUserId]);
+
+  const trainingMetrics = useMemo(() => {
+    if (!trainingData) return [];
+    return buildTrainingMetricCards(trainingData.summary);
+  }, [trainingData]);
+
   const adminAllView = isAdmin && operatorId === "all";
   const title = adminAllView ? "Общая аналитика КЦ" : "Личная статистика";
   const subtitle = adminAllView
@@ -181,6 +238,29 @@ export default function StatsTab() {
           <h1 className="stats-page__title">{title}</h1>
           <p className="stats-page__subtitle">{subtitle}</p>
         </header>
+
+        {isAdmin ? (
+          <div className="stats-pane-tabs" role="tablist" aria-label="Разделы статистики">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={statsPane === "work"}
+              className={`stats-pane-tab${statsPane === "work" ? " on" : ""}`}
+              onClick={() => setStatsPane("work")}
+            >
+              Эффективность команды
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={statsPane === "training"}
+              className={`stats-pane-tab${statsPane === "training" ? " on" : ""}`}
+              onClick={() => setStatsPane("training")}
+            >
+              Контроль обучения
+            </button>
+          </div>
+        ) : null}
 
         <div className="stats-page__toolbar">
           <div className="stats-page__filters">
@@ -267,7 +347,7 @@ export default function StatsTab() {
             </div>
           </div>
 
-          {loading ? (
+          {statsPane === "work" && loading ? (
             <div
               className={`stats-metrics stats-metrics--placeholder${adminAllView ? " stats-metrics--admin" : ""}`}
               aria-busy="true"
@@ -277,7 +357,7 @@ export default function StatsTab() {
               ))}
             </div>
           ) : null}
-          {!loading && !error && data ? (
+          {statsPane === "work" && !loading && !error && data ? (
             <div className={`stats-metrics${adminAllView ? " stats-metrics--admin" : ""}`}>
               {metrics.map((m) =>
                 m.linkTo ? (
@@ -304,11 +384,45 @@ export default function StatsTab() {
               )}
             </div>
           ) : null}
+
+          {statsPane === "training" && trainingLoading ? (
+            <div className="stats-metrics stats-metrics--placeholder stats-metrics--admin" aria-busy="true">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="stats-m-card stats-m-card--skeleton" />
+              ))}
+            </div>
+          ) : null}
+          {statsPane === "training" && !trainingLoading && !trainingError && trainingData ? (
+            <div className="stats-metrics stats-metrics--admin">
+              {trainingMetrics.map((m) => (
+                <div key={m.label} className="stats-m-card" data-tip={m.hint} title={m.hint}>
+                  <div className="stats-m-label">{m.label}</div>
+                  <div className={`stats-m-val${m.valueClass ? ` ${m.valueClass}` : ""}`}>{m.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
-        {error ? <div className="stats-page__state stats-page__state--error">{error}</div> : null}
+        {trainingError && statsPane === "training" ? (
+          <div className="stats-page__state stats-page__state--error">{trainingError}</div>
+        ) : null}
 
-        {!loading && !error && data ? (
+        {statsPane === "training" && isAdmin && !trainingLoading && !trainingError && trainingData ? (
+          <StatsQuizTrainingPanel
+            operatorId={operatorId}
+            onSelectOperator={setOperatorId}
+            data={trainingData}
+            expandedId={trainingExpandedId}
+            onExpandedIdChange={setTrainingExpandedId}
+          />
+        ) : null}
+
+        {error && statsPane === "work" ? (
+          <div className="stats-page__state stats-page__state--error">{error}</div>
+        ) : null}
+
+        {!loading && !error && data && statsPane === "work" ? (
           <>
             {adminAllView && data.operators.length > 0 ? (
               <div className="card stats-card">
@@ -373,6 +487,7 @@ export default function StatsTab() {
                     <thead>
                       <tr>
                         <th>Тикет</th>
+                        {isAdmin ? <th>Оператор</th> : null}
                         <th>Канал</th>
                         <th>Категория</th>
                         <th>Дата</th>
@@ -389,6 +504,9 @@ export default function StatsTab() {
                               #{r.ticket_id}
                             </Link>
                           </td>
+                          {isAdmin ? (
+                            <td>{r.assigned_operator_name ?? "—"}</td>
+                          ) : null}
                           <td>{r.source_label}</td>
                           <td>{r.category_label ?? "—"}</td>
                           <td>{formatRatedDate(r.rated_at)}</td>

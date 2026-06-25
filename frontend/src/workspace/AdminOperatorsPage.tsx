@@ -345,7 +345,8 @@ export default function AdminOperatorsPage() {
   }
 
   return (
-    <div className="op-page op-page--admin">
+    <div className="tp on">
+      <div className="op-page op-page--admin">
       <div className="op-head">
         <h1 className="op-title">Сотрудники</h1>
         <p className="op-sub">Управление учётными записями операторов Helpdesk</p>
@@ -473,6 +474,7 @@ export default function AdminOperatorsPage() {
         }}
         onConfirm={() => void confirmArchiveToggle()}
       />
+      </div>
     </div>
   );
 }

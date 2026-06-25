@@ -9,8 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.auth.dao import SkystreamUsersDAO
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
+from app.api.v1.routers.helpdesk import admin_quiz_stats_service as admin_quiz_svc
 from app.api.v1.routers.helpdesk import stats_service as stats_svc
 from app.api.v1.routers.helpdesk.stats_schemas import (
+    QuizTrainingDashboardResponse,
     StatsDashboardResponse,
     StatsSummaryResponse,
     SupportOperatorOption,
@@ -101,6 +103,7 @@ async def stats_dashboard(
         date_to=date_to,
         operator_id=scope_operator_id,
         limit=10,
+        admin_view=admin,
     )
 
     return StatsDashboardResponse(
@@ -109,3 +112,35 @@ async def stats_dashboard(
         recent_ratings=recent_ratings,
         operator_options=operator_options,
     )
+
+
+@router.get("/quiz-training", response_model=QuizTrainingDashboardResponse)
+async def stats_quiz_training(
+    date_from: date | None = Query(None, description="Начало периода для ежедневных тестов"),
+    date_to: date | None = Query(None, description="Конец периода для ежедневных тестов"),
+    operator_id: int | None = Query(None, description="Детальная статистика оператора"),
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> QuizTrainingDashboardResponse:
+    if date_from is None or date_to is None:
+        date_from, date_to = _default_period()
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from не может быть позже date_to")
+
+    level = await _viewer_level(db, user)
+    admin = stats_svc.is_support_admin(role=user.get("role"), level=level)
+    if not admin:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    if operator_id is not None:
+        op_row = await SkystreamUsersDAO.find_one_or_none(db, id=operator_id)
+        if not op_row or op_row.get("role") != "support":
+            raise HTTPException(status_code=404, detail="Оператор не найден")
+
+    data = await admin_quiz_svc.fetch_admin_quiz_training(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        detail_operator_id=operator_id,
+    )
+    return QuizTrainingDashboardResponse(**data)

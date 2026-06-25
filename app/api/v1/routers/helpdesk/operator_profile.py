@@ -17,6 +17,13 @@ from app.api.v1.routers.helpdesk.schemas import (
     OperatorUpdateRequest,
 )
 from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
+from app.api.v1.routers.helpdesk import operator_quiz_stats_service as quiz_stats_svc
+from app.api.v1.routers.helpdesk import operator_quiz_review_service as quiz_review_svc
+from app.api.v1.routers.helpdesk.operator_quiz_schemas import (
+    OperatorQuizPracticeStartResponse,
+    OperatorQuizStatsResponse,
+    OperatorQuizAttemptReviewResponse,
+)
 from app.database import get_db
 
 router = APIRouter(prefix="/v1/helpdesk/operators", tags=["Helpdesk — оператор"])
@@ -33,6 +40,49 @@ async def operator_ticket_month_stats(
     uid = int(user["user_id"])
     data = await ticket_svc.fetch_operator_ticket_month_stats(db, user_id=uid, year=year, month=month)
     return OperatorTicketMonthStatsResponse(**data)
+
+
+@router.get("/me/quiz-stats", response_model=OperatorQuizStatsResponse)
+async def operator_quiz_stats(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> OperatorQuizStatsResponse:
+    """История и успеваемость по тестам (только role=support, level=1)."""
+    data = await quiz_stats_svc.fetch_operator_quiz_stats(
+        db,
+        operator_id=int(user["user_id"]),
+        role=user.get("role"),
+        level=user.get("level"),
+    )
+    return OperatorQuizStatsResponse(**data)
+
+
+@router.get("/me/quiz-attempts/{attempt_id}/review", response_model=OperatorQuizAttemptReviewResponse)
+async def operator_quiz_attempt_review(
+    attempt_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> OperatorQuizAttemptReviewResponse:
+    data = await quiz_review_svc.fetch_attempt_review(
+        db,
+        operator_id=int(user["user_id"]),
+        attempt_id=attempt_id,
+    )
+    return OperatorQuizAttemptReviewResponse(**data)
+
+
+@router.post("/me/quiz-attempts/{attempt_id}/practice", response_model=OperatorQuizPracticeStartResponse)
+async def operator_quiz_attempt_practice(
+    attempt_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> OperatorQuizPracticeStartResponse:
+    data = await quiz_review_svc.start_practice_attempt(
+        db,
+        operator_id=int(user["user_id"]),
+        source_attempt_id=attempt_id,
+    )
+    return OperatorQuizPracticeStartResponse(**data)
 
 
 @router.post("/me/presence", status_code=204)

@@ -31,6 +31,7 @@ export type StatsRatingItem = {
   lifetime_sec: number | null;
   category_label: string | null;
   engineer_involved: boolean;
+  assigned_operator_name?: string | null;
 };
 
 export type SupportOperatorOption = {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -16,6 +17,27 @@ from app.api.v1.routers.helpdesk.manager_contacts_service import (
 )
 
 _SCHEMA = "helpdesk"
+
+_PRACTICE_ATTEMPT_FILTER = (
+    " AND COALESCE(qa.daily_policy_snapshot->>'practice', 'false') <> 'true'"
+)
+
+
+def _parse_attempt_snapshot(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _is_practice_attempt(attempt: dict[str, Any]) -> bool:
+    return bool(_parse_attempt_snapshot(attempt.get("daily_policy_snapshot")).get("practice"))
+
 
 _ARTICLE_ROW_SQL = f"""
 SELECT
@@ -784,6 +806,7 @@ async def finish_kb_quiz_attempt(
                     qa.status::text AS status,
                     qa.attempt_type::text AS attempt_type,
                     qa.total_questions,
+                    qa.daily_policy_snapshot,
                     q.passing_score_percent,
                     a.pass_score_percent AS article_pass_score_percent,
                     a.quiz_required
@@ -838,7 +861,9 @@ async def finish_kb_quiz_attempt(
         {"attempt_id": attempt_id, "correct": correct, "passed": passed},
     )
 
-    if passed and str(attempt.get("attempt_type") or "kb_topic") == "kb_topic":
+    practice = _is_practice_attempt(attempt)
+
+    if not practice and passed and str(attempt.get("attempt_type") or "kb_topic") == "kb_topic":
         await db.execute(
             text(
                 f"""
@@ -873,7 +898,7 @@ async def finish_kb_quiz_attempt(
                 "attempt_id": attempt_id,
             },
         )
-    elif not passed and str(attempt.get("attempt_type") or "kb_topic") == "kb_topic":
+    elif not practice and not passed and str(attempt.get("attempt_type") or "kb_topic") == "kb_topic":
         await db.execute(
             text(
                 f"""

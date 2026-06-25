@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchAuthMe, type AuthMe } from "@/api/auth";
 import AdminOperatorsPage from "@/workspace/AdminOperatorsPage";
+import OperatorQuizStatsSection from "@/workspace/OperatorQuizStatsSection";
+import { isOperatorQuizTrainee } from "@/api/operatorQuizStats";
 import {
   clampProfileMonth,
   fetchOperatorTicketStats,
@@ -50,6 +52,7 @@ export default function OperatorProfilePage() {
   }, []);
 
   const isAdmin = Boolean(me?.is_support_admin);
+  const showQuizStats = Boolean(me && isOperatorQuizTrainee(me));
 
   useEffect(() => {
     if (!authChecked || isAdmin || monthOptions.length === 0) return;
@@ -73,9 +76,11 @@ export default function OperatorProfilePage() {
 
   if (!authChecked) {
     return (
-      <div className="op-page">
-        <div className="op-head">
-          <h1 className="op-title">Профиль</h1>
+      <div className="tp on">
+        <div className="op-page">
+          <div className="op-head">
+            <h1 className="op-title">Профиль</h1>
+          </div>
         </div>
       </div>
     );
@@ -115,7 +120,8 @@ export default function OperatorProfilePage() {
   const displayName = fullName || login || (loading ? "…" : "—");
 
   return (
-    <div className="op-page">
+    <div className="tp on">
+      <div className="op-page">
       <div className="op-head">
         <h1 className="op-title">Профиль</h1>
         <p className="op-sub">Ваш аккаунт оператора Helpdesk</p>
@@ -191,6 +197,9 @@ export default function OperatorProfilePage() {
             ) : null}
           </div>
         </div>
+      </div>
+
+      {showQuizStats ? <OperatorQuizStatsSection /> : null}
       </div>
     </div>
   );
