@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>База знаний КЦ — Не могу оплатить</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --brand-red: #FF1300; --brand-dark: #0A1E36;
+    --bg-sys: #F5F5F3; --bg-card: #FFFFFF;
+    --text-primary: #3D5068; /* Смягчен для 12-часовой смены по ТЗ */
+    --text-headers: #0A1E36;
+    --status-ok: #1B5299; /* Синий успех по ТЗ */
+    --status-ok-bg: #EAF2F9;
+    --status-err-bg: #FFF0EE;
+    --line: #E2E2DC;
+    --muted: #7A8B9A;
+    --r: 12px; --lh: 1.6; /* Строго по ТЗ */
+}
+
+[data-theme="dark"] {
+    --bg-sys: #0A1E36; --bg-card: #11283F;
+    --text-primary: #CBD5E0; /* Приглушенный для исключения ореола по ТЗ */
+    --text-headers: #FFFFFF;
+    --status-ok: #F0A830; /* ЗОЛОТОЙ успех по ТЗ */
+    --status-ok-bg: rgba(240, 168, 48, 0.1);
+    --brand-red: #FF4433;
+    --status-err-bg: rgba(255, 68, 51, 0.15);
+    --line: #1E3A58; --muted: #8A9EB1;
+}
+
+*, *::before, *::after { box-sizing: border-box; transition: background 0.25s, color 0.2s; }
+html { scroll-behavior: smooth; }
+body { font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif; background-color: var(--bg-sys); color: var(--text-primary); line-height: var(--lh); margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+
+/* ── HEADER ── */
+.hdr { position: sticky; top: 0; z-index: 1000; background: var(--bg-card); border-bottom: 2px solid var(--line); }
+.hdr-inner { max-width: 1400px; margin: 0 auto; padding: 0 20px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+
+.logo-area { display: flex; align-items: center; gap: 8px; }
+.logo { display: flex; align-items: center; text-decoration: none; font-weight: 800; font-size: 16px; letter-spacing: -0.5px; }
+.logo-text-wifi { color: var(--text-headers); }
+.logo-text-tochka { color: var(--text-headers); }
+.logo-sq { width: 24px; height: 24px; background: var(--brand-red); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 4px; }
+.badge-helpdesk { background: var(--status-ok-bg); color: var(--status-ok); font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 12px; letter-spacing: 0.5px; }
+
+.nav-tabs { display: flex; align-items: center; gap: 4px; margin-left: 20px; }
+.nav-tab { text-decoration: none; font-size: 12.5px; font-weight: 700; color: var(--muted); padding: 8px 16px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
+.nav-tab:hover { color: var(--text-headers); }
+.nav-tab.active { background: var(--status-err-bg); color: var(--brand-red); }
+.tab-badge { background: var(--brand-red); color: white; font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 800; }
+
+.hdr-right { display: flex; align-items: center; gap: 12px; }
+.icon-btn { appearance: none; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); width: 36px; height: 36px; border-radius: 50%; position: relative; }
+.icon-btn:hover { background: var(--bg-sys); color: var(--text-headers); }
+.bell-badge { position: absolute; top: 4px; right: 4px; background: var(--brand-red); color: white; font-size: 9px; font-weight: 800; min-width: 14px; height: 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--bg-card); }
+
+.i-sun, .i-moon { display: none; }
+[data-theme=light] .i-sun { display: block; }
+[data-theme=dark] .i-moon { display: block; }
+
+/* ── СТАТУСНЫЕ ИНДИКАТОРЫ ПО ТЗ (Штатный / Критический) ── */
+.status-badge { display: inline-block; }
+.badge-alert {
+    background: var(--status-err-bg);
+    color: var(--brand-red);
+    border: 1px solid transparent;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-weight: 800;
+    font-size: 11px;
+    text-transform: uppercase;
+    display: inline-block;
+}
+[data-theme="dark"] .badge-alert {
+    border-color: var(--brand-red); /* Рамочка для темной темы */
+}
+
+.status-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--status-ok);
+    font-weight: 700;
+    font-size: 14px;
+}
+.status-ok::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background-color: var(--status-ok);
+    border-radius: 50%;
+}
+
+/* КНОПКА ПО ТЗ (Вес 800) */
+.btn-main {
+    background-color: var(--brand-red);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 32px;
+    font-weight: 800;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.btn-main:hover {
+    opacity: 0.9;
+}
+
+/* Второстепенная кнопка по ТЗ (прозрачный фон, рамка) */
+.btn-secondary {
+    background-color: transparent;
+    color: var(--status-ok);
+    border: 2px solid var(--status-ok);
+    border-radius: 8px;
+    padding: 12px 30px;
+    font-weight: 800;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.btn-secondary:hover {
+    background-color: var(--status-ok-bg);
+}
+
+/* Кнопка «Далее» во время теста */
+.btn-next {
+    background-color: var(--status-ok);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 24px;
+    font-weight: 800;
+    font-size: 13px;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 14px;
+    display: inline-block;
+}
+[data-theme="dark"] .btn-next {
+    color: #0A1E36; /* Контрастный темный текст на золотой кнопке */
+}
+
+/* ── THREE-COLUMN GRID (Без теней по ТЗ) ── */
+.main-grid { display: grid; grid-template-columns: 240px 1fr 280px; gap: 24px; max-width: 1400px; margin: 0 auto; padding: 24px 20px 80px; }
+@media (max-width: 1100px) {
+    .main-grid { grid-template-columns: 220px 1fr; }
+    .sidebar-right { display: none; }
+}
+@media (max-width: 800px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .sidebar-left { display: none; }
+    .nav-tabs { display: none; }
+}
+
+/* ── LEFT SIDEBAR: NAVIGATION TREE (Sticky) ── */
+.sidebar-left { position: sticky; top: 80px; align-self: start; height: calc(100vh - 120px); overflow-y: auto; padding-right: 4px; }
+.tree-title { font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--muted); letter-spacing: 1px; margin-bottom: 12px; }
+.tree-node { margin-bottom: 14px; }
+.tree-folder { font-size: 12.5px; font-weight: 800; color: var(--text-headers); display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
+.tree-list { list-style: none; padding-left: 14px; display: flex; flex-direction: column; gap: 4px; border-left: 1px solid var(--line); }
+.tree-item { font-size: 12px; font-weight: 600; color: var(--text-primary); text-decoration: none; padding: 4px 6px; border-radius: 4px; display: block; }
+.tree-item:hover { background: var(--bg-sys); color: var(--text-headers); }
+.tree-item.active { background: rgba(255,19,0,0.08); color: var(--brand-red); font-weight: 800; }
+.tree-item.disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Nested Sub-node for testing */
+.tree-sub-list { list-style: none; padding-left: 10px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+.tree-sub-item { font-size: 11px; font-weight: 600; color: var(--text-primary); text-decoration: none; padding: 4px 8px; border-radius: 4px; display: block; border-left: 1.5px solid var(--line); cursor: pointer; }
+.tree-sub-item:hover { background: var(--bg-sys); color: var(--text-headers); }
+.tree-sub-item.active { color: var(--brand-red); border-left-color: var(--brand-red); font-weight: 800; background: rgba(255,19,0,0.05); }
+
+/* ── CENTER COLUMN: ARTICLE CONTENT ── */
+.reader-content { min-width: 0; }
+.article-title-block { margin-bottom: 24px; border-bottom: 2px solid var(--line); padding-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+.article-title-block h1 { font-size: 26px; font-weight: 800; color: var(--text-headers); margin: 4px 0; }
+.article-title-block p { font-size: 13.5px; color: var(--muted); margin: 0; font-weight: 600; }
+
+/* SPA View panes switching */
+.view-pane { display: none; }
+.view-pane.active { display: block; }
+
+.section-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); padding: 24px 28px; margin-bottom: 20px; box-shadow: none; scroll-margin-top: 80px; }
+.section-lbl { font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--brand-red); margin-bottom: 6px; }
+.section-card h2 { font-size: 17px; font-weight: 800; color: var(--text-headers); margin: 0 0 12px 0; }
+.section-card h3 { font-size: 13.5px; font-weight: 800; color: var(--text-headers); margin: 18px 0 8px; }
+.section-card p { font-size: 14.5px; margin-bottom: 12px; color: var(--text-primary); }
+.section-card ul, .section-card ol { padding-left: 20px; margin-bottom: 14px; font-size: 14.5px; }
+.section-card li { margin-bottom: 6px; color: var(--text-primary); }
+strong { color: var(--text-headers); font-weight: 700; }
+
+/* ── RIGHT SIDEBAR: QUICK LOOKUP CHIPS (Sticky) ── */
+.sidebar-right { position: sticky; top: 80px; align-self: start; display: flex; flex-direction: column; gap: 16px; }
+.chip-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; box-shadow: none; }
+.chip-title { font-size: 9px; font-weight: 800; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.chip-value { font-size: 14.5px; font-weight: 800; color: var(--brand-red); margin-bottom: 4px; line-height: 1.3; }
+.chip-desc { font-size: 11px; color: var(--text-primary); line-height: 1.45; }
+
+/* Anchor Links navigation style */
+.nav-anchors { display: flex; flex-direction: column; gap: 4px; }
+.anchor-link { font-size: 12px; font-weight: 700; color: var(--text-primary); text-decoration: none; padding: 6px 8px; border-radius: 6px; border-left: 2px solid transparent; cursor: pointer; transition: all 0.15s; }
+.anchor-link:hover { color: var(--brand-red); background: var(--bg-sys); border-left-color: var(--brand-red); }
+
+.pill-list { display: flex; flex-direction: column; gap: 6px; }
+.pill-item { background: var(--bg-sys); border-radius: 6px; padding: 8px 12px; font-size: 11.5px; font-weight: 700; color: var(--text-headers); display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--line); }
+
+/* Highlight frames from PDF — Оптимизирован контраст для темной темы по ТЗ */
+.rule { border: 1px solid var(--brand-red); border-left: 4px solid var(--brand-red); padding: 16px; background: var(--status-err-bg); font-size: 14px; font-weight: 700; color: var(--text-headers); margin: 20px 0; border-radius: 4px; line-height: 1.6; }
+.rule-title { font-weight: 800; margin-bottom: 4px; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; color: var(--brand-red); }
+
+.pl-info { background: var(--bg-sys); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 18px; margin: 16px 0; font-size: 13.5px; color: var(--text-primary); line-height: 1.6; }
+
+/* SLA deadlines layout — Pixel Perfect Match to PDF */
+.dl-box-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin: 16px 0; box-shadow: none; }
+.dl-header-bar { background: var(--brand-dark); padding: 12px 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #FFFFFF; letter-spacing: 0.8px; }
+
+/* Stylized Checklist Cards */
+.check-card-list { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+.check-card-item { background: var(--bg-sys); border-radius: 8px; padding: 14px 18px; border: 1.5px solid var(--line); display: flex; gap: 12px; align-items: flex-start; }
+.check-card-icon { width: 20px; height: 20px; border-radius: 50%; background: var(--status-ok-bg); color: var(--status-ok); font-size: 11px; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; margin-top: 2px; }
+.check-card-text { font-size: 14px; color: var(--text-primary); line-height: 1.5; }
+.check-card-text strong { color: var(--text-headers); font-weight: 800; display: block; margin-bottom: 2px; }
+
+/* Dialogue UI */
+.dlg { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+.bbl { max-width: 85%; padding: 10px 14px; border-radius: var(--r); font-size: 13.5px; line-height: 1.5; border: 1.5px solid var(--line); }
+.bbl-lbl { font-size: 8.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; opacity: .55; margin-bottom: 2px; }
+.bbl.sub { background: var(--bg-sys); align-self: flex-start; color: var(--text-primary); }
+.bbl.agt { background: var(--status-ok); border-color: var(--status-ok); align-self: flex-end; color: #fff; }
+[data-theme=dark] .bbl.agt { color: #0A1E36; }
+
+/* ── TABLE SLA & SUMMARY ── */
+.tbl { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; border: 1px solid var(--line); }
+.tbl th { background: var(--brand-dark); border: 1px solid var(--line); padding: 10px 12px; font-weight: 700; color: #ffffff; }
+.tbl td { border: 1px solid var(--line); padding: 10px 12px; vertical-align: top; color: var(--text-primary); background: var(--bg-card); }
+
+/* ── INTERACTIVE QUIZ DESIGN (Approved Сolor & Contrast Spec) ── */
+.quiz-wrap { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); padding: 28px 32px; box-shadow: none; }
+.quiz-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; border-bottom: 1.5px solid var(--line); padding-bottom: 12px; }
+.quiz-badge { background: var(--status-ok-bg); color: var(--status-ok); font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; }
+.quiz-title { font-size: 18px; font-weight: 800; color: var(--text-headers); }
+
+/* Шкала прогресса тестирования */
+.quiz-progress-wrap { background: var(--line); border-radius: 4px; height: 6px; margin: 16px 0; overflow: hidden; }
+.quiz-progress-bar { background: var(--status-ok); height: 100%; width: 0%; transition: width 0.3s ease; }
+.quiz-progress-text { font-size: 12.5px; font-weight: 700; color: var(--muted); margin-bottom: 12px; }
+
+.qblock { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1.5px solid var(--line); }
+.qblock:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.q-text { font-size: 15px; font-weight: 800; color: var(--text-headers); margin-bottom: 14px; line-height: 1.45; }
+.q-opts { display: flex; flex-direction: column; gap: 8px; }
+
+/* Option Cards */
+.opt { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 14px; color: var(--text-primary); background: var(--bg-sys); cursor: pointer; transition: all 0.2s ease; }
+.opt:hover { border-color: var(--status-ok); background: var(--bg-card); color: var(--text-headers); }
+
+/* Verbatim state color overrides according to specification */
+.opt.correct { border-color: var(--status-ok) !important; background-color: var(--status-ok-bg) !important; color: var(--text-headers) !important; font-weight: 700; }
+.opt.correct .om { background-color: var(--status-ok) !important; color: #FFFFFF !important; border-color: var(--status-ok) !important; }
+[data-theme="dark"] .opt.correct .om { color: #0A1E36 !important; } /* Dark text on gold bullet in dark mode */
+
+.opt.wrong { border-color: var(--brand-red) !important; background-color: var(--status-err-bg) !important; color: var(--text-headers) !important; }
+.opt.wrong .om { background-color: var(--brand-red) !important; color: #FFFFFF !important; border-color: var(--brand-red) !important; }
+
+/* Bullet circles */
+.om { width: 24px; height: 24px; min-width: 24px; border-radius: 6px; border: 1.5px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; background: var(--bg-card); color: var(--muted); flex-shrink: 0 !important; }
+
+.q-expl { display: none; margin-top: 12px; padding: 14px 18px; border-radius: 8px; font-size: 13.5px; background: var(--bg-sys); border: 1.5px solid var(--line); line-height: 1.6; color: var(--text-headers); /* Контрастный белый/темный текст на подложке по ТЗ */ }
+.q-expl.show { display: block; }
+
+/* Результирующая плашка по ТЗ (без ярких кричащих фонов, плоская и контрастная) */
+.quiz-score-box { display: none; background: var(--bg-card); border: 1.5px solid var(--line); border-radius: var(--r); padding: 32px; text-align: center; margin-top: 24px; box-shadow: none; }
+.quiz-score-box.show { display: block; }
+.qs-num { font-size: 32px; font-weight: 800; color: var(--status-ok); }
+
+/* Специальная карточка Шпаргалки по ТЗ (без нерегламентированных зеленых фонов и иконок) */
+.pl-cheat { border: 1.5px solid var(--line); border-radius: var(--r); padding: 20px; margin: 20px 0; background: var(--bg-sys); }
+.pl-cheat-title { font-weight: 800; color: var(--text-headers); text-transform: uppercase; font-size: 11px; margin-bottom: 10px; letter-spacing: 0.5px; }
+.pl-cheat-line { font-size: 13.5px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.pl-cheat-line:last-child { margin-bottom: 0; }
+
+.theme-toggle { display: none; } /* Спрятан, так как переключатель есть в шапке */
+</style>
+</head>
+<body>
+
+<button class="theme-toggle" onclick="toggleTheme()">СМЕНИТЬ ТЕМУ</button>
+
+<!-- HEADER -->
+<header class="hdr">
+    <div class="hdr-inner">
+        <!-- Logo Area with helpdesk badge -->
+        <div class="logo-area">
+            <a class="logo" href="#" onclick="return false;">
+                <span class="logo-text-wifi">WIFI</span>
+                <div class="logo-sq">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="4" fill="#fff"/>
+                        <circle cx="8" cy="8" r="7" stroke="#fff" stroke-width="1.5"/>
+                    </svg>
+                </div>
+                <span class="logo-text-tochka">ТОЧКА</span>
+            </a>
+            <span class="badge-helpdesk">HELPDESK</span>
+        </div>
+
+        <!-- Helpdesk Nav Tabs -->
+        <nav class="nav-tabs">
+            <a href="#" class="nav-tab" onclick="return false;">Главная</a>
+            <a href="#" class="nav-tab" onclick="return false;">Регистрация звонка</a>
+            <a href="#" class="nav-tab" onclick="return false;">Тикеты <span class="tab-badge">1</span></a>
+            <a href="#" class="nav-tab" onclick="return false;">Чат <span class="tab-badge">1</span></a>
+            <a href="#" class="nav-tab" onclick="return false;">Статистика</a>
+            <a href="#" class="nav-tab active" onclick="return false;">База знаний</a>
+            <a href="#" class="nav-tab" onclick="return false;">Обучение</a>
+        </nav>
+
+        <!-- Right side tools -->
+        <div class="hdr-right">
+            <!-- Notification Bell -->
+            <button class="icon-btn" title="Уведомления">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="bell-badge">3</span>
+            </button>
+            
+            <!-- Sun / Moon Theme Toggle icon -->
+            <button class="icon-btn" onclick="toggleTheme()" title="Сменить тему">
+                <svg class="i-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
+                <svg class="i-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+
+            <!-- User Avatar -->
+            <button class="icon-btn" title="Профиль">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+            </button>
+        </div>
+    </div>
+</header>
+
+<!-- THREE-COLUMN MAIN GRID -->
+<div class="main-grid">
+
+    <!-- 1. ЛЕВАЯ КОЛОНКА: ДЕРЕВО НАВИГАЦИИ (STICKY, ALIGN START) -->
+    <aside class="sidebar-left">
+        <div class="tree-title">Разделы базы знаний</div>
+        
+        <!-- Папка 1 -->
+        <div class="tree-node">
+            <div class="tree-folder">1. Подключение и интернет</div>
+            <ul class="tree-list">
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Низкая скорость связи</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Настройка роутеров</a></li>
+            </ul>
+        </div>
+
+        <!-- Папка 2 (АКТИВНАЯ, С РАЗДЕЛЕНИЕМ НА СТАТЬЮ И ТЕСТ) -->
+        <div class="tree-node">
+            <div class="tree-folder">2. Оплата и баланс</div>
+            <ul class="tree-list">
+                <li>
+                    <a class="tree-item active" id="node-article" href="#" onclick="switchView('article'); return false;">Не могу оплатить</a>
+                    <ul class="tree-sub-list">
+                        <li><a class="tree-sub-item" id="node-quiz" onclick="switchView('quiz'); return false;">→ Пройти тест</a></li>
+                    </ul>
+                </li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Автосписания и рекурренты</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Требование возврата денег</a></li>
+            </ul>
+        </div>
+
+        <!-- Папка 3 -->
+        <div class="tree-node">
+            <div class="tree-folder">3. Тарифы и опции</div>
+            <ul class="tree-list">
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Восстановление трафика</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Суточный сброс</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Заморозка тарифа</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Смена тарифа</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Турбо-кнопка</a></li>
+            </ul>
+        </div>
+    </aside>
+
+    <!-- 2. ЦЕНТРАЛЬНАЯ КОЛОНКА -->
+    <main class="reader-content">
+        
+        <!-- Окна переключения контента (SPA) -->
+        
+        <!-- ОКНО А. ТЕКСТ СТАТЬИ -->
+        <div class="view-pane active" id="paneArticle">
+            <div class="article-title-block">
+                <div>
+                    <div class="da-lbl">Интерактивное руководство</div>
+                    <h1>Не могу оплатить</h1>
+                </div>
+                <div style="margin-bottom: 6px;">
+                    <span class="status-badge todo" id="statusIndicatorInner">Нужно изучить</span>
+                </div>
+            </div>
+
+            <!-- ВВЕДЕНИЕ -->
+            <div class="section-card" id="sec-intro">
+                <p>Абонент пытается пополнить баланс или оплатить тариф, но платеж не проходит: ошибка в ЛК, проблема с банком, технический сбой. Абоненты также обращаются, когда оплата прошла, но интернет не появился.</p>
+            </div>
+
+            <!-- СИТУАЦИЯ «ОШИБКА ПРИ ОПЛАТЕ — ПЛАТЁЖ НЕ ПРОХОДИТ» -->
+            <div class="section-card" id="sec-whatis">
+                <div class="section-lbl">Раздел 1</div>
+                <h2>Ситуация «Ошибка при оплате — платёж не проходит»</h2>
+                <p>Абонент заходит в личный кабинет, пытается оплатить — и получает ошибку.</p>
+                
+                <h3>Что говорят абоненты:</h3>
+                <ul>
+                    <li>«Здравствуйте, почему банки не работают для оплаты?».</li>
+                    <li>«Здравствуйте, не могу оплатить».</li>
+                    <li>«Здравствуйте, почему система платежей не работает?».</li>
+                    <li>«Когда я пытаюсь оплатить, пишет «сбой, повторите попытку». Почему?».</li>
+                    <li>«Добрый день, не могу внести оплату, автоматически сбрасывает».</li>
+                    <li>«Не могу завершить оплату — удалённый сервер не отвечает».</li>
+                </ul>
+            </div>
+
+            <!-- ЧТО ДЕЛАТЬ ОПЕРАТОРУ -->
+            <div class="section-card" id="sec-operator">
+                <div class="section-lbl">Инструкция</div>
+                <h2>Что делать оператору</h2>
+                <ol>
+                    <li>Уточнить, на каком этапе возникает ошибка и какой платёжной системой пользуется абонент.</li>
+                    <li>Предложить:
+                        <ul>
+                            <li>Очистить кеш браузера, попробовать другой браузер или устройство.</li>
+                            <li>Оплатить через альтернативные системы: ЮMoney, Газпромбанк (принимают карты любых банков).</li>
+                            <li>Побовать оплатить через СБП (Система быстрых платежей).</li>
+                        </ul>
+                    </li>
+                    <li>Если проблема остается создать заявку инженерам.</li>
+                </ol>
+            </div>
+
+            <!-- ПРИМЕР ДИАЛОГА -->
+            <div class="section-card" id="sec-dialog">
+                <div class="section-lbl">Диалог</div>
+                <h2>Пример диалога:</h2>
+                <div class="dlg">
+                    <div class="bbl sub"><div class="bbl-lbl">Абонент</div>— Здравствуйте, не могу оплатить. Пишет «сбой, повторите попытку».</div>
+                    <div class="bbl agt"><div class="bbl-lbl">Оператор контакт-центра</div>— Добрый день! На каком этапе ошибка? Какой платёжной системой пользуетесь?</div>
+                    <div class="bbl sub"><div class="bbl-lbl">Абонент</div>— Ввожу номер карты, долго загружает, потом ошибка.</div>
+                    <div class="bbl agt"><div class="bbl-lbl">Оператор контакт-центра</div>— Попробуйте очистить кеш браузера, оплатить через ЮMoney или Газпромбанк. Если не поможет — напишите, передадим специалистам.</div>
+                </div>
+            </div>
+
+            <!-- БЛОК 6: SLA (Pixel-Perfect Table matching the screenshot) -->
+            <div class="section-card" id="sec-sla">
+                <div class="section-lbl">Регламент</div>
+                <h2>Когда ждать ответа от инженеров</h2>
+                <p>Предупредите абонента о сроках заранее.</p>
+                
+                <div class="dl-box-card">
+                    <div class="dl-header-bar">Правило</div>
+                    <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+                        <tbody>
+                            <tr style="border-bottom: 1.5px solid var(--line);">
+                                <td class="dl-cell-left" style="width: 65%; padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">С 8:00 до 16:00 в будни по московскому времени</td>
+                                <td class="dl-cell-right" style="width: 35%; padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">15 минут.</td>
+                            </tr>
+                            <tr>
+                                <td class="dl-cell-left" style="padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">Остальное время, выходные и праздники</td>
+                                <td class="dl-cell-right" style="padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">до следующего рабочего дня.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- БЛОК 9: ИТОГ С ЧЕК-ЛИСТОМ РАЗГОВОРА -->
+            <div class="section-card" id="scrollTargetSummary">
+                <div class="section-lbl">Справочник</div>
+                <h2>Итог</h2>
+
+                <!-- Checklist for customer conversation -->
+                <h3>Как разговаривать с абонентом</h3>
+                <div class="check-card-list">
+                    <div class="check-card-item">
+                        <div class="check-card-icon">1</div>
+                        <div class="check-card-text">
+                            <strong>Узнайте детали платежа</strong>
+                            Узнайте этап и способ оплаты — карта, СБП, приложение банка, платёжная система.
+                        </div>
+                    </div>
+                    <div class="check-card-item">
+                        <div class="check-card-icon">2</div>
+                        <div class="check-card-text">
+                            <strong>Предложите обходные пути</strong>
+                            Предлагайте альтернативы — ЮMoney, Газпромбанк, другой браузер.
+                        </div>
+                    </div>
+                    <div class="check-card-item">
+                        <div class="check-card-icon">3</div>
+                        <div class="check-card-text">
+                            <strong>Очистка браузерных данных</strong>
+                            Если ошибка при оплате в ЛК — посоветуйте очистить кеш или сменить браузер.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Оптимизированный по ТЗ блок шпаргалки без иконок и нерегламентированных цветов -->
+                <div class="pl-cheat">
+                    <div class="pl-cheat-title">Шпаргалка</div>
+                    <div class="pl-cheat-line">Ошибка при оплате — Уточнить этап, предложить альтернативы</div>
+                    <div class="pl-cheat-line">Что передать: ID абонента, комментарий</div>
+                </div>
+
+                <h3 style="margin-top:24px;">Итоговая таблица</h3>
+                <table class="tbl" style="margin-bottom: 24px;">
+                    <thead>
+                        <tr>
+                            <th style="width: 35%;">Обращение</th>
+                            <th style="width: 40%;">Что делать</th>
+                            <th style="width: 25%;">Что передать</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Ошибка при оплате</strong></td>
+                            <td>Уточнить этап, предложить альтернативы</td>
+                            <td>ID абонента, комментарий</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- Брендовая кнопка призыва к тестированию по стандартам ТЗ -->
+                <div style="text-align: center; border-top: 1.5px solid var(--line); padding-top: 24px;">
+                    <button class="btn-main" onclick="switchView('quiz'); return false;">Пройти тестирование по теме</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ОКНО Б. ТЕСТИРОВАНИЕ ПО ТЕМЕ (ВЫНЕСЕНО ИЗ СТАТЬИ) -->
+        <div class="view-pane" id="paneQuiz">
+            <div class="quiz-wrap" id="quizBlockContainer">
+                <div class="quiz-hdr">
+                    <span class="quiz-badge">Тест</span>
+                    <span class="quiz-title">Проверка знаний темы: Оплата и проблемы с платежами</span>
+                </div>
+                
+                <!-- Шкала прогресса тестирования по ТЗ -->
+                <div class="quiz-progress-wrap">
+                    <div class="quiz-progress-bar" id="quizProgressBar"></div>
+                </div>
+                <div class="quiz-progress-text" id="quizProgressText">Вопрос 1 из 9</div>
+
+                <div id="quizContainer">
+                    <!-- Тест генерируется через JS DOM API для исключения багов с экранированием -->
+                </div>
+                <div class="quiz-score-box" id="quizScoreBox">
+                    <div class="qs-num" id="quizScoreText">Оценка результатов</div>
+                    <div id="quizScoreSummary" style="font-size: 15px; font-weight: 700; color: var(--text-headers); margin-top: 8px; margin-bottom: 12px; line-height: 1.5;">
+                        Вы ответили верно на 0 из 9 вопросов.
+                    </div>
+                    <div id="quizPraiseText" style="font-size: 13px; color: var(--muted); margin-bottom: 24px; line-height: 1.55;">
+                        Рекомендуем повторить тему для закрепления материала и 100% усвоения алгоритмов.
+                    </div>
+                    
+                    <!-- Кнопки перехода к изучению следующего раздела и кнопка перезапуска по ТЗ -->
+                    <div style="text-align: center; border-top: 1.5px solid var(--line); padding-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;" id="quizActionBlock">
+                        <!-- Кнопки генерируются динамически в JS на основе успешности прохождения -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 3. ПРАВАЯ КОЛОНКА: БЫСТРЫЕ ПОДСКАЗКИ & ПЕРЕХОДЫ (STICKY, ALIGN START) -->
+    <aside class="sidebar-right">
+        
+        <!-- Блок быстрых переходов -->
+        <div class="chip-card" id="quickAccessBlock">
+            <div class="chip-title">Быстрый доступ</div>
+            <nav class="nav-anchors">
+                <a class="anchor-link" href="#sec-whatis">Ошибка при оплате</a>
+                <a class="anchor-link" href="#sec-operator">Что делать оператору</a>
+                <a class="anchor-link" href="#scrollTargetSummary">Итог и Чек-лист</a>
+            </nav>
+        </div>
+
+        <!-- Короткий шаблон (ТЕПЕРЬ НА ВТОРОМ МЕСТЕ ПОД ОГЛАВЛЕНИЕМ) -->
+        <div class="chip-card">
+            <div class="chip-title">Шаблон тикета</div>
+            <p style="font-size:11.5px; margin-bottom: 6px;"><strong>Для отслеживания сбоя:</strong></p>
+            <p style="font-size:11px; background: var(--bg-sys); padding: 6px; border-radius: 4px; font-family: monospace; border: 1px solid var(--line); color: var(--brand-red);">ID + "ошибка при оплате, шаг, платёжная система"</p>
+        </div>
+
+        <!-- SLA -->
+        <div class="chip-card">
+            <div class="chip-title">SLA инженеров</div>
+            <div class="pill-list">
+                <div class="pill-item">
+                    <span>Будни по МСК (8:00 - 16:00)</span>
+                    <span style="color: var(--green);">15 мин</span>
+                </div>
+                <div class="pill-item" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                    <span>Выходные и вечер</span>
+                    <span style="color: var(--status-ok); font-size:10px;">До след. раб. дня</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Напоминание по ТЗ (ТЕПЕРЬ В САМОМ НИЗУ ПРАВОЙ ПАНЕЛИ) -->
+        <div class="chip-card">
+            <div class="chip-title">Важное напоминание</div>
+            <div class="chip-value" style="font-size:13px; color: var(--brand-red); font-weight: 800; line-height: 1.4; margin-bottom: 6px;">Альтернативные шлюзы</div>
+            <div class="chip-desc">Если у абонента не проходит прямой эквайринг по карте, всегда предлагайте оплату через СБП или ЮMoney.</div>
+        </div>
+
+    </aside>
+
+</div>
+
+<!-- JAVASCRIPT: LOGIC & OBSERVATION -->
+<script>
+// --- ОБЪЕКТ ТЕСТИРОВАНИЯ ---
+const quizData = [
+    {
+        q: "Сколько времени могут обрабатываться платежи через ЮMoney/SBP?",
+        opts: [
+            "Мгновенно",
+            "До 30 минут",
+            "До 24 часов"
+        ],
+        ans: 1,
+        expl: "Платежи обрабатываются до 30 минут."
+    },
+    {
+        q: "Прошло больше 30 минут, деньги не поступили. Что делать оператору?",
+        opts: [
+            "Попросить подождать ещё",
+            "Запросить скриншот справки об операции из приложения банка",
+            "Пополнить баланс вручную"
+        ],
+        ans: 1,
+        expl: "Если >30 минут — запрашиваем скриншот справки и передаём инженерам для отслеживания."
+    },
+    {
+        q: "Абонент пополнил баланс, деньги списались с карты, но на счёте пусто. Самая частая причина:",
+        opts: [
+            "Ошибка банка",
+            "Сработало автопродление — тариф подключился, деньги на тарифе",
+            "Деньги потерялись"
+        ],
+        ans: 1,
+        expl: "Автопродление могло подключить тариф — баланс пуст, но тариф активен."
+    },
+    {
+        q: "Абонент отправил платёж, но по ошибке указал неправильную сумму:",
+        opts: [
+            "Ничего не сделать, деньги пропали",
+            "Создать заявку — инженеры проверят и вернут излишек",
+            "Попросить отправить ещё раз"
+        ],
+        ans: 1,
+        expl: "Излишек можно вернуть на баланс через заявку."
+    },
+    {
+        q: "Абонент не может оплатить через СБП — ошибка в системе:",
+        opts: [
+            "Сказать, что СБП не работает",
+            "Предложить оплатить другим способом (карта, ЮMoney) или создать заявку",
+            "Игнорировать"
+        ],
+        ans: 1,
+        expl: "Если один способ не работает — предложить альтернативу. Если все не работают — заявка."
+    },
+    {
+        q: "Абонент оплатил через банк, чек есть, но деньги не пришли:",
+        opts: [
+            "Попросить прислать чек или реквизиты в чат",
+            "Сказать ждать",
+            "Ничего не делать"
+        ],
+        ans: 0,
+        expl: "Чек или реквизиты помогут инженерам отследить платеж."
+    },
+    {
+        q: "Срок зачисления платежа на баланс при оплате картой:",
+        opts: [
+            "Мгновенно",
+            "До 30 минут",
+            "До 2 часов"
+        ],
+        ans: 1,
+        expl: "Платежи обрабатываются до 30 минут."
+    },
+    {
+        q: "Абонент просит чек об оплате. Что делать?",
+        opts: [
+            "Распечатать и отправить",
+            "Объяснить: чек можно получить в своём банке (выписка по операциям)",
+            "Создать заявку на чек"
+        ],
+        ans: 1,
+        expl: "Оператор не формирует чеки. Выписку можно получить в банке."
+    },
+    {
+        q: "Баланс абонента в минусе, интернет не работает. Что нужно сделать?",
+        opts: [
+            "Пополнить баланс",
+            "Создать заявку для разблокировки",
+            "Подождать автоматического списания"
+        ],
+        ans: 0,
+        expl: "При отрицательном балансе нужно пополнить счёт для подключения тарифа."
+    }
+];
+
+// Local state definition
+let state = { studied: false, testPassed: false };
+if (localStorage.getItem('cc_cannot_pay_direct_view')) {
+    state = JSON.parse(localStorage.getItem('cc_cannot_pay_direct_view'));
+}
+
+let activeQuestionIndex = 0;
+let correctAnswersCount = 0;
+let quizAttempts = {}; // Хранение ответов текущей сессии { qIdx: true/false }
+
+function updateProgressIndicator() {
+    const indicator = document.getElementById('statusIndicator');
+    const indicatorInner = document.getElementById('statusIndicatorInner');
+    
+    // Статья считается полностью изученной только при прочтении и успешном закрытии теста
+    const isCompleted = state.studied && state.testPassed;
+    const text = isCompleted ? 'Изучено' : 'Нужно изучить';
+    const className = isCompleted ? 'status-ok' : 'badge-alert';
+    
+    if (indicator) {
+        indicator.textContent = text;
+        indicator.className = className;
+    }
+    if (indicatorInner) {
+        indicatorInner.textContent = text;
+        indicatorInner.className = className;
+    }
+}
+
+function saveState() {
+    localStorage.setItem('cc_cannot_pay_direct_view', JSON.stringify(state));
+    updateProgressIndicator();
+}
+
+// Построение элементов тестирования с помощью чистого DOM API (гарантирует кликабельность)
+function renderQuiz() {
+    const quizContainer = document.getElementById('quizContainer');
+    quizContainer.innerHTML = '';
+    
+    const scoreBox = document.getElementById('quizScoreBox');
+    scoreBox.classList.remove('show');
+
+    // Если тест уже успешно пройден ранее, выводим результирующую карточку
+    if (state.testPassed) {
+        document.getElementById('quizProgressBar').style.width = '100%';
+        document.getElementById('quizProgressText').textContent = 'Тестирование завершено';
+        scoreBox.classList.add('show');
+        document.getElementById('quizScoreText').textContent = 'Оценка результатов';
+        document.getElementById('quizScoreSummary').innerHTML = `Вы ответили правильно на <strong>9 из 9</strong> вопросов.<br>Ошибок: <strong>0</strong>.`;
+        document.getElementById('quizPraiseText').textContent = 'Отличный результат! Материал темы успешно усвоен в полном объеме.';
+        renderScoreActions(true);
+        return;
+    }
+
+    // Обновляем шкалу прогресса
+    const totalQuestions = quizData.length;
+    const progressPct = Math.round((activeQuestionIndex / totalQuestions) * 100);
+    document.getElementById('quizProgressBar').style.width = `${progressPct}%`;
+    document.getElementById('quizProgressText').textContent = `Вопрос ${activeQuestionIndex + 1} из ${totalQuestions}`;
+
+    // Извлекаем текущий вопрос
+    const qItem = quizData[activeQuestionIndex];
+
+    const qBlock = document.createElement('div');
+    qBlock.className = 'qblock';
+    qBlock.id = `qblock-${activeQuestionIndex}`;
+
+    // Текст вопроса БЕЗ НУМЕРАЦИИ по ТЗ
+    const qText = document.createElement('div');
+    qText.className = 'q-text';
+    qText.textContent = qItem.q;
+    qBlock.appendChild(qText);
+
+    // Контейнер вариантов ответа
+    const qOpts = document.createElement('div');
+    qOpts.className = 'q-opts';
+
+    qItem.opts.forEach((optText, optIdx) => {
+        const opt = document.createElement('div');
+        opt.className = 'opt';
+
+        const om = document.createElement('span');
+        om.className = 'om';
+        om.textContent = String.fromCharCode(65 + optIdx);
+        opt.appendChild(om);
+
+        const optLabel = document.createElement('span');
+        optLabel.textContent = optText;
+        opt.appendChild(optLabel);
+
+        // Обработчик события клика без inline-строк (100% защита от багов экранирования)
+        opt.addEventListener('click', () => {
+            handleQuizSelection(opt, activeQuestionIndex, optIdx, qItem.ans, qItem.expl);
+        });
+
+        qOpts.appendChild(opt);
+    });
+
+    qBlock.appendChild(qOpts);
+
+    // Блок пояснения к вопросу
+    const qExpl = document.createElement('div');
+    qExpl.className = 'q-expl';
+    qExpl.id = `expl-${activeQuestionIndex}`;
+    qBlock.appendChild(qExpl);
+
+    // Контейнер под кнопку перехода "Далее"
+    const nextBtnContainer = document.createElement('div');
+    nextBtnContainer.id = 'nextBtnContainer';
+    nextBtnContainer.style.textAlign = 'right';
+    qBlock.appendChild(nextBtnContainer);
+
+    quizContainer.appendChild(qBlock);
+}
+
+function handleQuizSelection(optEl, qIdx, selectedIdx, correctIdx, explanation) {
+    const qBlock = document.getElementById(`qblock-${qIdx}`);
+    const opts = qBlock.querySelectorAll('.opt');
+
+    if (qBlock.classList.contains('answered')) return;
+    qBlock.classList.add('answered');
+
+    // Блокируем дальнейший выбор в текущем вопросе
+    opts.forEach(opt => opt.style.pointerEvents = 'none');
+
+    const isCorrect = selectedIdx === correctIdx;
+    if (isCorrect) {
+        optEl.classList.add('correct');
+        correctAnswersCount++;
+    } else {
+        optEl.classList.add('wrong');
+        opts[correctIdx].classList.add('correct');
+    }
+
+    // Сохраняем результат ответа
+    quizAttempts[qIdx] = isCorrect;
+
+    // Раскрываем блок пояснения к вопросу
+    const explBox = document.getElementById(`expl-${qIdx}`);
+    explBox.innerHTML = `<strong>Разбор:</strong> ${explanation}`;
+    explBox.classList.add('show');
+
+    // Генерируем кнопку перехода "Далее"
+    const nextBtnContainer = document.getElementById('nextBtnContainer');
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'btn-next';
+    
+    const totalQuestions = quizData.length;
+    nextBtn.textContent = (qIdx + 1 === totalQuestions) ? 'Показать результат' : 'Далее';
+    
+    nextBtn.addEventListener('click', () => {
+        moveToNextQuestion();
+    });
+    
+    nextBtnContainer.appendChild(nextBtn);
+}
+
+function moveToNextQuestion() {
+    const totalQuestions = quizData.length;
+    activeQuestionIndex++;
+
+    if (activeQuestionIndex < totalQuestions) {
+        renderQuiz();
+    } else {
+        // Все вопросы пройдены
+        finishTesting();
+    }
+}
+
+function finishTesting() {
+    const totalQuestions = quizData.length;
+    const isPerfect = correctAnswersCount === totalQuestions;
+    const incorrectCount = totalQuestions - correctAnswersCount;
+
+    if (isPerfect) {
+        state.testPassed = true;
+        saveState();
+    }
+
+    // Обновляем шкалу прогресса на 100%
+    document.getElementById('quizProgressBar').style.width = '100%';
+    document.getElementById('quizProgressText').textContent = 'Тестирование завершено';
+
+    // Очищаем контейнер вопросов и выводим итоговую сводку
+    document.getElementById('quizContainer').innerHTML = '';
+    
+    const scoreBox = document.getElementById('quizScoreBox');
+    scoreBox.classList.add('show');
+
+    document.getElementById('quizScoreText').textContent = 'Оценка результатов';
+    
+    document.getElementById('quizScoreSummary').innerHTML = `
+        Вы ответили правильно на <strong>${correctAnswersCount} из ${totalQuestions}</strong> вопросов.<br>
+        Количество ошибок: <strong style="color: ${isPerfect ? 'var(--green)' : 'var(--brand-red)'};">${incorrectCount}</strong>.
+    `;
+    
+    document.getElementById('quizPraiseText').innerHTML = isPerfect 
+        ? 'Отличный результат! Материал темы успешно усвоен в полном объеме.'
+        : 'Для идеального закрепления материала и 100% усвоения алгоритмов вы можете повторить изучение памятки.';
+
+    renderScoreActions(isPerfect);
+}
+
+// Рендеринг кнопок в зависимости от результатов тестирования
+function renderScoreActions(isPerfect) {
+    const actionBlock = document.getElementById('quizActionBlock');
+    actionBlock.innerHTML = '';
+
+    // Кнопка 1. Повторить материал (второстепенная кнопка без заливки)
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'btn-secondary';
+    retryBtn.textContent = 'Повторить материал';
+    retryBtn.addEventListener('click', () => {
+        switchView('article');
+    });
+    actionBlock.appendChild(retryBtn);
+
+    // Кнопка 2. Продолжить обучение (акцентная по ТЗ)
+    const nextSecBtn = document.createElement('button');
+    nextSecBtn.className = 'btn-main';
+    nextSecBtn.style.backgroundColor = 'var(--status-ok)';
+    nextSecBtn.textContent = 'Перейти к изучению следующего раздела';
+    nextSecBtn.addEventListener('click', () => {
+        goToNextSection();
+    });
+    actionBlock.appendChild(nextSecBtn);
+}
+
+// Сброс и перезапуск теста
+function restartQuiz() {
+    activeQuestionIndex = 0;
+    correctAnswersCount = 0;
+    quizAttempts = {};
+    currentQuizAnswers = {};
+    
+    const scoreBox = document.getElementById('quizScoreBox');
+    scoreBox.classList.remove('remove');
+    
+    renderQuiz();
+}
+
+// SPA Навигация между статьей и тестом
+function switchView(viewType) {
+    const paneArticle = document.getElementById('paneArticle');
+    const paneQuiz = document.getElementById('paneQuiz');
+    const linkArticle = document.getElementById('node-article');
+    const linkQuiz = document.getElementById('node-quiz');
+    const quickAccess = document.getElementById('quickAccessBlock');
+
+    if (viewType === 'article') {
+        paneArticle.classList.add('active');
+        paneQuiz.classList.remove('active');
+        linkArticle.classList.add('active');
+        linkQuiz.classList.remove('active');
+        if (quickAccess) quickAccess.style.display = 'block'; // Показываем быстрый переход
+    } else if (viewType === 'quiz') {
+        paneQuiz.classList.add('active');
+        paneArticle.classList.remove('active');
+        linkArticle.classList.remove('active');
+        linkQuiz.classList.add('active');
+        if (quickAccess) quickAccess.style.display = 'none'; // Скрываем быстрый переход во время теста
+        
+        // Автоматически отмечаем факт начала прохождения теста как изученный шаг
+        state.studied = true;
+        saveState();
+        
+        restartQuiz(); // Сбрасываем и рендерим тест заново на первом шаге
+    }
+    
+    // Мягкий фокус на начало страницы при SPA-переходе по ТЗ
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Эмуляция перехода на следующий модуль
+function goToNextSection() {
+    alert("Вы успешно завершили обучение по теме 'Не могу оплатить'. Происходит переход в следующий раздел базы знаний.");
+    // В реальной системе здесь будет роутинг на следующую страницу курса
+}
+
+// Setup intersection observer to detect when user reaches the end summary block (reading done)
+window.addEventListener('DOMContentLoaded', () => {
+    updateProgressIndicator();
+    renderQuiz();
+
+    // По умолчанию открываем статью
+    switchView('article');
+
+    const summaryBlock = document.getElementById('scrollTargetSummary');
+    if (summaryBlock) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    if (!state.studied) {
+                        state.studied = true;
+                        saveState();
+                    }
+                }
+            });
+        }, { threshold: 0.1 });
+
+        observer.observe(summaryBlock);
+    }
+});
+
+function toggleTheme() {
+    const root = document.documentElement;
+    const nextTheme = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', nextTheme);
+}
+</script>
+
+</body>
+</html>

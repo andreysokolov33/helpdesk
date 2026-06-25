@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>База знаний КЦ — Личный кабинет и доступ</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --brand-red: #FF1300;
+    --brand-dark: #0A1E36;
+    --bg-sys: #F5F5F3;
+    --bg-card: #FFFFFF;
+    --text-primary: #3D5068; /* Смягчен для 12-часовой смены по ТЗ */
+    --text-headers: #0A1E36;
+    --status-ok: #1B5299; /* Синий успех по ТЗ */
+    --status-ok-bg: #EAF2F9;
+    --status-err-bg: #FFF0EE;
+    --line: #E2E2DC;
+    --muted: #7A8B9A;
+    --r: 12px; 
+    --lh: 1.6; /* Строго по ТЗ */
+}
+
+[data-theme="dark"] {
+    --bg-sys: #0A1E36; 
+    --bg-card: #11283F;
+    --text-primary: #CBD5E0; /* Приглушенный для исключения ореола по ТЗ */
+    --text-headers: #FFFFFF;
+    --status-ok: #F0A830; /* ЗОЛОТОЙ успех по ТЗ */
+    --status-ok-bg: rgba(240, 168, 48, 0.1);
+    --brand-red: #FF4433;
+    --status-err-bg: rgba(255, 68, 51, 0.15);
+    --line: #1E3A58;
+    --muted: #8A9EB1;
+}
+
+*, *::before, *::after { box-sizing: border-box; transition: background 0.25s, color 0.2s; }
+html { scroll-behavior: smooth; }
+body { 
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif; 
+    background-color: var(--bg-sys); 
+    color: var(--text-primary); 
+    line-height: var(--lh); 
+    margin: 0; padding: 0; 
+    -webkit-font-smoothing: antialiased; 
+}
+
+/* ── HEADER ── */
+.hdr { position: sticky; top: 0; z-index: 1000; background: var(--bg-card); border-bottom: 2px solid var(--line); }
+.hdr-inner { max-width: 1400px; margin: 0 auto; padding: 0 20px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+
+.logo-area { display: flex; align-items: center; gap: 8px; }
+.logo { display: flex; align-items: center; text-decoration: none; font-weight: 800; font-size: 16px; letter-spacing: -0.5px; }
+.logo-text-wifi { color: var(--text-headers); }
+.logo-text-tochka { color: var(--text-headers); }
+.logo-sq { width: 24px; height: 24px; background: var(--brand-red); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 4px; }
+.badge-helpdesk { background: var(--status-ok-bg); color: var(--status-ok); font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 12px; letter-spacing: 0.5px; }
+
+.nav-tabs { display: flex; align-items: center; gap: 4px; margin-left: 20px; }
+.nav-tab { text-decoration: none; font-size: 12.5px; font-weight: 700; color: var(--muted); padding: 8px 16px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
+.nav-tab:hover { color: var(--text-headers); }
+.nav-tab.active { background: var(--status-err-bg); color: var(--brand-red); }
+.tab-badge { background: var(--brand-red); color: white; font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 800; }
+
+.hdr-right { display: flex; align-items: center; gap: 12px; }
+.icon-btn { appearance: none; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--muted); width: 36px; height: 36px; border-radius: 50%; position: relative; }
+.icon-btn:hover { background: var(--bg-sys); color: var(--text-headers); }
+.bell-badge { position: absolute; top: 4px; right: 4px; background: var(--brand-red); color: white; font-size: 9px; font-weight: 800; min-width: 14px; height: 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--bg-card); }
+
+.i-sun, .i-moon { display: none; }
+[data-theme=light] .i-sun { display: block; }
+[data-theme=dark] .i-moon { display: block; }
+
+/* ── СТАТУСНЫЕ ИНДИКАТОРЫ ── */
+.badge-alert {
+    background: var(--status-err-bg);
+    color: var(--brand-red);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-weight: 800;
+    font-size: 11px;
+    text-transform: uppercase;
+    display: inline-block;
+}
+[data-theme="dark"] .badge-alert {
+    border: 1px solid var(--brand-red);
+}
+
+.status-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--status-ok);
+    font-weight: 700;
+    font-size: 14px;
+}
+.status-ok::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background-color: var(--status-ok);
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* КНОПКИ */
+.btn-main {
+    background-color: var(--brand-red);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 32px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.btn-main:hover {
+    opacity: 0.9;
+}
+
+.btn-secondary {
+    background-color: transparent;
+    color: var(--status-ok);
+    border: 2px solid var(--status-ok);
+    border-radius: 8px;
+    padding: 12px 30px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.btn-secondary:hover {
+    background-color: var(--status-ok-bg);
+}
+
+.btn-next {
+    background-color: var(--status-ok);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 24px;
+    font-weight: 800;
+    font-size: 13px;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 14px;
+    display: inline-block;
+}
+[data-theme="dark"] .btn-next {
+    color: #0A1E36;
+}
+
+/* ── GRID SYSTEM ── */
+.main-grid { display: grid; grid-template-columns: 240px 1fr 280px; gap: 24px; max-width: 1400px; margin: 0 auto; padding: 24px 20px 80px; }
+@media (max-width: 1100px) {
+    .main-grid { grid-template-columns: 220px 1fr; }
+    .sidebar-right { display: none; }
+}
+@media (max-width: 800px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .sidebar-left { display: none; }
+    .nav-tabs { display: none; }
+}
+
+/* ── LEFT SIDEBAR ── */
+.sidebar-left { position: sticky; top: 80px; align-self: start; height: calc(100vh - 120px); overflow-y: auto; padding-right: 4px; }
+.tree-title { font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--muted); letter-spacing: 1px; margin-bottom: 12px; }
+.tree-node { margin-bottom: 14px; }
+.tree-folder { font-size: 12.5px; font-weight: 800; color: var(--text-headers); display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
+.tree-list { list-style: none; padding-left: 14px; display: flex; flex-direction: column; gap: 4px; border-left: 1px solid var(--line); }
+.tree-item { font-size: 12px; font-weight: 600; color: var(--text-primary); text-decoration: none; padding: 4px 6px; border-radius: 4px; display: block; }
+.tree-item:hover { background: var(--bg-sys); color: var(--text-headers); }
+.tree-item.active { background: rgba(255,19,0,0.08); color: var(--brand-red); font-weight: 800; }
+.tree-item.disabled { opacity: 0.5; cursor: not-allowed; }
+
+.tree-sub-list { list-style: none; padding-left: 10px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+.tree-sub-item { font-size: 11px; font-weight: 600; color: var(--text-primary); text-decoration: none; padding: 4px 8px; border-radius: 4px; display: block; border-left: 1.5px solid var(--line); cursor: pointer; }
+.tree-sub-item:hover { background: var(--bg-sys); color: var(--text-headers); }
+.tree-sub-item.active { color: var(--brand-red); border-left-color: var(--brand-red); font-weight: 800; background: rgba(255,19,0,0.05); }
+
+/* ── CENTER COLUMN ── */
+.reader-content { min-width: 0; }
+.article-title-block { margin-bottom: 24px; border-bottom: 2px solid var(--line); padding-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+.article-title-block h1 { font-size: 26px; font-weight: 800; color: var(--text-headers); margin: 4px 0; }
+.article-title-block p { font-size: 13.5px; color: var(--muted); margin: 0; font-weight: 600; }
+
+.view-pane { display: none; }
+.view-pane.active { display: block; }
+
+.section-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); padding: 24px 28px; margin-bottom: 20px; box-shadow: none; scroll-margin-top: 80px; }
+.section-lbl { font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--brand-red); margin-bottom: 6px; }
+.section-card h2 { font-size: 17px; font-weight: 800; color: var(--text-headers); margin: 0 0 12px 0; }
+.section-card h3 { font-size: 13.5px; font-weight: 800; color: var(--text-headers); margin: 18px 0 8px; }
+.section-card p { font-size: 14.5px; margin-bottom: 12px; color: var(--text-primary); }
+.section-card ul, .section-card ol { padding-left: 20px; margin-bottom: 14px; font-size: 14.5px; }
+.section-card li { margin-bottom: 6px; color: var(--text-primary); }
+strong { color: var(--text-headers); font-weight: 700; }
+
+/* ── RIGHT SIDEBAR ── */
+.sidebar-right { position: sticky; top: 80px; align-self: start; display: flex; flex-direction: column; gap: 16px; }
+.chip-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; box-shadow: none; }
+.chip-title { font-size: 9px; font-weight: 800; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.chip-value { font-size: 14.5px; font-weight: 800; color: var(--brand-red); margin-bottom: 4px; line-height: 1.3; }
+.chip-desc { font-size: 11px; color: var(--text-primary); line-height: 1.45; }
+
+.nav-anchors { display: flex; flex-direction: column; gap: 4px; }
+.anchor-link { font-size: 12px; font-weight: 700; color: var(--text-primary); text-decoration: none; padding: 6px 8px; border-radius: 6px; border-left: 2px solid transparent; cursor: pointer; transition: all 0.15s; }
+.anchor-link:hover { color: var(--brand-red); background: var(--bg-sys); border-left-color: var(--brand-red); }
+
+.pill-list { display: flex; flex-direction: column; gap: 6px; }
+.pill-item { background: var(--bg-sys); border-radius: 6px; padding: 8px 12px; font-size: 11.5px; font-weight: 700; color: var(--text-headers); display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--line); }
+
+/* Выделенные блоки */
+.rule { border: 1px solid var(--brand-red); border-left: 4px solid var(--brand-red); padding: 16px; background: var(--status-err-bg); font-size: 14px; font-weight: 700; color: var(--text-headers); margin: 20px 0; border-radius: 4px; line-height: 1.6; }
+.rule-title { font-weight: 800; margin-bottom: 4px; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; color: var(--brand-red); }
+
+/* Оптимизация контрастности в темной теме для исключения эффекта "красный на синем" */
+[data-theme="dark"] .rule {
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--brand-red);
+    background: var(--bg-sys);
+    color: var(--text-primary);
+}
+[data-theme="dark"] .rule-title {
+    color: var(--text-headers);
+}
+
+/* Таблицы */
+.tbl { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; border: 1px solid var(--line); }
+.tbl th { background: var(--brand-dark); border: 1px solid var(--line); padding: 10px 12px; font-weight: 700; color: #ffffff; }
+.tbl td { border: 1px solid var(--line); padding: 10px 12px; vertical-align: top; color: var(--text-primary); background: var(--bg-card); }
+
+/* SLA */
+.dl-box-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin: 16px 0; box-shadow: none; }
+.dl-header-bar { background: var(--brand-dark); padding: 12px 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #FFFFFF; letter-spacing: 0.8px; }
+
+/* ЭЛЕМЕНТЫ ВИЗУАЛЬНОЙ РАЗМЕТКИ ДЛЯ МЕТОД. МАТЕРИАЛОВ */
+.comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+@media (max-width: 768px) { .comp-grid { grid-template-columns: 1fr; } }
+.comp-card { border: 1px solid var(--line); background: var(--bg-card); border-radius: 8px; padding: 20px; }
+.comp-card h3 { margin-top: 0; color: var(--brand-red); border-bottom: 1.5px solid var(--line); padding-bottom: 6px; }
+.comp-list { list-style: none; padding: 0; margin: 0; }
+.comp-list li { margin-bottom: 10px; padding-left: 14px; position: relative; font-size: 13.5px; }
+.comp-list li::before { content: ""; width: 6px; height: 6px; background-color: var(--brand-red); border-radius: 50%; position: absolute; left: 0; top: 8px; }
+
+/* Специфические элементы для макетов скриншотов */
+.ui-mockup-wrapper { display: flex; flex-direction: column; align-items: center; gap: 16px; background: #E2E2DC; border-radius: 12px; padding: 32px 16px; margin: 20px 0; }
+[data-theme="dark"] .ui-mockup-wrapper { background: #0A1E36; border: 1px solid var(--line); }
+
+.ui-login-box { background: #FFFFFF; border-radius: 20px; padding: 40px 32px; max-width: 380px; width: 100%; font-family: 'Manrope', sans-serif; color: #3D5068; }
+.ui-logo-area { display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 800; font-size: 18px; color: #0A1E36; margin-bottom: 24px; }
+.ui-logo-sq { width: 18px; height: 18px; background: #FF1300; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.ui-logo-inner { width: 8px; height: 8px; background: #FFFFFF; border-radius: 50%; }
+.ui-login-title { font-size: 20px; font-weight: 800; color: #0A1E36; text-align: center; margin-bottom: 8px; }
+.ui-login-subtitle { font-size: 12px; color: #7A8B9A; text-align: center; margin-bottom: 28px; }
+.ui-form-group { margin-bottom: 16px; }
+.ui-form-label { font-size: 10px; font-weight: 800; color: #7A8B9A; text-transform: uppercase; margin-bottom: 6px; display: block; letter-spacing: 0.5px; }
+.ui-form-input { width: 100%; padding: 12px 16px; border: 1px solid #E2E2DC; border-radius: 8px; font-size: 13px; background: #F5F5F3; color: #0A1E36; font-family: inherit; }
+.ui-form-input-pass { display: flex; align-items: center; position: relative; }
+.ui-eye-icon { position: absolute; right: 16px; color: #7A8B9A; font-size: 14px; }
+.ui-btn-blue { width: 100%; background: #1B5299; color: #FFFFFF; border: none; padding: 14px; border-radius: 8px; font-weight: 800; font-size: 14px; cursor: pointer; text-align: center; transition: opacity 0.15s; margin-top: 12px; }
+.ui-btn-blue:hover { opacity: 0.95; }
+.ui-link-forgot { display: block; text-align: center; margin-top: 20px; color: #1B5299; font-size: 13px; font-weight: 700; text-decoration: none; }
+.ui-contacts-block { border-top: 1px solid #E2E2DC; margin-top: 32px; padding-top: 16px; display: flex; gap: 12px; }
+.ui-contact-col { flex: 1; text-align: center; }
+.ui-contact-lbl { font-size: 8px; font-weight: 800; color: #7A8B9A; text-transform: uppercase; margin-bottom: 4px; }
+.ui-contact-val { font-size: 12px; font-weight: 800; color: #0A1E36; }
+
+/* Макет окна ввода логина */
+.ui-modal-box { background: #FFFFFF; border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; font-family: 'Manrope', sans-serif; position: relative; color: #3D5068; }
+.ui-modal-close { position: absolute; top: 16px; right: 16px; width: 24px; height: 24px; border-radius: 50%; background: #F5F5F3; display: flex; align-items: center; justify-content: center; color: #7A8B9A; font-weight: bold; cursor: pointer; font-size: 12px; }
+.ui-modal-title { font-size: 18px; font-weight: 800; color: #0A1E36; text-align: center; margin-bottom: 12px; margin-top: 12px; }
+.ui-modal-subtitle { font-size: 12.5px; color: #7A8B9A; text-align: center; margin-bottom: 20px; line-height: 1.4; }
+.ui-modal-btn-dark { width: 100%; background: #1B5299; color: #FFFFFF; border: none; padding: 14px; border-radius: 8px; font-weight: 800; font-size: 14px; cursor: pointer; text-align: center; margin-top: 12px; }
+
+/* Макет окна выбора способа восстановления */
+.ui-modal-option { border: 1px solid #E2E2DC; border-radius: 8px; padding: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 700; color: #0A1E36; cursor: pointer; }
+.ui-modal-option-icon { color: #FF1300; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+.ui-modal-back-btn { display: block; text-align: center; margin-top: 20px; font-size: 11px; font-weight: 800; color: #7A8B9A; text-decoration: none; cursor: pointer; letter-spacing: 0.5px; }
+
+/* Шаги и интерактивные вкладки */
+.step-list { display: flex; flex-direction: column; gap: 12px; margin: 20px 0; }
+.step-card { background: var(--bg-sys); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; display: flex; gap: 16px; align-items: flex-start; }
+.step-marker { font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--brand-red); background: var(--status-err-bg); padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+.step-text { font-size: 13.5px; color: var(--text-primary); line-height: 1.5; }
+
+.tabs-header { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+.tab-btn { background: var(--bg-sys); border: 1.5px solid var(--line); color: var(--text-primary); font-family: inherit; font-size: 13px; font-weight: 700; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.15s ease; white-space: nowrap; }
+.tab-btn:hover { border-color: var(--status-ok); color: var(--text-headers); }
+.tab-btn.active { background: var(--status-ok-bg); border-color: var(--status-ok); color: var(--status-ok); }
+.tab-content-pane { display: none; }
+.tab-content-pane.active { display: block; }
+
+/* ── INTERACTIVE QUIZ DESIGN ── */
+.quiz-wrap { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r); padding: 28px 32px; box-shadow: none; }
+.quiz-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; border-bottom: 1.5px solid var(--line); padding-bottom: 12px; }
+.quiz-badge { background: var(--status-ok-bg); color: var(--status-ok); font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; }
+.quiz-title { font-size: 18px; font-weight: 800; color: var(--text-headers); }
+
+.quiz-progress-wrap { background: var(--line); border-radius: 4px; height: 6px; margin: 16px 0; overflow: hidden; }
+.quiz-progress-bar { background: var(--status-ok); height: 100%; width: 0%; transition: width 0.3s ease; }
+.quiz-progress-text { font-size: 12.5px; font-weight: 700; color: var(--muted); margin-bottom: 12px; }
+
+.qblock { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1.5px solid var(--line); }
+.qblock:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.q-text { font-size: 15px; font-weight: 800; color: var(--text-headers); margin-bottom: 14px; line-height: 1.45; }
+.q-opts { display: flex; flex-direction: column; gap: 8px; }
+
+.opt { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 14px; color: var(--text-primary); background: var(--bg-sys); cursor: pointer; transition: all 0.2s ease; }
+.opt:hover { border-color: var(--status-ok); background: var(--bg-card); color: var(--text-headers); }
+
+.opt.correct { border-color: var(--status-ok) !important; background-color: var(--status-ok-bg) !important; color: var(--text-headers) !important; font-weight: 700; }
+.opt.correct .om { background-color: var(--status-ok) !important; color: #FFFFFF !important; border-color: var(--status-ok) !important; }
+[data-theme="dark"] .opt.correct .om { color: #0A1E36 !important; }
+
+.opt.wrong { border-color: var(--brand-red) !important; background-color: var(--status-err-bg) !important; color: var(--text-headers) !important; }
+.opt.wrong .om { background-color: var(--brand-red) !important; color: #FFFFFF !important; border-color: var(--brand-red) !important; }
+
+.om { width: 24px; height: 24px; min-width: 24px; border-radius: 6px; border: 1.5px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; background: var(--bg-card); color: var(--muted); flex-shrink: 0 !important; }
+
+.q-expl { display: none; margin-top: 12px; padding: 14px 18px; border-radius: 8px; font-size: 13.5px; background: var(--bg-sys); border: 1.5px solid var(--line); line-height: 1.6; color: var(--text-headers); }
+.q-expl.show { display: block; }
+
+.quiz-score-box { display: none; background: var(--bg-card); border: 1.5px solid var(--line); border-radius: var(--r); padding: 32px; text-align: center; margin-top: 24px; box-shadow: none; }
+.quiz-score-box.show { display: block; }
+.qs-num { font-size: 32px; font-weight: 800; color: var(--status-ok); }
+
+.theme-toggle { display: none; }
+</style>
+</head>
+<body>
+
+<button class="theme-toggle" onclick="toggleTheme()">СМЕНИТЬ ТЕМУ</button>
+
+<!-- HEADER -->
+<header class="hdr">
+    <div class="hdr-inner">
+        <div class="logo-area">
+            <a class="logo" href="#" onclick="return false;">
+                <span class="logo-text-wifi">WIFI</span>
+                <div class="logo-sq">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="4" fill="#fff"/>
+                        <circle cx="8" cy="8" r="7" stroke="#fff" stroke-width="1.5"/>
+                    </svg>
+                </div>
+                <span class="logo-text-tochka">ТОЧКА</span>
+            </a>
+            <span class="badge-helpdesk">HELPDESK</span>
+        </div>
+
+        <nav class="nav-tabs">
+            <a href="#" class="nav-tab active" onclick="return false;">База знаний</a>
+            <a href="#" class="nav-tab" onclick="return false;">Регистрация звонка</a>
+            <a href="#" class="nav-tab" onclick="return false;">Тикеты <span class="tab-badge">2</span></a>
+            <a href="#" class="nav-tab" onclick="return false;">Обучение</a>
+        </nav>
+
+        <div class="hdr-right">
+            <button class="icon-btn" title="Уведомления">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="bell-badge">2</span>
+            </button>
+            
+            <button class="icon-btn" onclick="toggleTheme()" title="Сменить тему">
+                <svg class="i-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
+                <svg class="i-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+
+            <button class="icon-btn" title="Профиль">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+            </button>
+        </div>
+    </div>
+</header>
+
+<!-- MAIN GRID -->
+<div class="main-grid">
+
+    <!-- 1. ЛЕВАЯ КОЛОНКА -->
+    <aside class="sidebar-left">
+        <div class="tree-title">Разделы базы знаний</div>
+        
+        <div class="tree-node">
+            <div class="tree-folder">Обслуживание и доступ</div>
+            <ul class="tree-list">
+                <li>
+                    <a class="tree-item active" id="node-article" href="#" onclick="switchView('article'); return false;">Личный кабинет и доступ</a>
+                    <ul class="tree-sub-list">
+                        <li><a class="tree-sub-item" id="node-quiz" onclick="switchView('quiz'); return false;">→ Пройти тест</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+
+        <div class="tree-node">
+            <div class="tree-folder">Подключение и интернет</div>
+            <ul class="tree-list">
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Нет подключения</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Низкая скорость / обрывы</a></li>
+                <li><a class="tree-item disabled" href="#" onclick="return false;">Проблемы с оборудованием</a></li>
+            </ul>
+        </div>
+    </aside>
+
+    <!-- 2. ЦЕНТРАЛЬНАЯ КОЛОНКА -->
+    <main class="reader-content">
+        
+        <!-- ОКНО А. ТЕКСТ СТАТЬИ -->
+        <div class="view-pane active" id="paneArticle">
+            <div class="article-title-block">
+                <div>
+                    <div style="font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase;">Обслуживание</div>
+                    <h1>Личный кабинет и доступ</h1>
+                </div>
+                <div style="margin-bottom: 6px;">
+                    <span class="badge-alert" id="statusIndicatorInner">Нужно изучить</span>
+                </div>
+            </div>
+
+            <!-- МЕТОДИЧЕСКИЙ МАТЕРИАЛ -->
+            <div class="section-card" id="sec-article">
+                <div class="section-lbl">Инструкция</div>
+                <h2>Методический материал</h2>
+                
+                <h3>Что вы узнаете:</h3>
+                <ul>
+                    <li>Главное правило безопасности: пароль не диктуем</li>
+                    <li>Как работает робот-автоинформатор и что делать, если он не звонит</li>
+                    <li>Когда можно восстановить пароль по почте (и когда это единственный вариант)</li>
+                    <li>4 типовые ситуации с разбором реальных диалогов</li>
+                    <li>Чек-лист: когда решать самому, когда — заявка</li>
+                    <li>Типичные ошибки</li>
+                </ul>
+
+                <h3>Три темы — одна логика</h3>
+                <p>В раздел «Личный кабинет и доступ» входят три подтемы:</p>
+                <ul>
+                    <li>Забыл пароль / не могу войти</li>
+                    <li>Детализация трафика</li>
+                    <li>Ошибка при входе / регистрации</li>
+                </ul>
+                <p>Но у них общая суть: абонент не может попасть в свой ЛК или разобраться в том, что там видит.</p>
+                
+                <div class="rule">
+                    <div class="rule-title">Самое главное, что нужно запомнить</div>
+                    Оператор НЕ имеет права диктовать пароль или менять логин. Это политика безопасности. Восстановление доступа — только через систему.
+                </div>
+
+                <h3>Вход в Личный кабинет</h3>
+                <p>На странице авторизации абонент вводит свой логин и пароль. Если данные утеряны, сброс начинается по кнопке <strong>«Забыли пароль?»</strong>.</p>
+                
+                <!-- ИНТЕРАКТИВНЫЙ МАКЕТ 1: ФОРМА АВТОРИЗАЦИИ (ВЕРСИЯ С PDF) -->
+                <div class="ui-mockup-wrapper">
+                    <div class="ui-login-box">
+                        <div class="ui-logo-area">
+                            <span>WIFI</span>
+                            <div class="ui-logo-sq"><div class="ui-logo-inner"></div></div>
+                            <span>ТОЧКА</span>
+                        </div>
+                        <div class="ui-login-title">Личный кабинет</div>
+                        <div class="ui-login-subtitle">Войдите, чтобы управлять услугами и балансом</div>
+                        
+                        <div class="ui-form-group">
+                            <span class="ui-form-label">логин</span>
+                            <input class="ui-form-input" type="text" placeholder="Ваш логин" value="" readonly>
+                        </div>
+                        <div class="ui-form-group">
+                            <span class="ui-form-label">пароль</span>
+                            <div class="ui-form-input-pass">
+                                <input class="ui-form-input" type="password" value="............" readonly>
+                                <span class="ui-eye-icon">👁</span>
+                            </div>
+                        </div>
+                        
+                        <button class="ui-btn-blue" type="button" onclick="return false;">Войти</button>
+                        <a href="#" class="ui-link-forgot" onclick="return false;">Забыли пароль?</a>
+                        
+                        <div class="ui-contacts-block">
+                            <div class="ui-contact-col" style="border-right: 1px solid #E2E2DC;">
+                                <div class="ui-contact-lbl">горячая линия</div>
+                                <div class="ui-contact-val">8 (800) 302-15-42</div>
+                            </div>
+                            <div class="ui-contact-col">
+                                <div class="ui-contact-lbl">сайт</div>
+                                <div class="ui-contact-val">wifitochka.ru</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>Ввод логина абонента</h3>
+                <p>Нажав «Забыли пароль», абонент попадает на форму ввода логина учетной записи.</p>
+
+                <!-- ИНТЕРАКТИВНЫЙ МАКЕТ 2: ВВОД ЛОГИНА (ВЕРСИЯ С PDF) -->
+                <div class="ui-mockup-wrapper">
+                    <div class="ui-modal-box">
+                        <div class="ui-modal-close">×</div>
+                        <div class="ui-modal-title">Восстановление пароля</div>
+                        <div class="ui-modal-subtitle">Введите логин абонента (как при входе в личный кабинет).</div>
+                        <input class="ui-form-input" type="text" placeholder="Логин" value="" readonly>
+                        <button class="ui-modal-btn-dark" type="button" onclick="return false;">Продолжить</button>
+                    </div>
+                </div>
+
+                <h3>Способы восстановления</h3>
+                <p>После ввода логина система предложит выбрать удобный способ подтверждения личности абонента:</p>
+
+                <!-- ИНТЕРАКТИВНЫЙ МАКЕТ 3: ВЫБОР СПОСОБА (ВЕРСИЯ С PDF - ОБЩИЙ) -->
+                <div class="ui-mockup-wrapper">
+                    <div class="ui-modal-box">
+                        <div class="ui-modal-close">×</div>
+                        <div class="ui-modal-title">Способ восстановления</div>
+                        <div class="ui-modal-subtitle">Выберите, как подтвердить, что это ваш аккаунт:</div>
+                        
+                        <div class="ui-modal-option">
+                            <div class="ui-modal-option-icon">✉</div>
+                            <span>Письмо на email</span>
+                        </div>
+                        
+                        <div class="ui-modal-option" style="margin-bottom: 20px;">
+                            <div class="ui-modal-option-icon">📞</div>
+                            <span>Звонок от бота</span>
+                        </div>
+                        
+                        <a class="ui-modal-back-btn" onclick="return false;">← НАЗАД</a>
+                    </div>
+                </div>
+
+                <div class="comp-grid" style="margin-top: 24px;">
+                    <div class="comp-card" style="border-color: var(--status-ok);">
+                        <h3 style="color: var(--status-ok);">Способ через робота (по телефону) — основной</h3>
+                        <ul class="comp-list" style="--brand-red: var(--status-ok);">
+                            <li>На странице входа ЛК нажать «Забыл пароль»</li>
+                            <li>Ввести номер телефона (привязанный к учётной записи)</li>
+                            <li>Робот звонит на этот номер, диктует 4-значный код</li>
+                            <li>Ввести код, задать новый пароль</li>
+                        </ul>
+                    </div>
+                    <div class="comp-card" style="border-color: var(--brand-red);">
+                        <h3>Способ через письмо на почту — альтернативный</h3>
+                        <p style="font-size: 13px; margin: 0 0 12px 0;">Если у абонента привязана почта, можно сбросить пароль через электронную почту:</p>
+                        <ul class="comp-list">
+                            <li>Нажать «Забыл пароль», выбрать восстановление по почте</li>
+                            <li>На почту приходит ссылка для сброса</li>
+                            <li>Перейти по ссылке, задать новый пароль</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>Нюансы:</h3>
+                <ul>
+                    <li>Восстановление через робота идёт только по номеру телефона — почта здесь не работает</li>
+                    <li>Если почта не привязана — восстановление по почте недоступно</li>
+                    <li>Код от робота приходит в виде звонка, не СМС</li>
+                    <li>В некоторых населённых пунктах нет мобильной связи — там восстановление только через почту</li>
+                </ul>
+
+                <h3>Что может пойти не так: 4 типовые ситуации</h3>
+                <p style="font-size: 13.5px; margin-bottom: 16px;">Выберите интересующую ситуацию для быстрого перехода к алгоритму решения:</p>
+                
+                <!-- ИНТЕРАКТИВНЫЕ ТАБЫ ДЛЯ СИТУАЦИЙ -->
+                <div class="tabs-header">
+                    <button class="tab-btn active" onclick="switchSituationTab(this, 'sit-robot')">Робот не звонит</button>
+                    <button class="tab-btn" onclick="switchSituationTab(this, 'sit-login')">Не пускает в ЛК</button>
+                    <button class="tab-btn" onclick="switchSituationTab(this, 'sit-traffic')">Где посмотреть трафик?</button>
+                    <button class="tab-btn" onclick="switchSituationTab(this, 'sit-register')">Регистрация / Вход</button>
+                </div>
+
+                <!-- Содержимое табов -->
+                <div class="tab-content-container" style="border: 1.5px solid var(--line); padding: 20px; border-radius: 8px; background: var(--bg-sys); margin-bottom: 24px;">
+                    
+                    <!-- Ситуация 1 -->
+                    <div class="tab-content-pane active" id="sit-robot">
+                        <p><strong>Что говорит абонент:</strong> «Нажал забыл пароль, ввёл номер, но звонка нет уже 5 минут».</p>
+                        <p><strong>Диагностика:</strong></p>
+                        <ul>
+                            <li>Откройте карточку абонента — сверьте номер телефона</li>
+                            <li>Если номер верный: посоветуйте сброс через почту или проверьте блокировку звонков</li>
+                            <li>Если не помогает — передавайте заявку инженерам</li>
+                            <li>Если номер старый — заявка на смену номера</li>
+                        </ul>
+                        <p><strong>Данные для заявки:</strong> ID, номер телефона</p>
+                        <div class="rule" style="background: var(--bg-card); margin-bottom: 0;">
+                            <div class="rule-title">Важно от инженеров</div>
+                            Поскольку функция сброса пароля уже введена, рекомендовать сбросить пароль через робота или почту нужно в первую очередь. Если робот не звонит, а почта не подходит — передавайте заявку.
+                        </div>
+                    </div>
+
+                    <!-- Ситуация 2 -->
+                    <div class="tab-content-pane" id="sit-login">
+                        <p><strong>Что говорит абонент:</strong> «Всё ввожу верно, пароль помню, но пишет ошибка».</p>
+                        <p><strong>Проверка:</strong></p>
+                        <ul>
+                            <li>Есть ли активный тариф? Если нет — абонент не сможет войти, это нормально</li>
+                            <li>Нет ли лишних пробелов или автозамены регистра?</li>
+                            <li>Если тариф есть и всё верно, но ошибка — заявка</li>
+                        </ul>
+                        <div class="rule" style="background: var(--bg-card); margin-bottom: 0;">
+                            <div class="rule-title">Важно</div>
+                            Главное — не путать проблему входа с отсутствием тарифа. Если абонент говорит «не пускает», всегда сначала проверьте статус тарифа.
+                        </div>
+                    </div>
+
+                    <!-- Ситуация 3 -->
+                    <div class="tab-content-pane" id="sit-traffic">
+                        <p><strong>Что говорит абонент:</strong> «Покажите, сколько я потратил», «Сколько ГБ осталось?»</p>
+                        <p>Необходимо рассказать абоненту, как он может самостоятельно найти эту информацию в ЛК абонента:</p>
+                        <ul>
+                            <li>История подключений -> детализация по дням</li>
+                            <li>Текущий тариф -> остаток трафика</li>
+                            <li>Операции -> списания и подключения</li>
+                        </ul>
+                        <p><strong>Когда создавать заявку:</strong> только если в ЛК информация не отображается или нужна выгрузка за длительный период.</p>
+                    </div>
+
+                    <!-- Ситуация 4 -->
+                    <div class="tab-content-pane" id="sit-register">
+                        <p><strong>Для регистрации (новая учётка):</strong></p>
+                        <ul>
+                            <li>Все ли поля заполнены? (ФИО, телефон, почта)</li>
+                            <li>Пароль ≥ 8 символов, заглавные + строчные + цифры</li>
+                            <li>Номер телефона действующий (придёт код)</li>
+                            <li>Если всё верно, но ошибка — заявка со скриншотом</li>
+                        </ul>
+                        <p><strong>Для входа (есть учётка, но ошибка):</strong></p>
+                        <ul>
+                            <li>Проверить диагностику: тариф активен? учётка не в архиве?</li>
+                            <li>Сверить логин с карточкой</li>
+                            <li>Если всё ок, но пишет ошибку — заявка</li>
+                        </ul>
+                    </div>
+
+                </div>
+
+                <h3>Чек-лист</h3>
+                <table class="tbl">
+                    <thead>
+                        <tr>
+                            <th style="width: 40%;">Ситуация</th>
+                            <th style="width: 30%;">Решаешь сам</th>
+                            <th style="width: 30%;">Заявка</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Забыл пароль, робот не звонит — есть почта</td>
+                            <td>Порекомендовать сброс по почте</td>
+                            <td>Если почта не помогла</td>
+                        </tr>
+                        <tr>
+                            <td>Забыл пароль, робот не звонит, почты нет</td>
+                            <td>—</td>
+                            <td>Да</td>
+                        </tr>
+                        <tr>
+                            <td>В населённом пункте нет мобильной связи</td>
+                            <td>Порекомендовать сброс по почте</td>
+                            <td>Если почты нет</td>
+                        </tr>
+                        <tr>
+                            <td>Номер утерян / изменился</td>
+                            <td>—</td>
+                            <td>Да (смена номера)</td>
+                        </tr>
+                        <tr>
+                            <td>Ошибка при входе (тариф есть, логин верный)</td>
+                            <td>—</td>
+                            <td>Да</td>
+                        </tr>
+                        <tr>
+                            <td>Ошибка при регистрации</td>
+                            <td>Проверить поля</td>
+                            <td>Если поля верны</td>
+                        </tr>
+                        <tr>
+                            <td>Детализация не отображается в ЛК</td>
+                            <td>—</td>
+                            <td>Да</td>
+                        </tr>
+                        <tr>
+                            <td>Абонент не помнит логин</td>
+                            <td>Посмотреть в карточке</td>
+                            <td>—</td>
+                        </tr>
+                        <tr>
+                            <td>Абонент просит продиктовать пароль</td>
+                            <td>НЕТ (нельзя)</td>
+                            <td>—</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Примеры диалогов</h3>
+                
+                <div class="rule" style="border-color: var(--status-ok);">
+                    <div class="rule-title" style="color: var(--status-ok);">Когда абонент говорит «забыл пароль»</div>
+                    «Восстановить пароль можно двумя способами. Первый — на странице входа нажмите «Забыл пароль». На номер указанный в договоре позвонит робот и продиктует код. Второй — если у вас привязана почта, можно сбросить пароль через письмо на электронную почту».
+                </div>
+
+                <div class="rule" style="border-color: var(--status-ok);">
+                    <div class="rule-title" style="color: var(--status-ok);">Когда абонент говорит «робот не звонит»</div>
+                    «Проверьте, не блокирует ли ваш телефон звонки с неизвестных номеров. Если блокировки нет — попробуйте восстановить пароль через электронную почту. Если и это не поможет, я передам информацию специалистам».
+                </div>
+
+                <div class="rule" style="border-color: var(--status-ok);">
+                    <div class="rule-title" style="color: var(--status-ok);">Когда в населённом пункте нет мобильной связи</div>
+                    «В вашем населённом пункте восстановление через звонок робота может не работать. Воспользуйтесь сбросом пароля через электронную почту — нажмите «Забыл пароль» и выберите восстановление по почте».
+                </div>
+
+                <div class="rule" style="border-color: var(--status-ok);">
+                    <div class="rule-title" style="color: var(--status-ok);">Когда абонент говорит «где посмотреть трафик»</div>
+                    «Зайдите в личный кабинет, откройте «Профиль» -> «История авторизаций» — там видна детализация по дням. Остаток по текущему тарифу виден на главной странице ЛК».
+                </div>
+
+                <div class="rule" style="border-color: var(--status-ok);">
+                    <div class="rule-title" style="color: var(--status-ok);">Когда абонент говорит «не могу зарегистрироваться»</div>
+                    «Проверьте, все ли поля заполнены: ФИО, телефон, почта. Пароль должен быть не меньше 8 символов, с заглавными и строчными буквами и хотя бы одной цифрой. Если всё верно, но не получается — напишите нам, передадим специалистам».
+                </div>
+
+            </div>
+
+            <!-- ЧЕГО НЕ ДЕЛАТЬ -->
+            <div class="section-card" id="sec-warnings">
+                <div class="section-lbl">Запреты</div>
+                <h2>Чего нельзя делать</h2>
+                
+                <div class="rule">
+                    <div class="rule-title">Критически важно</div>
+                    <ul>
+                        <li>Не диктовать пароль — это нарушение политики безопасности. Даже если абонент просит.</li>
+                        <li>Не менять логин — логин (ID) не меняется, это уникальный идентификатор учётной записи.</li>
+                        <li>Не гадать, в чём проблема — если неочевидно, создавайте заявку с описанием.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- ИТОГОВЫЙ БЛОК ДЛЯ OBSERVER -->
+            <div class="section-card" id="scrollTargetSummary">
+                <p>Убедитесь, что вы проверили статус тарифа абонента перед созданием технической заявки на ошибку входа.</p>
+                <div style="text-align: center; border-top: 1.5px solid var(--line); padding-top: 24px;">
+                    <button class="btn-main" onclick="switchView('quiz'); return false;">Пройти тестирование</button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ОКНО Б. ТЕСТИРОВАНИЕ -->
+        <div class="view-pane" id="paneQuiz">
+            <div class="quiz-wrap" id="quizBlockContainer">
+                <div class="quiz-hdr">
+                    <span class="quiz-badge">Тест</span>
+                    <span class="quiz-title">Проверка знаний: Личный кабинет и доступ</span>
+                </div>
+                
+                <div class="quiz-progress-wrap">
+                    <div class="quiz-progress-bar" id="quizProgressBar"></div>
+                </div>
+                <div class="quiz-progress-text" id="quizProgressText">Вопрос 1 из 3</div>
+
+                <div id="quizContainer"></div>
+                
+                <div class="quiz-score-box" id="quizScoreBox">
+                    <div class="qs-num" id="quizScoreText">Результат</div>
+                    <div id="quizScoreSummary" style="font-size: 15px; font-weight: 700; color: var(--text-headers); margin-top: 8px; margin-bottom: 12px; line-height: 1.5;"></div>
+                    <div id="quizPraiseText" style="font-size: 13px; color: var(--muted); margin-bottom: 24px; line-height: 1.55;"></div>
+                    
+                    <div style="text-align: center; border-top: 1.5px solid var(--line); padding-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;" id="quizActionBlock"></div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 3. ПРАВАЯ КОЛОНКА -->
+    <aside class="sidebar-right">
+        
+        <div class="chip-card" id="quickAccessBlock">
+            <div class="chip-title">Быстрый доступ</div>
+            <nav class="nav-anchors">
+                <a class="anchor-link" href="#sec-article">Инструкция</a>
+                <a class="anchor-link" href="#sec-warnings">Чего нельзя делать</a>
+                <a class="anchor-link" href="#scrollTargetSummary">Тестирование</a>
+            </nav>
+        </div>
+
+        <div class="chip-card">
+            <div class="chip-title">Шаблон тикета</div>
+            <p style="font-size:11.5px; margin-bottom: 6px;"><strong>Для сброса пароля (при ошибках робота):</strong></p>
+            <p style="font-size:11px; background: var(--bg-sys); padding: 8px; border-radius: 4px; font-family: monospace; border: 1px solid var(--line); color: var(--text-primary); margin: 0; line-height: 1.6;">
+                ID: [ID из карточки]<br>
+                Телефон: [Действующий номер]<br>
+                Тип ошибки: [робот не звонит / ошибка регистрации]<br>
+                Срок: [SLA инженеров]
+            </p>
+        </div>
+
+        <div class="chip-card">
+            <div class="chip-title">SLA инженеров</div>
+            <div class="pill-list">
+                <div class="pill-item">
+                    <span>Будни (8:00 - 16:00 МСК)</span>
+                    <span style="color: var(--status-ok); font-weight: 800;">15 мин</span>
+                </div>
+                <div class="pill-item" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                    <span>Выходные и вечер</span>
+                    <span style="color: var(--status-ok); font-size:10px;">до след. раб. дня</span>
+                </div>
+            </div>
+        </div>
+
+    </aside>
+
+</div>
+
+<script>
+// --- ОБЪЕКТ ТЕСТИРОВАНИЯ ---
+const quizData = [
+    {
+        q: "Имеет ли право оператор контакт-центра продиктовать абоненту его текущий пароль или изменить его логин (ID) по его просьбе?",
+        opts: [
+            "Да, если абонент прошел полную верификацию по номеру телефона",
+            "Категорически нет, это грубое нарушение политики безопасности, а логин (ID) не меняется",
+            "Да, но только по предварительно созданной заявке техническим инженерам"
+        ],
+        ans: 1,
+        expl: "Согласно правилам: оператор НЕ имеет права диктовать пароль или менять логин — это политика безопасности. Логин (ID) не меняется, это уникальный идентификатор учетной записи."
+    },
+    {
+        q: "Что должен проверить оператор в первую очередь, если абонент сообщает: «Я же все ввожу верно, пароль помню, но пишет ошибку при входе»?",
+        opts: [
+            "Сразу составить техническую заявку инженерам на сброс пароля в системе",
+            "Проверить статус тарифа (если активного тарифа нет — войти в ЛК невозможно)",
+            "Порекомендовать абоненту сменить роутер"
+        ],
+        ans: 1,
+        expl: "Согласно регламенту: главное — не путать проблему входа с отсутствием тарифа. Если абонент говорит «не пускает», всегда сначала проверьте статус тарифа."
+    },
+    {
+        q: "Каким образом абоненту поступает проверочный код при основном способе сброса пароля через робота?",
+        opts: [
+            "В виде текстового СМС-сообщения на привязанный номер телефона",
+            "В виде звонка от робота на привязанный номер телефона, который диктует код",
+            "В виде ссылки на привязанный адрес электронной почты"
+        ],
+        ans: 1,
+        expl: "Согласно тексту: код от робота приходит в виде звонка, а не СМС. Восстановление по почте является альтернативным способом сброса."
+    }
+];
+
+// Локальное состояние
+let state = { studied: false, testPassed: false };
+if (localStorage.getItem('cc_lk_access_only_strict_view')) {
+    state = JSON.parse(localStorage.getItem('cc_lk_access_only_strict_view'));
+}
+
+let activeQuestionIndex = 0;
+let correctAnswersCount = 0;
+let quizAttempts = {};
+
+// Функция для интерактивного переключения таборов в секции ситуаций
+function switchSituationTab(btnEl, tabId) {
+    // Деактивируем все кнопки вкладок
+    const buttons = document.querySelectorAll('.tab-btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
+
+    // Активируем текущую кнопку
+    btnEl.classList.add('active');
+
+    // Скрываем все панели содержимого
+    const panes = document.querySelectorAll('.tab-content-pane');
+    panes.forEach(pane => pane.classList.remove('active'));
+
+    // Показываем целевую панель
+    const targetPane = document.getElementById(tabId);
+    if (targetPane) {
+        targetPane.classList.add('active');
+    }
+}
+
+function updateProgressIndicator() {
+    const indicatorInner = document.getElementById('statusIndicatorInner');
+    const isCompleted = state.studied && state.testPassed;
+    
+    if (indicatorInner) {
+        if (isCompleted) {
+            indicatorInner.textContent = 'Изучено';
+            indicatorInner.className = 'status-ok';
+        } else {
+            indicatorInner.textContent = 'Нужно изучить';
+            indicatorInner.className = 'badge-alert';
+        }
+    }
+}
+
+function saveState() {
+    localStorage.setItem('cc_lk_access_only_strict_view', JSON.stringify(state));
+    updateProgressIndicator();
+}
+
+function renderQuiz() {
+    const quizContainer = document.getElementById('quizContainer');
+    quizContainer.innerHTML = '';
+    
+    const scoreBox = document.getElementById('quizScoreBox');
+    scoreBox.classList.remove('show');
+
+    if (state.testPassed) {
+        document.getElementById('quizProgressBar').style.width = '100%';
+        document.getElementById('quizProgressText').textContent = 'Тестирование завершено';
+        scoreBox.classList.add('show');
+        document.getElementById('quizScoreText').textContent = 'Результаты';
+        document.getElementById('quizScoreSummary').innerHTML = `Вы ответили правильно на <strong>3 из 3</strong> вопросов.<br>Ошибок: <strong>0</strong>.`;
+        document.getElementById('quizPraiseText').textContent = 'Тема успешно усвоена.';
+        renderScoreActions(true);
+        return;
+    }
+
+    const totalQuestions = quizData.length;
+    const progressPct = Math.round((activeQuestionIndex / totalQuestions) * 100);
+    document.getElementById('quizProgressBar').style.width = `${progressPct}%`;
+    document.getElementById('quizProgressText').textContent = `Вопрос ${activeQuestionIndex + 1} из ${totalQuestions}`;
+
+    const qItem = quizData[activeQuestionIndex];
+
+    const qBlock = document.createElement('div');
+    qBlock.className = 'qblock';
+    qBlock.id = `qblock-${activeQuestionIndex}`;
+
+    const qText = document.createElement('div');
+    qText.className = 'q-text';
+    qText.textContent = qItem.q;
+    qBlock.appendChild(qText);
+
+    const qOpts = document.createElement('div');
+    qOpts.className = 'q-opts';
+
+    qItem.opts.forEach((optText, optIdx) => {
+        const opt = document.createElement('div');
+        opt.className = 'opt';
+
+        const om = document.createElement('span');
+        om.className = 'om';
+        om.textContent = String.fromCharCode(65 + optIdx);
+        opt.appendChild(om);
+
+        const optLabel = document.createElement('span');
+        optLabel.textContent = optText;
+        opt.appendChild(optLabel);
+
+        opt.addEventListener('click', () => {
+            handleQuizSelection(opt, activeQuestionIndex, optIdx, qItem.ans, qItem.expl);
+        });
+
+        qOpts.appendChild(opt);
+    });
+
+    qBlock.appendChild(qOpts);
+
+    const qExpl = document.createElement('div');
+    qExpl.className = 'q-expl';
+    qExpl.id = `expl-${activeQuestionIndex}`;
+    qBlock.appendChild(qExpl);
+
+    const nextBtnContainer = document.getElementById('nextBtnContainer');
+    nextBtnContainer.id = 'nextBtnContainer';
+    nextBtnContainer.style.textAlign = 'right';
+    qBlock.appendChild(nextBtnContainer);
+
+    quizContainer.appendChild(qBlock);
+}
+
+function handleQuizSelection(optEl, qIdx, selectedIdx, correctIdx, explanation) {
+    const qBlock = document.getElementById(`qblock-${qIdx}`);
+    const opts = qBlock.querySelectorAll('.opt');
+
+    if (qBlock.classList.contains('answered')) return;
+    qBlock.classList.add('answered');
+
+    opts.forEach(opt => opt.style.pointerEvents = 'none');
+
+    const isCorrect = selectedIdx === correctIdx;
+    if (isCorrect) {
+        optEl.classList.add('correct');
+        correctAnswersCount++;
+    } else {
+        optEl.classList.add('wrong');
+        opts[correctIdx].classList.add('correct');
+    }
+
+    quizAttempts[qIdx] = isCorrect;
+
+    const explBox = document.getElementById(`expl-${qIdx}`);
+    explBox.innerHTML = `<strong>Разбор:</strong> ${explanation}`;
+    explBox.classList.add('show');
+
+    const nextBtnContainer = document.getElementById('nextBtnContainer');
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'btn-next';
+    
+    const totalQuestions = quizData.length;
+    nextBtn.textContent = (qIdx + 1 === totalQuestions) ? 'Показать результат' : 'Далее';
+    
+    nextBtn.addEventListener('click', () => {
+        moveToNextQuestion();
+    });
+    
+    nextBtnContainer.appendChild(nextBtn);
+}
+
+function moveToNextQuestion() {
+    const totalQuestions = quizData.length;
+    activeQuestionIndex++;
+
+    if (activeQuestionIndex < totalQuestions) {
+        renderQuiz();
+    } else {
+        finishTesting();
+    }
+}
+
+function finishTesting() {
+    const totalQuestions = quizData.length;
+    const isPerfect = correctAnswersCount === totalQuestions;
+    const incorrectCount = totalQuestions - correctAnswersCount;
+
+    if (isPerfect) {
+        state.testPassed = true;
+        saveState();
+    }
+
+    document.getElementById('quizProgressBar').style.width = '100%';
+    document.getElementById('quizProgressText').textContent = 'Тестирование завершено';
+    document.getElementById('quizContainer').innerHTML = '';
+    
+    const scoreBox = document.getElementById('quizScoreBox');
+    scoreBox.classList.add('show');
+
+    const resText = document.getElementById('quizScoreText');
+    if (resText) resText.textContent = 'Результат';
+    
+    document.getElementById('quizScoreSummary').innerHTML = `
+        Вы ответили правильно на <strong>${correctAnswersCount} из ${totalQuestions}</strong> вопросов.<br>
+        Количество ошибок: <strong>${incorrectCount}</strong>.
+    `;
+    
+    document.getElementById('quizPraiseText').innerHTML = isPerfect 
+        ? 'Материал темы усвоен.'
+        : 'Рекомендуется повторно ознакомиться с памяткой для исключения ошибок.';
+
+    renderScoreActions(isPerfect);
+}
+
+function renderScoreActions(isPerfect) {
+    const actionBlock = document.getElementById('quizActionBlock');
+    actionBlock.innerHTML = '';
+
+    if (isPerfect) {
+        const nextSecBtn = document.createElement('button');
+        nextSecBtn.className = 'btn-main';
+        nextSecBtn.style.backgroundColor = 'var(--status-ok)';
+        nextSecBtn.textContent = 'Перейти к следующему разделу';
+        nextSecBtn.addEventListener('click', () => {
+            goToNextSection();
+        });
+        actionBlock.appendChild(nextSecBtn);
+    } else {
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-secondary';
+        retryBtn.textContent = 'Повторить материал';
+        retryBtn.addEventListener('click', () => {
+            switchView('article');
+        });
+        actionBlock.appendChild(retryBtn);
+
+        const forceNextBtn = document.createElement('button');
+        forceNextBtn.className = 'btn-main';
+        forceNextBtn.style.backgroundColor = 'var(--status-ok)';
+        forceNextBtn.textContent = 'Продолжить обучение';
+        forceNextBtn.addEventListener('click', () => {
+            goToNextSection();
+        });
+        actionBlock.appendChild(forceNextBtn);
+    }
+}
+
+function restartQuiz() {
+    activeQuestionIndex = 0;
+    correctAnswersCount = 0;
+    quizAttempts = {};
+    
+    const scoreBox = document.getElementById('quizScoreBox');
+    scoreBox.classList.remove('show');
+    
+    renderQuiz();
+}
+
+function switchView(viewType) {
+    const paneArticle = document.getElementById('paneArticle');
+    const paneQuiz = document.getElementById('paneQuiz');
+    const linkArticle = document.getElementById('node-article');
+    const linkQuiz = document.getElementById('node-quiz');
+    const quickAccess = document.getElementById('quickAccessBlock');
+
+    if (viewType === 'article') {
+        paneArticle.classList.add('active');
+        paneQuiz.classList.remove('active');
+        linkArticle.classList.add('active');
+        linkQuiz.classList.remove('active');
+        if (quickAccess) quickAccess.style.display = 'block';
+    } else if (viewType === 'quiz') {
+        paneQuiz.classList.add('active');
+        paneArticle.classList.remove('active');
+        linkArticle.classList.remove('active');
+        linkQuiz.classList.add('active');
+        if (quickAccess) quickAccess.style.display = 'none';
+        
+        state.studied = true;
+        saveState();
+        restartQuiz();
+    }
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function goToNextSection() {
+    alert("Переход к следующему учебному модулю.");
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    updateProgressIndicator();
+    renderQuiz();
+    switchView('article');
+
+    const summaryBlock = document.getElementById('scrollTargetSummary');
+    if (summaryBlock) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    if (!state.studied) {
+                        state.studied = true;
+                        saveState();
+                    }
+                }
+            });
+        }, { threshold: 0.1 });
+
+        observer.observe(summaryBlock);
+    }
+});
+
+function toggleTheme() {
+    const root = document.documentElement;
+    const nextTheme = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', nextTheme);
+}
+</script>
+
+</body>
+</html>

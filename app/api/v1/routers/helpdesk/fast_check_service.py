@@ -60,6 +60,7 @@ class _Ctx:
     tariff_connected: bool = False
     real_type: Optional[str] = None
     groupname: Optional[str] = None
+    tariff_min_price: Optional[float] = None
 
 
 async def _load_instruction(
@@ -72,8 +73,6 @@ async def _load_instruction(
     if key not in cache:
         row = None
         variants_to_try = [variant]
-        if test_code == "tariff_state" and variant in (7, 9):
-            variants_to_try.append(6)
         if 1 <= variant <= 7:
             variants_to_try.append(0)
         for v in variants_to_try:
@@ -468,14 +467,16 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
         tariff_min_price: Optional[float] = None
         if ctx.is_jur == 2:
             variant = 26
-        elif tariff_ended:
-            variant = 7
         else:
             tariff_min_price = await _min_tariff_price(session, ctx.id_grp)
+            ctx.tariff_min_price = tariff_min_price
             tariff_sufficient = (
                 tariff_min_price is not None and ctx.balance >= tariff_min_price
             )
-            variant = 6 if tariff_sufficient else 9
+            if tariff_ended:
+                variant = 7 if tariff_sufficient else 9
+            else:
+                variant = 6 if tariff_sufficient else 9
         instr = await _load_instruction(session, cache, "tariff_state", variant)
         extra = ""
         if ctx.is_jur == 2:
@@ -491,7 +492,12 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
             else:
                 extra += f"<p>Баланс: <strong>{ctx.balance:.2f} ₽</strong>.</p>"
         if tariff_ended and ctx.is_jur == 0:
-            detail = "Тариф закончился"
+            if tariff_sufficient is True:
+                detail = "Тариф закончился, на балансе достаточно средств"
+            elif tariff_sufficient is False:
+                detail = "Тариф закончился, недостаточно средств на балансе"
+            else:
+                detail = "Тариф закончился"
         elif tariff_sufficient is True:
             detail = "Не подключен, на балансе достаточно средств"
         elif tariff_sufficient is False:
@@ -549,7 +555,10 @@ async def run_fast_check(session: AsyncSession, user_id: int) -> FastCheckRespon
 
     # --- 3. Баланс и платежи (всегда в цепочке) ---
     if run_balance_after_tariff_fail:
-        min_price = await _min_tariff_price(session, ctx.id_grp)
+        min_price = ctx.tariff_min_price
+        if min_price is None:
+            min_price = await _min_tariff_price(session, ctx.id_grp)
+            ctx.tariff_min_price = min_price
         pays = await _recent_payments(session, user_id)
         canceled = [p for p in pays if p.get("state") == "canceled"]
         pending = [p for p in pays if p.get("state") == "in"]
