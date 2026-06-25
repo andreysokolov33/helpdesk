@@ -28,12 +28,7 @@ export function KbArticleStatusBadges({ article }: { article: KbArticleListItem 
 export function KbArticleRow({ article }: { article: KbArticleListItem }) {
   return (
     <Link to={`/kb/${article.slug}`} className="kb-article-row">
-      <div className="kb-article-row__main">
-        <div className="kb-article-row__title">{article.title}</div>
-        {article.summary ? (
-          <div className="kb-article-row__summary">{article.summary}</div>
-        ) : null}
-      </div>
+      <span className="kb-article-row__title">{article.title}</span>
       <KbArticleStatusBadges article={article} />
     </Link>
   );
