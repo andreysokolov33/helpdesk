@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import Enum
 from typing import Optional
 
@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     Text,
+    Time,
     UniqueConstraint,
     text,
 )
@@ -62,6 +63,19 @@ class KbCourseProgressStatus(str, Enum):
     completed = "completed"
 
 
+class KbDailyQuizOverrideMode(str, Enum):
+    inherit = "inherit"
+    required = "required"
+    exempt = "exempt"
+
+
+class KbDailyQuizExemptionAction(str, Enum):
+    set_inherit = "set_inherit"
+    set_required = "set_required"
+    set_exempt = "set_exempt"
+    set_exempt_until = "set_exempt_until"
+
+
 _kb_progress_status = ENUM(
     KbProgressStatus,
     name="kb_progress_status",
@@ -95,6 +109,18 @@ _kb_content_format = ENUM(
 _kb_course_progress_status = ENUM(
     KbCourseProgressStatus,
     name="kb_course_progress_status",
+    schema="helpdesk",
+    create_type=False,
+)
+_kb_daily_quiz_override_mode = ENUM(
+    KbDailyQuizOverrideMode,
+    name="kb_daily_quiz_override_mode",
+    schema="helpdesk",
+    create_type=False,
+)
+_kb_daily_quiz_exemption_action = ENUM(
+    KbDailyQuizExemptionAction,
+    name="kb_daily_quiz_exemption_action",
     schema="helpdesk",
     create_type=False,
 )
@@ -314,6 +340,10 @@ class KbQuiz(Base):
         "KbQuizAttempt",
         back_populates="quiz",
     )
+    daily_policies: Mapped[list["KbDailyQuizPolicy"]] = relationship(
+        "KbDailyQuizPolicy",
+        back_populates="quiz",
+    )
 
 
 class KbQuestion(Base):
@@ -522,12 +552,21 @@ class KbQuizAttempt(Base):
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     content_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     session_date: Mapped[Optional[date]] = mapped_column(Date)
+    daily_policy_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_daily_quiz_policies.id", ondelete="SET NULL"),
+    )
+    daily_policy_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     quiz: Mapped["KbQuiz"] = relationship("KbQuiz", back_populates="attempts")
+    daily_policy: Mapped[Optional["KbDailyQuizPolicy"]] = relationship(
+        "KbDailyQuizPolicy",
+        back_populates="attempts",
+    )
     article: Mapped["KbArticle"] = relationship("KbArticle", back_populates="quiz_attempts")
     course: Mapped[Optional["KbCourse"]] = relationship("KbCourse", back_populates="quiz_attempts")
     answers: Mapped[list["KbQuizAttemptAnswer"]] = relationship(
@@ -575,6 +614,141 @@ class KbQuizAttemptAnswer(Base):
 
     attempt: Mapped["KbQuizAttempt"] = relationship("KbQuizAttempt", back_populates="answers")
     question: Mapped["KbQuestion"] = relationship("KbQuestion", back_populates="attempt_answers")
+
+
+class KbDailyQuizPolicy(Base):
+    __tablename__ = "kb_daily_quiz_policies"
+    __table_args__ = (
+        Index(
+            "uq_kb_daily_quiz_policies_one_active",
+            text("TRUE"),
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+        Index("idx_kb_daily_quiz_policies_quiz", "quiz_id"),
+        {"schema": "helpdesk"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    weekdays: Mapped[list[int]] = mapped_column(
+        ARRAY(SmallInteger),
+        nullable=False,
+        server_default=text("'{1,2,3,4,5,6,7}'::smallint[]"),
+    )
+    timezone: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'Europe/Moscow'")
+    )
+    show_from_time: Mapped[Optional[time]] = mapped_column(Time)
+    show_until_time: Mapped[Optional[time]] = mapped_column(Time)
+    quiz_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_quizzes.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    questions_per_session: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("5")
+    )
+    passing_score_percent: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("100")
+    )
+    is_blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    allow_skip: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    require_pass: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    valid_from: Mapped[Optional[date]] = mapped_column(Date)
+    valid_to: Mapped[Optional[date]] = mapped_column(Date)
+    created_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.skystream_users.id", ondelete="SET NULL"),
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.skystream_users.id", ondelete="SET NULL"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+    quiz: Mapped["KbQuiz"] = relationship("KbQuiz", back_populates="daily_policies")
+    attempts: Mapped[list["KbQuizAttempt"]] = relationship(
+        "KbQuizAttempt",
+        back_populates="daily_policy",
+    )
+
+
+class KbOperatorDailyQuizSettings(Base):
+    __tablename__ = "kb_operator_daily_quiz_settings"
+    __table_args__ = (
+        Index("idx_kb_operator_daily_quiz_settings_mode", "override_mode"),
+        Index(
+            "idx_kb_operator_daily_quiz_settings_exempt_until",
+            "exempt_until",
+            postgresql_where=text("exempt_until IS NOT NULL"),
+        ),
+        {"schema": "helpdesk"},
+    )
+
+    operator_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.skystream_users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    override_mode: Mapped[KbDailyQuizOverrideMode] = mapped_column(
+        _kb_daily_quiz_override_mode,
+        nullable=False,
+        server_default=text("'inherit'::helpdesk.kb_daily_quiz_override_mode"),
+    )
+    exempt_until: Mapped[Optional[date]] = mapped_column(Date)
+    exempt_reason: Mapped[Optional[str]] = mapped_column(Text)
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.skystream_users.id", ondelete="SET NULL"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class KbDailyQuizExemptionLog(Base):
+    __tablename__ = "kb_daily_quiz_exemption_log"
+    __table_args__ = (
+        Index(
+            "idx_kb_daily_quiz_exemption_log_operator",
+            "operator_id",
+            text("changed_at DESC"),
+        ),
+        {"schema": "helpdesk"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    operator_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.skystream_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action: Mapped[KbDailyQuizExemptionAction] = mapped_column(
+        _kb_daily_quiz_exemption_action,
+        nullable=False,
+    )
+    override_mode: Mapped[Optional[KbDailyQuizOverrideMode]] = mapped_column(
+        _kb_daily_quiz_override_mode,
+    )
+    exempt_until: Mapped[Optional[date]] = mapped_column(Date)
+    reason: Mapped[Optional[str]] = mapped_column(Text)
+    changed_by: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("users.skystream_users.id", ondelete="SET NULL"),
+    )
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
 
 
 class KbCourse(Base):

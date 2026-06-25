@@ -55,6 +55,7 @@ export type KbQuizAnsweredState = {
   question_id: number;
   selected_option_ids: number[];
   is_correct: boolean;
+  correct_option_ids?: number[];
 };
 
 export type KbQuizSession = {

@@ -1,8 +1,9 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
 import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
 import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
+import { fetchDailyQuizStatus, type DailyQuizStatus } from "@/api/dailyQuiz";
 import { sendOperatorPresence } from "@/api/operatorsManage";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
 import { fetchChatUnread } from "@/api/chat";
@@ -11,6 +12,7 @@ import { ticketsListPollDelayMs } from "@/utils/ticketsListPoll";
 import { useTheme } from "@/theme/ThemeContext";
 import LogoutConfirmModal from "@/components/LogoutConfirmModal";
 import OperatorNewsModal from "@/components/OperatorNewsModal";
+import DailyQuizModal from "@/workspace/DailyQuizModal";
 import { themeToggleHint } from "@/theme/themeMeta";
 
 type TabDef = {
@@ -67,6 +69,8 @@ export default function DashboardShell() {
   const [newsDetail, setNewsDetail] = useState<OperatorNewsDetail | null>(null);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
+  const [dailyQuizOpen, setDailyQuizOpen] = useState(false);
+  const [dailyQuizStatus, setDailyQuizStatus] = useState<DailyQuizStatus | null>(null);
   const bellDigestRef = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -103,6 +107,25 @@ export default function DashboardShell() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!authMe) return;
+    if ((authMe.role ?? "").toLowerCase() !== "support" || authMe.level !== 1) return;
+
+    let cancelled = false;
+    fetchDailyQuizStatus()
+      .then((status) => {
+        if (!cancelled && status.show_modal) {
+          setDailyQuizStatus(status);
+          setDailyQuizOpen(true);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authMe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -297,6 +320,11 @@ export default function DashboardShell() {
     setLogoutOpen(true);
   }
 
+  const completeDailyQuiz = useCallback(() => {
+    setDailyQuizOpen(false);
+    setDailyQuizStatus(null);
+  }, []);
+
   return (
     <div className="cc-app">
       <nav className="nav">
@@ -483,6 +511,13 @@ export default function DashboardShell() {
         error={newsError}
         onClose={closeNewsModal}
       />
+
+      {dailyQuizOpen && dailyQuizStatus ? (
+        <DailyQuizModal
+          status={dailyQuizStatus}
+          onComplete={completeDailyQuiz}
+        />
+      ) : null}
     </div>
   );
 }

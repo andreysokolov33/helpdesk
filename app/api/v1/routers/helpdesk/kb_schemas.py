@@ -93,6 +93,7 @@ class KbQuizAnsweredState(BaseModel):
     question_id: int
     selected_option_ids: list[int]
     is_correct: bool
+    correct_option_ids: list[int] = Field(default_factory=list)
 
 
 class KbQuizSessionResponse(BaseModel):

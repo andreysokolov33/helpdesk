@@ -1,0 +1,820 @@
+================================================================================
+  БАЗА ЗНАНИЙ И ТЕСТИРОВАНИЕ ОПЕРАТОРОВ — СПРАВОЧНИК ПО БД
+  Схема: helpdesk
+  Операторы: users.skystream_users (поле id)
+  SQL-дамп контента: temp/datbase-content.txt
+  DDL-схема:        temp/learning-db.txt
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+ОБЗОР: КАКИЕ ТАБЛИЦЫ ЗА ЧТО ОТВЕЧАЮТ
+────────────────────────────────────────────────────────────────────────────────
+
+КОНТЕНТ (/kb — статьи и тесты по темам)
+────────────────────────────────────────
+helpdesk.kb_categories
+  Дерево разделов на главной /kb.
+  Что хранится: title, slug, parent_id, sort_order, is_active.
+  Пример: «Оплата и баланс», slug = oplata-i-balans.
+
+helpdesk.kb_articles
+  Статьи базы знаний. Маршрут: /kb/{slug}.
+  Что хранится:
+    • title, subtitle, summary — заголовки и краткое описание (summary — для поиска)
+    • content_html — HTML-тело (#paneArticle без <html>/<head>/<style>/<script>)
+    • sidebar_json — правая панель (якоря, шаблон тикета, SLA) в JSON
+    • category_id — раздел
+    • is_published — видна ли операторам
+    • pass_score_percent, quiz_required — настройки зачёта по теме
+    • version — номер редакции (увеличивается при существенных правках)
+
+helpdesk.kb_article_versions
+  Снимки старых редакций (опционально, при публикации новой версии).
+  Что хранится: content_html + sidebar_json на момент версии.
+
+helpdesk.kb_quizzes
+  Тест по статье (связь 1:1: одна статья — один квиз).
+  Что хранится: title, description, is_active, passing_score_percent,
+                 questions_per_attempt (NULL = все вопросы за попытку).
+
+helpdesk.kb_questions
+  Вопросы теста.
+  Что хранится: question_text, explanation (разбор после ответа),
+                 selection_mode (single | multiple), sort_order, is_active, tags[].
+
+helpdesk.kb_question_options
+  Варианты ответа на вопрос.
+  Что хранится: option_text, is_correct, sort_order.
+  Для multiple может быть несколько is_correct = TRUE.
+
+
+ПРОГРЕСС И ИСТОРИЯ ОПЕРАТОРА
+────────────────────────────
+helpdesk.kb_article_progress
+  Агрегат «прочитано / сдано» по каждой паре оператор + статья.
+  Что хранится:
+    • status: not_started | in_progress | studied | completed
+    • studied_at — когда дочитал
+    • quiz_passed_at — когда успешно сдал тест
+    • last_attempt_id — ссылка на последнюю попытку
+    • content_version — версия статьи на момент прогресса
+
+helpdesk.kb_quiz_attempts
+  История всех попыток тестов (не удаляется в штатном режиме).
+  Что хранится:
+    • attempt_type: kb_topic | train_course | daily_warmup
+    • status: in_progress | finished | abandoned
+    • score, correct_count, total_questions, passed
+    • session_date — календарный день (для daily_warmup)
+    • started_at, finished_at
+    • daily_policy_id, daily_policy_snapshot — для ежедневного теста (если колонки добавлены)
+
+helpdesk.kb_quiz_attempt_answers
+  Ответы внутри одной попытки.
+  Что хранится: question_id, selected_option_ids[], is_correct, answered_at.
+
+
+КУРСЫ (/train — если используется)
+──────────────────────────────────
+helpdesk.kb_courses          — курсы обучения
+helpdesk.kb_course_articles  — какие статьи входят в курс и в каком порядке
+helpdesk.kb_course_progress  — прогресс оператора по курсу
+
+
+ЕЖЕДНЕВНЫЙ ОБЯЗАТЕЛЬНЫЙ ТЕСТ (daily warmup)
+────────────────────────────────────────────
+Таблицы создаются отдельной миграцией (см. обсуждение в чате / SQL миграцию).
+
+helpdesk.kb_daily_quiz_policies
+  Глобальные правила: когда показывать тест, какой квиз, сколько вопросов.
+  Что хранится:
+    • is_active — глобальный вкл/выкл (только одна активная политика)
+    • weekdays — массив дней ISO: 1=пн … 7=вс, например {1,2,3,4,5}
+    • timezone — часовой пояс для session_date (Europe/Moscow)
+    • show_from_time, show_until_time — окно показа внутри дня (NULL = весь день)
+    • quiz_id — FK на kb_quizzes (пул вопросов ежедневного теста)
+    • questions_per_session — сколько вопросов за раз
+    • passing_score_percent, is_blocking, require_pass, allow_skip
+
+helpdesk.kb_operator_daily_quiz_settings
+  Персональные настройки оператора (нет строки = режим inherit).
+  Что хранится:
+    • override_mode: inherit | required | exempt
+    • exempt_until — временное освобождение до даты
+    • exempt_reason — комментарий (отпуск, стажировка и т.д.)
+
+helpdesk.kb_daily_quiz_exemption_log
+  Аудит: кто и когда менял настройки оператора.
+
+
+СВЯЗЬ С ПОЛЬЗОВАТЕЛЯМИ
+──────────────────────
+users.skystream_users
+  id оператора используется во всех таблицах прогресса и попыток.
+  role = 'manager' — для подстановки контактов менеджера в статьях (не в этих таблицах).
+
+Плейсхолдеры в HTML статей (подставляются бэкендом при отдаче):
+  {{manager_phone}}, {{manager_email}}, {{manager_phone_2}}, {{manager_email_2}}
+
+
+────────────────────────────────────────────────────────────────────────────────
+СХЕМА СВЯЗЕЙ (кратко)
+────────────────────────────────────────────────────────────────────────────────
+
+kb_categories
+    └── kb_articles
+            ├── kb_quizzes (1:1)
+            │       └── kb_questions
+            │               └── kb_question_options
+            ├── kb_article_progress (оператор × статья)
+            └── kb_quiz_attempts (история попыток)
+                    └── kb_quiz_attempt_answers
+
+kb_daily_quiz_policies.quiz_id → kb_quizzes
+kb_operator_daily_quiz_settings.operator_id → skystream_users
+
+
+================================================================================
+1. КАК ДОБАВИТЬ НОВУЮ СТАТЬЮ
+================================================================================
+
+Порядок действий:
+  1) Убедиться, что есть раздел (kb_categories) или создать его
+  2) Вставить статью (kb_articles) с уникальным slug
+  3) При необходимости — тест (kb_quizzes + kb_questions + kb_question_options)
+  4) Опубликовать: is_published = TRUE, published_at = NOW()
+
+─── 1.1. Найти id раздела ───
+
+SELECT id, title, slug
+FROM helpdesk.kb_categories
+WHERE is_active
+ORDER BY sort_order, title;
+
+─── 1.2. Создать раздел (если нужен новый) ───
+
+INSERT INTO helpdesk.kb_categories (parent_id, title, slug, sort_order, is_active)
+VALUES (
+    NULL,                          -- или id родительского раздела
+    'Новый раздел',
+    'novyy-razdel',                -- латиница, дефисы; уникальный
+    100,
+    TRUE
+);
+
+─── 1.3. Вставить статью ───
+
+INSERT INTO helpdesk.kb_articles (
+    category_id,
+    title,
+    slug,
+    subtitle,
+    summary,
+    content_html,
+    content_format,
+    sidebar_json,
+    version,
+    sort_order,
+    is_published,
+    pass_score_percent,
+    quiz_required,
+    published_at
+)
+VALUES (
+    (SELECT id FROM helpdesk.kb_categories WHERE slug = 'oplata-i-balans'),
+    'Название статьи',
+    'moya-novaya-statya',          -- только [a-z0-9-], уникальный
+    'Подзаголовок (опционально)',
+    'Краткое описание для поиска.',
+    '<div class="section-card" id="sec-intro">
+        <p>Текст статьи в HTML. Классы из прототипов: section-card, dlg, tbl и т.д.</p>
+     </div>',
+    'html'::helpdesk.kb_content_format,
+    '{}'::jsonb,                   -- или JSON правой панели
+    1,
+    100,                           -- порядок внутри раздела
+    TRUE,                          -- сразу опубликовать
+    100,                           -- порог сдачи теста (%)
+    TRUE,                          -- тест обязателен для completed
+    NOW()
+);
+
+Проверка:
+  SELECT id, slug, is_published FROM helpdesk.kb_articles WHERE slug = 'moya-novaya-statya';
+
+─── 1.4. Добавить тест к статье ───
+
+INSERT INTO helpdesk.kb_quizzes (article_id, title, description, is_active, passing_score_percent)
+SELECT
+    a.id,
+    'Проверка знаний темы: Название статьи',
+    '',
+    TRUE,
+    100
+FROM helpdesk.kb_articles a
+WHERE a.slug = 'moya-novaya-statya'
+  AND NOT EXISTS (SELECT 1 FROM helpdesk.kb_quizzes q WHERE q.article_id = a.id);
+
+─── 1.5. Добавить вопрос ───
+
+INSERT INTO helpdesk.kb_questions (
+    quiz_id, question_text, explanation, selection_mode, sort_order, is_active, tags
+)
+SELECT
+    q.id,
+    'Текст вопроса?',
+    'Разбор правильного ответа.',
+    'single'::helpdesk.kb_question_selection_mode,
+    10,
+    TRUE,
+    ARRAY['moya-novaya-statya']::text[]
+FROM helpdesk.kb_quizzes q
+JOIN helpdesk.kb_articles a ON a.id = q.article_id
+WHERE a.slug = 'moya-novaya-statya';
+
+─── 1.6. Добавить варианты ответа ───
+
+-- Неверный вариант
+INSERT INTO helpdesk.kb_question_options (question_id, option_text, is_correct, sort_order)
+SELECT qq.id, 'Неверный ответ', FALSE, 0
+FROM helpdesk.kb_questions qq
+JOIN helpdesk.kb_quizzes q ON q.id = qq.quiz_id
+JOIN helpdesk.kb_articles a ON a.id = q.article_id
+WHERE a.slug = 'moya-novaya-statya'
+  AND qq.question_text = 'Текст вопроса?';
+
+-- Правильный вариант
+INSERT INTO helpdesk.kb_question_options (question_id, option_text, is_correct, sort_order)
+SELECT qq.id, 'Правильный ответ', TRUE, 10
+FROM helpdesk.kb_questions qq
+JOIN helpdesk.kb_quizzes q ON q.id = qq.quiz_id
+JOIN helpdesk.kb_articles a ON a.id = q.article_id
+WHERE a.slug = 'moya-novaya-statya'
+  AND qq.question_text = 'Текст вопроса?';
+
+─── 1.7. Редактировать существующую статью ───
+
+UPDATE helpdesk.kb_articles
+SET
+    title = 'Новый заголовок',
+    content_html = '<div class="section-card">...</div>',
+    summary = 'Новое описание',
+    version = version + 1,
+    updated_at = NOW()
+WHERE slug = 'moya-novaya-statya';
+
+─── 1.8. Снять статью с публикации (скрыть) ───
+
+UPDATE helpdesk.kb_articles
+SET is_published = FALSE, updated_at = NOW()
+WHERE slug = 'moya-novaya-statya';
+
+─── 1.9. Отключить тест по теме (статья остаётся, тест скрыт) ───
+
+UPDATE helpdesk.kb_quizzes q
+SET is_active = FALSE, updated_at = NOW()
+FROM helpdesk.kb_articles a
+WHERE a.id = q.article_id AND a.slug = 'moya-novaya-statya';
+
+-- Или: тест не обязателен для зачёта
+UPDATE helpdesk.kb_articles
+SET quiz_required = FALSE, updated_at = NOW()
+WHERE slug = 'moya-novaya-statya';
+
+
+================================================================================
+2. КАК РЕДАКТИРОВАТЬ ДОСТУП ПОЛЬЗОВАТЕЛЯ К ТЕСТАМ
+================================================================================
+
+Два уровня:
+  A) Ежедневный обязательный тест (daily warmup) — kb_operator_daily_quiz_settings
+  B) Тесты по статьям /kb — глобально для всех; персонального «выкл тест по статье»
+     в схеме нет (только сброс прогресса, см. раздел 4)
+
+
+─── 2.1. Найти оператора ───
+
+SELECT id, login, full_name, role, is_active
+FROM users.skystream_users
+WHERE login ILIKE '%ivanov%'
+   OR full_name ILIKE '%Иванов%';
+
+─── 2.2. Полностью освободить от ежедневного теста (навсегда) ───
+
+INSERT INTO helpdesk.kb_operator_daily_quiz_settings (
+    operator_id, override_mode, exempt_reason, updated_by
+)
+VALUES (
+    1001,                    -- id оператора
+    'exempt',
+    'Супервайзер, тест не требуется',
+    1                        -- id администратора
+)
+ON CONFLICT (operator_id) DO UPDATE SET
+    override_mode = 'exempt',
+    exempt_until = NULL,
+    exempt_reason = EXCLUDED.exempt_reason,
+    updated_by = EXCLUDED.updated_by,
+    updated_at = NOW();
+
+─── 2.3. Временно освободить (отпуск до даты) ───
+
+INSERT INTO helpdesk.kb_operator_daily_quiz_settings (
+    operator_id, override_mode, exempt_until, exempt_reason, updated_by
+)
+VALUES (
+    1001,
+    'inherit',               -- inherit + exempt_until = временное освобождение
+    '2026-07-15',
+    'Отпуск',
+    1
+)
+ON CONFLICT (operator_id) DO UPDATE SET
+    override_mode = 'inherit',
+    exempt_until = EXCLUDED.exempt_until,
+    exempt_reason = EXCLUDED.exempt_reason,
+    updated_by = EXCLUDED.updated_by,
+    updated_at = NOW();
+
+─── 2.4. Принудительно включить ежедневный тест (даже в выходной) ───
+
+INSERT INTO helpdesk.kb_operator_daily_quiz_settings (
+    operator_id, override_mode, updated_by
+)
+VALUES (1002, 'required', 1)
+ON CONFLICT (operator_id) DO UPDATE SET
+    override_mode = 'required',
+    exempt_until = NULL,
+    exempt_reason = NULL,
+    updated_by = EXCLUDED.updated_by,
+    updated_at = NOW();
+
+─── 2.5. Вернуть к общим правилам (сброс персональных настроек) ───
+
+DELETE FROM helpdesk.kb_operator_daily_quiz_settings
+WHERE operator_id = 1001;
+
+-- Или явно inherit:
+UPDATE helpdesk.kb_operator_daily_quiz_settings
+SET override_mode = 'inherit', exempt_until = NULL, exempt_reason = NULL, updated_at = NOW()
+WHERE operator_id = 1001;
+
+─── 2.6. Посмотреть текущие настройки оператора ───
+
+SELECT
+    s.operator_id,
+    u.login,
+    u.full_name,
+    s.override_mode,
+    s.exempt_until,
+    s.exempt_reason,
+    s.updated_at
+FROM helpdesk.kb_operator_daily_quiz_settings s
+JOIN users.skystream_users u ON u.id = s.operator_id
+WHERE s.operator_id = 1001;
+
+─── 2.7. Глобально отключить ежедневный тест для всех ───
+
+UPDATE helpdesk.kb_daily_quiz_policies
+SET is_active = FALSE, updated_at = NOW()
+WHERE is_active;
+
+─── 2.8. Отключить тест по конкретной статье для ВСЕХ операторов ───
+
+UPDATE helpdesk.kb_quizzes q
+SET is_active = FALSE, updated_at = NOW()
+FROM helpdesk.kb_articles a
+WHERE a.id = q.article_id AND a.slug = 'turbo-knopka';
+
+─── 2.9. Запись в журнал аудита (рекомендуется при ручных правках) ───
+
+INSERT INTO helpdesk.kb_daily_quiz_exemption_log (
+    operator_id, action, override_mode, exempt_until, reason, changed_by
+)
+VALUES (
+    1001,
+    'set_exempt',
+    'exempt',
+    NULL,
+    'Супервайзер, тест не требуется',
+    1
+);
+
+
+================================================================================
+3. КАК РЕДАКТИРОВАТЬ РАСПИСАНИЕ ЕЖЕДНЕВНОГО ТЕСТА
+================================================================================
+
+Расписание хранится в helpdesk.kb_daily_quiz_policies.
+Активна только одна политика с is_active = TRUE.
+
+Дни недели — ISO 8601:
+  1 = понедельник
+  2 = вторник
+  3 = среда
+  4 = четверг
+  5 = пятница
+  6 = суббота
+  7 = воскресенье
+
+─── 3.1. Посмотреть текущую политику ───
+
+SELECT
+    id,
+    title,
+    is_active,
+    weekdays,
+    timezone,
+    show_from_time,
+    show_until_time,
+    quiz_id,
+    questions_per_session,
+    passing_score_percent,
+    is_blocking,
+    require_pass
+FROM helpdesk.kb_daily_quiz_policies
+WHERE is_active;
+
+─── 3.2. Изменить дни недели (пн–пт → пн–сб) ───
+
+UPDATE helpdesk.kb_daily_quiz_policies
+SET
+    weekdays = '{1,2,3,4,5,6}'::SMALLINT[],
+    updated_at = NOW()
+WHERE is_active;
+
+─── 3.3. Только будни без пятницы (пн–чт) ───
+
+UPDATE helpdesk.kb_daily_quiz_policies
+SET weekdays = '{1,2,3,4}'::SMALLINT[], updated_at = NOW()
+WHERE is_active;
+
+─── 3.4. Окно показа: с 08:00 до 11:00 по Москве ───
+
+UPDATE helpdesk.kb_daily_quiz_policies
+SET
+    show_from_time = '08:00',
+    show_until_time = '11:00',
+    timezone = 'Europe/Moscow',
+    updated_at = NOW()
+WHERE is_active;
+
+-- Убрать ограничение по времени (весь день):
+UPDATE helpdesk.kb_daily_quiz_policies
+SET show_from_time = NULL, show_until_time = NULL, updated_at = NOW()
+WHERE is_active;
+
+─── 3.5. Изменить число вопросов и порог сдачи ───
+
+UPDATE helpdesk.kb_daily_quiz_policies
+SET
+    questions_per_session = 7,
+    passing_score_percent = 100,
+    updated_at = NOW()
+WHERE is_active;
+
+─── 3.6. Сменить пул вопросов (другой quiz_id) ───
+
+-- Сначала найти квиз служебной статьи daily-warmup:
+SELECT q.id, q.title, a.slug
+FROM helpdesk.kb_quizzes q
+JOIN helpdesk.kb_articles a ON a.id = q.article_id
+WHERE a.slug = 'daily-warmup';
+
+UPDATE helpdesk.kb_daily_quiz_policies
+SET quiz_id = 42, updated_at = NOW()   -- подставить реальный id
+WHERE is_active;
+
+─── 3.7. Создать новую политику (с заменой старой) ───
+
+BEGIN;
+
+UPDATE helpdesk.kb_daily_quiz_policies
+SET is_active = FALSE, updated_at = NOW()
+WHERE is_active;
+
+INSERT INTO helpdesk.kb_daily_quiz_policies (
+    title,
+    is_active,
+    weekdays,
+    timezone,
+    quiz_id,
+    questions_per_session,
+    passing_score_percent,
+    is_blocking,
+    require_pass
+)
+VALUES (
+    'Политика с лета 2026',
+    TRUE,
+    '{1,2,3,4,5}'::SMALLINT[],
+    'Europe/Moscow',
+    42,          -- quiz_id пула daily-warmup
+    5,
+    100,
+    TRUE,
+    TRUE
+);
+
+COMMIT;
+
+─── 3.8. Проверка: должен ли тест показаться сегодня ───
+
+-- Подставить operator_id
+WITH policy AS (
+    SELECT *
+    FROM helpdesk.kb_daily_quiz_policies
+    WHERE is_active
+    LIMIT 1
+),
+op AS (
+    SELECT 1001::bigint AS operator_id
+),
+session AS (
+    SELECT (NOW() AT TIME ZONE p.timezone)::date AS session_date,
+           EXTRACT(ISODOW FROM (NOW() AT TIME ZONE p.timezone))::int AS dow,
+           (NOW() AT TIME ZONE p.timezone)::time AS local_time
+    FROM policy p
+)
+SELECT
+    p.title,
+    s.session_date,
+    s.dow AS day_of_week,
+    s.dow = ANY(p.weekdays) AS weekday_ok,
+  CASE
+    WHEN p.show_from_time IS NULL AND p.show_until_time IS NULL THEN TRUE
+    WHEN p.show_from_time IS NOT NULL AND p.show_until_time IS NOT NULL
+      THEN s.local_time BETWEEN p.show_from_time AND p.show_until_time
+    ELSE TRUE
+  END AS time_window_ok,
+    COALESCE(os.override_mode, 'inherit') AS override_mode,
+    os.exempt_until,
+    EXISTS (
+        SELECT 1 FROM helpdesk.kb_quiz_attempts qa
+        WHERE qa.operator_id = (SELECT operator_id FROM op)
+          AND qa.attempt_type = 'daily_warmup'
+          AND qa.session_date = s.session_date
+          AND qa.status IN ('in_progress', 'finished')
+    ) AS already_has_attempt_today
+FROM policy p
+CROSS JOIN session s
+CROSS JOIN op
+LEFT JOIN helpdesk.kb_operator_daily_quiz_settings os
+    ON os.operator_id = op.operator_id;
+
+
+================================================================================
+4. КАК ОЧИСТИТЬ ИСТОРИЮ ТЕСТИРОВАНИЯ И ПРОЧТЕНИЯ
+================================================================================
+
+ВАЖНО:
+  • Перед удалением попыток нужно обнулить last_attempt_id в kb_article_progress
+    (иначе FK может помешать или останутся «битые» ссылки).
+  • kb_quiz_attempt_answers удаляются каскадом при DELETE FROM kb_quiz_attempts.
+  • Всегда делайте BEGIN/COMMIT и сначала проверяйте SELECT COUNT(*).
+
+
+─── 4.1. Сбросить ВСЁ по одному оператору (прогресс + все попытки) ───
+
+BEGIN;
+
+-- Посмотреть, что будет удалено:
+SELECT 'progress' AS what, COUNT(*) FROM helpdesk.kb_article_progress WHERE operator_id = 1001
+UNION ALL
+SELECT 'attempts', COUNT(*) FROM helpdesk.kb_quiz_attempts WHERE operator_id = 1001
+UNION ALL
+SELECT 'course_progress', COUNT(*) FROM helpdesk.kb_course_progress WHERE operator_id = 1001;
+
+UPDATE helpdesk.kb_article_progress
+SET last_attempt_id = NULL
+WHERE operator_id = 1001;
+
+DELETE FROM helpdesk.kb_quiz_attempts
+WHERE operator_id = 1001;
+
+DELETE FROM helpdesk.kb_article_progress
+WHERE operator_id = 1001;
+
+DELETE FROM helpdesk.kb_course_progress
+WHERE operator_id = 1001;
+
+COMMIT;
+
+─── 4.2. Сбросить только прогресс чтения (без удаления попыток тестов) ───
+
+UPDATE helpdesk.kb_article_progress
+SET
+    status = 'not_started',
+    studied_at = NULL,
+    quiz_passed_at = NULL,
+    updated_at = NOW()
+WHERE operator_id = 1001;
+
+─── 4.3. Сбросить прогресс по одной статье для одного оператора ───
+
+BEGIN;
+
+UPDATE helpdesk.kb_article_progress p
+SET last_attempt_id = NULL
+FROM helpdesk.kb_articles a
+WHERE p.article_id = a.id
+  AND p.operator_id = 1001
+  AND a.slug = 'turbo-knopka';
+
+DELETE FROM helpdesk.kb_quiz_attempts qa
+USING helpdesk.kb_articles a
+WHERE qa.article_id = a.id
+  AND qa.operator_id = 1001
+  AND a.slug = 'turbo-knopka'
+  AND qa.attempt_type = 'kb_topic';
+
+DELETE FROM helpdesk.kb_article_progress p
+USING helpdesk.kb_articles a
+WHERE p.article_id = a.id
+  AND p.operator_id = 1001
+  AND a.slug = 'turbo-knopka';
+
+COMMIT;
+
+─── 4.4. Сбросить только ежедневный тест (daily warmup) для оператора ───
+
+DELETE FROM helpdesk.kb_quiz_attempts
+WHERE operator_id = 1001
+  AND attempt_type = 'daily_warmup';
+
+-- Чтобы оператор прошёл тест заново сегодня — удалить запись за сегодня:
+DELETE FROM helpdesk.kb_quiz_attempts
+WHERE operator_id = 1001
+  AND attempt_type = 'daily_warmup'
+  AND session_date = (NOW() AT TIME ZONE 'Europe/Moscow')::date;
+
+─── 4.5. Сбросить ежедневный тест за конкретную дату ───
+
+DELETE FROM helpdesk.kb_quiz_attempts
+WHERE operator_id = 1001
+  AND attempt_type = 'daily_warmup'
+  AND session_date = '2026-06-25';
+
+─── 4.6. Сбросить прогресс по статье для ВСЕХ операторов ───
+
+BEGIN;
+
+UPDATE helpdesk.kb_article_progress p
+SET last_attempt_id = NULL
+FROM helpdesk.kb_articles a
+WHERE p.article_id = a.id AND a.slug = 'turbo-knopka';
+
+DELETE FROM helpdesk.kb_quiz_attempts qa
+USING helpdesk.kb_articles a
+WHERE qa.article_id = a.id
+  AND a.slug = 'turbo-knopka'
+  AND qa.attempt_type = 'kb_topic';
+
+DELETE FROM helpdesk.kb_article_progress p
+USING helpdesk.kb_articles a
+WHERE p.article_id = a.id AND a.slug = 'turbo-knopka';
+
+COMMIT;
+
+─── 4.7. Полная очистка истории по статье (все операторы, все типы попыток) ───
+
+BEGIN;
+
+UPDATE helpdesk.kb_article_progress p
+SET last_attempt_id = NULL
+FROM helpdesk.kb_articles a
+WHERE p.article_id = a.id AND a.slug = 'turbo-knopka';
+
+DELETE FROM helpdesk.kb_quiz_attempts qa
+USING helpdesk.kb_articles a
+WHERE qa.article_id = a.id AND a.slug = 'turbo-knopka';
+
+DELETE FROM helpdesk.kb_article_progress p
+USING helpdesk.kb_articles a
+WHERE p.article_id = a.id AND a.slug = 'turbo-knopka';
+
+COMMIT;
+
+─── 4.8. ОПАСНО: очистить всю историю KB для всех операторов ───
+
+-- Использовать только на тестовом стенде!
+BEGIN;
+
+UPDATE helpdesk.kb_article_progress SET last_attempt_id = NULL;
+
+DELETE FROM helpdesk.kb_quiz_attempts;
+DELETE FROM helpdesk.kb_article_progress;
+DELETE FROM helpdesk.kb_course_progress;
+
+COMMIT;
+
+─── 4.9. Удалить только незавершённые попытки (зависшие in_progress) ───
+
+BEGIN;
+
+UPDATE helpdesk.kb_article_progress
+SET last_attempt_id = NULL
+WHERE last_attempt_id IN (
+    SELECT id FROM helpdesk.kb_quiz_attempts WHERE status = 'in_progress'
+);
+
+DELETE FROM helpdesk.kb_quiz_attempts
+WHERE status = 'in_progress';
+
+COMMIT;
+
+
+================================================================================
+ПРИЛОЖЕНИЕ A. СЛУЖЕБНАЯ СТАТЬЯ ДЛЯ ЕЖЕДНЕВНОГО ТЕСТА
+================================================================================
+
+Ежедневный тест привязан к kb_quizzes, а kb_quizzes требует article_id.
+Рекомендуется одна служебная статья (не показывать в списке /kb или is_published=FALSE):
+
+INSERT INTO helpdesk.kb_articles (
+    category_id, title, slug, summary, content_html,
+    is_published, quiz_required, sort_order
+)
+SELECT
+    c.id,
+    'Ежедневная разминка',
+    'daily-warmup',
+    'Служебная статья для пула вопросов ежедневного теста.',
+    '<p>Служебная запись.</p>',
+    FALSE,
+    FALSE,
+    9999
+FROM helpdesk.kb_categories c
+WHERE c.slug = 'spravochnye-materialy'   -- любой раздел
+  AND NOT EXISTS (SELECT 1 FROM helpdesk.kb_articles WHERE slug = 'daily-warmup');
+
+INSERT INTO helpdesk.kb_quizzes (article_id, title, is_active, passing_score_percent, questions_per_attempt)
+SELECT a.id, 'Ежедневная разминка', TRUE, 100, NULL
+FROM helpdesk.kb_articles a
+WHERE a.slug = 'daily-warmup'
+  AND NOT EXISTS (SELECT 1 FROM helpdesk.kb_quizzes q WHERE q.article_id = a.id);
+
+-- Вопросы добавляются в этот квиз так же, как в п. 1.5–1.6.
+
+
+================================================================================
+ПРИЛОЖЕНИЕ B. ПОЛЕЗНЫЕ ЗАПРОСЫ ДЛЯ КОНТРОЛЯ
+================================================================================
+
+-- Статусы оператора по всем статьям
+SELECT a.slug, a.title, p.status, p.studied_at, p.quiz_passed_at
+FROM helpdesk.kb_article_progress p
+JOIN helpdesk.kb_articles a ON a.id = p.article_id
+WHERE p.operator_id = 1001
+ORDER BY a.title;
+
+-- Последние попытки оператора
+SELECT
+    qa.id,
+    qa.attempt_type,
+    a.slug,
+    qa.status,
+    qa.passed,
+    qa.correct_count,
+    qa.total_questions,
+    qa.session_date,
+    qa.started_at,
+    qa.finished_at
+FROM helpdesk.kb_quiz_attempts qa
+JOIN helpdesk.kb_articles a ON a.id = qa.article_id
+WHERE qa.operator_id = 1001
+ORDER BY qa.started_at DESC
+LIMIT 20;
+
+-- Операторы, не сдавшие ежедневный тест сегодня (при активной политике в будни)
+-- Упрощённый пример; полная логика — с учётом override_mode и exempt_until
+SELECT u.id, u.login, u.full_name
+FROM users.skystream_users u
+WHERE u.is_active
+  AND NOT EXISTS (
+      SELECT 1 FROM helpdesk.kb_quiz_attempts qa
+      WHERE qa.operator_id = u.id
+        AND qa.attempt_type = 'daily_warmup'
+        AND qa.session_date = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+        AND qa.status = 'finished'
+        AND qa.passed = TRUE
+  );
+
+
+================================================================================
+ПРИЛОЖЕНИЕ C. ФАЙЛЫ ПРОЕКТА
+================================================================================
+
+temp/learning-db.txt      — DDL: создание схемы helpdesk с нуля
+temp/datbase-content.txt  — INSERT статей, квизов, вопросов (импорт контента)
+temp/database-kb.txt      — этот справочник (операции и пояснения)
+
+Код бэкенда:
+  app/models/helpdesk_kb.py
+  app/api/v1/routers/helpdesk/kb_service.py
+  app/api/v1/routers/helpdesk/kb.py
+
+Фронтенд:
+  frontend/src/workspace/KbTab.tsx          — список /kb
+  frontend/src/workspace/KbArticlePage.tsx — статья и тест по теме

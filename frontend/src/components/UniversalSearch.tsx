@@ -1,12 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchDeskSearch, type SubscriberSearchHit } from "@/api/search";
+import { fetchDeskSearch, type DeskSearchKbHit, type SubscriberSearchHit } from "@/api/search";
 import HighlightText from "@/components/HighlightText";
-import { MOCK_KB, type KbArticle } from "@/data/mockCc";
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, "").slice(0, 80);
-}
 
 function idDocLabel(isJuridical: number): string {
   if (isJuridical === 2) return "ИНН";
@@ -56,28 +51,48 @@ function SubscriberRow({ hit, query, onPick }: SubscriberRowProps) {
   );
 }
 
+type KbRowProps = {
+  hit: DeskSearchKbHit;
+  query: string;
+  onPick: () => void;
+};
+
+function KbRow({ hit, query, onPick }: KbRowProps) {
+  const excerpt = hit.excerpt?.trim();
+  return (
+    <button type="button" className="si2 sr-hit" onClick={onPick}>
+      <span className="sr-badge sr-badge--kb" aria-hidden>
+        БЗ
+      </span>
+      <div className="sr-body">
+        <div className="sn">
+          <HighlightText text={hit.title} query={query} />
+        </div>
+        {excerpt ? (
+          <div className="sm">
+            <HighlightText text={excerpt} query={query} />
+          </div>
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
 export default function UniversalSearch() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [openDrop, setOpenDrop] = useState(false);
-  const [kbOpen, setKbOpen] = useState(false);
-  const [kbTitle, setKbTitle] = useState("");
-  const [kbBody, setKbBody] = useState("");
   const [subs, setSubs] = useState<SubscriberSearchHit[]>([]);
+  const [kb, setKb] = useState<DeskSearchKbHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-
-  const kb = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (s.length < 2) return [];
-    return MOCK_KB.filter((k) => k.t.toLowerCase().includes(s) || k.k.includes(s));
-  }, [q]);
 
   useEffect(() => {
     const s = q.trim();
     if (s.length < 2) {
       setSubs([]);
+      setKb([]);
       setLoading(false);
       setSearchError(null);
       return;
@@ -90,11 +105,15 @@ export default function UniversalSearch() {
     const timer = window.setTimeout(() => {
       fetchDeskSearch(s, 15)
         .then((data) => {
-          if (!cancelled) setSubs(data.subscribers);
+          if (!cancelled) {
+            setSubs(data.subscribers);
+            setKb(data.kb);
+          }
         })
         .catch((err: unknown) => {
           if (!cancelled) {
             setSubs([]);
+            setKb([]);
             setSearchError(err instanceof Error ? err.message : "Ошибка поиска");
           }
         })
@@ -126,15 +145,6 @@ export default function UniversalSearch() {
   function onSearchInput(v: string) {
     setQ(v);
     setOpenDrop(v.trim().length >= 2);
-    setKbOpen(false);
-  }
-
-  function showKbCard(article: KbArticle) {
-    setKbTitle(article.t);
-    setKbBody(article.b);
-    setKbOpen(true);
-    setOpenDrop(false);
-    setQ("");
   }
 
   function pickSubscriber(hit: SubscriberSearchHit) {
@@ -143,86 +153,75 @@ export default function UniversalSearch() {
     navigate(`/users/${hit.id}`);
   }
 
-  function onSearchEnter() {
-    const s = trimmed.toLowerCase();
-    if (!s) return;
+  function pickKbArticle(hit: DeskSearchKbHit) {
     setOpenDrop(false);
-    const kh = MOCK_KB.filter((k) => k.t.toLowerCase().includes(s) || k.k.includes(s));
-    if (kh.length) {
-      showKbCard(kh[0]);
+    setQ("");
+    navigate(`/kb/${hit.slug}`);
+  }
+
+  function onSearchEnter() {
+    if (!trimmed) return;
+    setOpenDrop(false);
+    if (kb.length) {
+      pickKbArticle(kb[0]);
       return;
     }
     if (subs.length) pickSubscriber(subs[0]);
   }
 
   return (
-    <>
-      <div ref={wrapRef} className="sw sr-wrap" style={{ maxWidth: 680, margin: "0 auto" }}>
-        <input
-          className="si sr-input"
-          value={q}
-          onChange={(e) => onSearchInput(e.target.value)}
-          onFocus={() => trimmed.length >= 2 && setOpenDrop(true)}
-          onKeyDown={(e) => e.key === "Enter" && onSearchEnter()}
-          placeholder="ФИО, логин, ID, телефон, email, паспорт, ИНН…"
-          autoComplete="off"
-          spellCheck={false}
-          aria-label="Поиск абонента или базы знаний"
-          aria-expanded={showDrop}
-          aria-haspopup="listbox"
-        />
-        <svg className="sic sr-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden>
-          <circle cx="9" cy="9" r="5.5" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M14 14l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-        {loading ? <span className="sr-spinner" aria-hidden /> : null}
+    <div ref={wrapRef} className="sw sr-wrap" style={{ maxWidth: 680, margin: "0 auto" }}>
+      <input
+        className="si sr-input"
+        value={q}
+        onChange={(e) => onSearchInput(e.target.value)}
+        onFocus={() => trimmed.length >= 2 && setOpenDrop(true)}
+        onKeyDown={(e) => e.key === "Enter" && onSearchEnter()}
+        placeholder="ФИО, логин, ID, телефон, email, паспорт, ИНН…"
+        autoComplete="off"
+        spellCheck={false}
+        aria-label="Поиск абонента или базы знаний"
+        aria-expanded={showDrop}
+        aria-haspopup="listbox"
+      />
+      <svg className="sic sr-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden>
+        <circle cx="9" cy="9" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M14 14l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      {loading ? <span className="sr-spinner" aria-hidden /> : null}
 
-        <div className={`sd sr-drop ${showDrop ? "vis" : ""}`} role="listbox">
-          {searchError ? <div className="sr-empty sr-error">{searchError}</div> : null}
+      <div className={`sd sr-drop ${showDrop ? "vis" : ""}`} role="listbox">
+        {searchError ? <div className="sr-empty sr-error">{searchError}</div> : null}
 
-          {!searchError && loading && !hasResults ? <div className="sr-empty">Ищем…</div> : null}
+        {!searchError && loading && !hasResults ? <div className="sr-empty">Ищем…</div> : null}
 
-          {!searchError && !loading && trimmed.length >= 2 && !hasResults ? (
-            <div className="sr-empty">Ничего не найдено</div>
-          ) : null}
+        {!searchError && !loading && trimmed.length >= 2 && !hasResults ? (
+          <div className="sr-empty">Ничего не найдено</div>
+        ) : null}
 
-          {subsVisible ? (
-            <>
-              <div className="ssc">Абоненты</div>
-              {subs.map((s) => (
-                <SubscriberRow key={s.id} hit={s} query={trimmed} onPick={() => pickSubscriber(s)} />
-              ))}
-            </>
-          ) : null}
+        {kbVisible ? (
+          <>
+            <div className="ssc">База знаний</div>
+            {kb.map((item) => (
+              <KbRow
+                key={item.id}
+                hit={item}
+                query={trimmed}
+                onPick={() => pickKbArticle(item)}
+              />
+            ))}
+          </>
+        ) : null}
 
-          {kbVisible ? (
-            <>
-              <div className="ssc">База знаний</div>
-              {kb.slice(0, 5).map((k) => (
-                <button type="button" key={k.t} className="si2 sr-hit" onClick={() => showKbCard(k)}>
-                  <span className="sr-badge sr-badge--kb" aria-hidden>
-                    БД
-                  </span>
-                  <div className="sr-body">
-                    <div className="sn">{k.t}</div>
-                    <div className="sm">{stripHtml(k.b)}…</div>
-                  </div>
-                </button>
-              ))}
-            </>
-          ) : null}
-        </div>
+        {subsVisible ? (
+          <>
+            <div className="ssc">Абоненты</div>
+            {subs.map((s) => (
+              <SubscriberRow key={s.id} hit={s} query={trimmed} onPick={() => pickSubscriber(s)} />
+            ))}
+          </>
+        ) : null}
       </div>
-
-      <div className={`kbc ${kbOpen ? "vis" : ""}`}>
-        <button type="button" className="kbc-x" aria-label="Закрыть" onClick={() => setKbOpen(false)}>
-          ×
-        </button>
-        <div className="kbc-t">
-          {kbTitle} <span className="kbc-tag">Инструкция</span>
-        </div>
-        <div className="kbc-b" dangerouslySetInnerHTML={{ __html: kbBody }} />
-      </div>
-    </>
+    </div>
   );
 }

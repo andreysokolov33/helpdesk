@@ -310,9 +310,8 @@ class CloseTicketRequest(BaseModel):
 
 
 class DeskSearchKbHit(BaseModel):
-    """Заглушка под будущий поиск по базе знаний."""
-
     id: int
+    slug: str
     title: str
     excerpt: str | None = None
 

@@ -7,8 +7,13 @@ import {
   type KbQuizFinishResult,
   type KbQuizQuestion,
   type KbQuizSession,
-  type KbQuizSubmitAnswerResult,
 } from "@/api/kb";
+import {
+  feedbackFromAnswered,
+  firstUnansweredIndex,
+  isAlreadyAnsweredError,
+  type QuizAnswerFeedback,
+} from "@/workspace/quizFlow";
 
 type Props = {
   slug: string;
@@ -16,14 +21,29 @@ type Props = {
   onBackToArticle: () => void;
 };
 
-type AnswerFeedback = KbQuizSubmitAnswerResult & {
-  selectedOptionIds: number[];
-};
+type AnswerFeedback = QuizAnswerFeedback;
 
-function firstUnansweredIndex(session: KbQuizSession): number {
-  const answeredIds = new Set(session.answered.map((a) => a.question_id));
-  const idx = session.questions.findIndex((q) => !answeredIds.has(q.id));
-  return idx === -1 ? session.questions.length : idx;
+function applySessionProgress(
+  data: KbQuizSession,
+  setters: {
+    setSession: (v: KbQuizSession) => void;
+    setAttemptId: (v: number | null) => void;
+    setQuestionIndex: (v: number) => void;
+    setFeedback: (v: AnswerFeedback | null) => void;
+    setMultipleSelected: (v: number[]) => void;
+  },
+): number {
+  setters.setSession(data);
+  setters.setAttemptId(data.attempt_id);
+  const idx = firstUnansweredIndex(data);
+  setters.setQuestionIndex(idx);
+  setters.setMultipleSelected([]);
+  if (idx < data.questions.length) {
+    setters.setFeedback(feedbackFromAnswered(data, data.questions[idx].id));
+  } else {
+    setters.setFeedback(null);
+  }
+  return idx;
 }
 
 export function KbQuizPanel({ slug, onFinished, onBackToArticle }: Props) {
@@ -36,6 +56,19 @@ export function KbQuizPanel({ slug, onFinished, onBackToArticle }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [finishResult, setFinishResult] = useState<KbQuizFinishResult | null>(null);
   const [multipleSelected, setMultipleSelected] = useState<number[]>([]);
+  const [finishing, setFinishing] = useState(false);
+
+  const syncFromSession = useCallback(
+    (data: KbQuizSession) =>
+      applySessionProgress(data, {
+        setSession,
+        setAttemptId,
+        setQuestionIndex,
+        setFeedback,
+        setMultipleSelected,
+      }),
+    [],
+  );
 
   const finishAttempt = useCallback(
     async (id: number) => {
@@ -64,9 +97,7 @@ export function KbQuizPanel({ slug, onFinished, onBackToArticle }: Props) {
       }
 
       if (data.attempt_status === "in_progress" && data.attempt_id) {
-        setAttemptId(data.attempt_id);
-        const idx = firstUnansweredIndex(data);
-        setQuestionIndex(idx);
+        const idx = syncFromSession(data);
         if (idx >= data.questions.length) {
           await finishAttempt(data.attempt_id);
         }
@@ -82,7 +113,7 @@ export function KbQuizPanel({ slug, onFinished, onBackToArticle }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [slug, finishAttempt]);
+  }, [slug, finishAttempt, syncFromSession]);
 
   useEffect(() => {
     void bootstrap();
@@ -110,52 +141,70 @@ export function KbQuizPanel({ slug, onFinished, onBackToArticle }: Props) {
       ? session.total_questions - session.correct_count
       : 0);
 
-  const handleSingleSelect = async (optionId: number) => {
+  const submitAnswer = async (selectedOptionIds: number[]) => {
     if (!currentQuestion || !attemptId || feedback || submitting) return;
     setSubmitting(true);
-    try {
-      const result = await submitKbQuizAnswer(attemptId, currentQuestion.id, [optionId]);
-      setFeedback({ ...result, selectedOptionIds: [optionId] });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось отправить ответ");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleMultipleSubmit = async () => {
-    if (!currentQuestion || !attemptId || feedback || submitting || multipleSelected.length === 0) {
-      return;
-    }
-    setSubmitting(true);
+    setError(null);
     try {
       const result = await submitKbQuizAnswer(
         attemptId,
         currentQuestion.id,
-        [...multipleSelected].sort((a, b) => a - b),
+        [...selectedOptionIds].sort((a, b) => a - b),
       );
-      setFeedback({ ...result, selectedOptionIds: multipleSelected });
+      setFeedback({ ...result, selectedOptionIds });
+      setMultipleSelected([]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось отправить ответ");
+      const message = e instanceof Error ? e.message : "Не удалось отправить ответ";
+      if (isAlreadyAnsweredError(message) && session) {
+        try {
+          const fresh = await fetchKbQuizSession(slug);
+          const idx = syncFromSession(fresh);
+          if (idx >= fresh.questions.length && fresh.attempt_id) {
+            await finishAttempt(fresh.attempt_id);
+          }
+          return;
+        } catch {
+          // fall through
+        }
+      }
+      setError(message);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleSingleSelect = async (optionId: number) => {
+    await submitAnswer([optionId]);
+  };
+
+  const handleMultipleSubmit = async () => {
+    if (multipleSelected.length === 0) return;
+    await submitAnswer(multipleSelected);
+  };
+
   const handleNext = async () => {
-    if (!session || !attemptId) return;
+    if (!session || !attemptId || finishing) return;
     const isLast = questionIndex + 1 >= totalQuestions;
     if (isLast) {
+      setFinishing(true);
       try {
         await finishAttempt(attemptId);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не удалось завершить тест");
+      } finally {
+        setFinishing(false);
       }
       return;
     }
-    setQuestionIndex((i) => i + 1);
+    const nextIndex = questionIndex + 1;
+    setQuestionIndex(nextIndex);
     setFeedback(null);
     setMultipleSelected([]);
+    const nextQuestion = session.questions[nextIndex];
+    if (nextQuestion) {
+      const restored = feedbackFromAnswered(session, nextQuestion.id);
+      if (restored) setFeedback(restored);
+    }
   };
 
   const handleRetry = async () => {
@@ -204,7 +253,11 @@ export function KbQuizPanel({ slug, onFinished, onBackToArticle }: Props) {
       <div className="quiz-progress-text">
         {showFinished
           ? "Тестирование завершено"
-          : `Вопрос ${questionIndex + 1} из ${totalQuestions}`}
+          : `Вопрос ${questionIndex + 1} из ${totalQuestions}${
+              currentQuestion?.selection_mode === "multiple" && !feedback
+                ? " · можно выбрать несколько вариантов"
+                : ""
+            }`}
       </div>
       <div className="quiz-progress-wrap" aria-hidden>
         <div className="quiz-progress-bar" style={{ width: `${progressPct}%` }} />

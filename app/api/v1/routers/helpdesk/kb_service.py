@@ -450,6 +450,47 @@ async def _load_quiz_questions(db: AsyncSession, quiz_id: int) -> list[dict[str,
     ]
 
 
+async def _load_attempt_answered(
+    db: AsyncSession,
+    *,
+    attempt_id: int,
+) -> list[dict[str, Any]]:
+    ans_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    a.question_id,
+                    a.selected_option_ids,
+                    a.is_correct,
+                    COALESCE(
+                        (
+                            SELECT ARRAY_AGG(o.id ORDER BY o.sort_order, o.id)
+                            FROM {_SCHEMA}.kb_question_options o
+                            WHERE o.question_id = a.question_id
+                              AND o.is_correct IS TRUE
+                        ),
+                        ARRAY[]::int[]
+                    ) AS correct_option_ids
+                FROM {_SCHEMA}.kb_quiz_attempt_answers a
+                WHERE a.attempt_id = :attempt_id
+                ORDER BY a.answered_at, a.id
+                """
+            ),
+            {"attempt_id": attempt_id},
+        )
+    ).mappings().all()
+    return [
+        {
+            "question_id": int(a["question_id"]),
+            "selected_option_ids": [int(x) for x in (a["selected_option_ids"] or [])],
+            "is_correct": bool(a["is_correct"]),
+            "correct_option_ids": [int(x) for x in (a["correct_option_ids"] or [])],
+        }
+        for a in ans_rows
+    ]
+
+
 async def fetch_kb_quiz_session(
     db: AsyncSession,
     *,
@@ -520,27 +561,7 @@ async def fetch_kb_quiz_session(
             total_questions = int(attempt["total_questions"])
             correct_count = int(attempt["correct_count"])
         elif attempt_status == "in_progress":
-            ans_rows = (
-                await db.execute(
-                    text(
-                        f"""
-                        SELECT question_id, selected_option_ids, is_correct
-                        FROM {_SCHEMA}.kb_quiz_attempt_answers
-                        WHERE attempt_id = :attempt_id
-                        ORDER BY answered_at, id
-                        """
-                    ),
-                    {"attempt_id": attempt_id},
-                )
-            ).mappings().all()
-            answered = [
-                {
-                    "question_id": int(a["question_id"]),
-                    "selected_option_ids": list(a["selected_option_ids"] or []),
-                    "is_correct": bool(a["is_correct"]),
-                }
-                for a in ans_rows
-            ]
+            answered = await _load_attempt_answered(db, attempt_id=attempt_id)
 
     return {
         "quiz_id": quiz_id,
@@ -761,6 +782,7 @@ async def finish_kb_quiz_attempt(
                     qa.article_id,
                     qa.quiz_id,
                     qa.status::text AS status,
+                    qa.attempt_type::text AS attempt_type,
                     qa.total_questions,
                     q.passing_score_percent,
                     a.pass_score_percent AS article_pass_score_percent,
@@ -816,7 +838,7 @@ async def finish_kb_quiz_attempt(
         {"attempt_id": attempt_id, "correct": correct, "passed": passed},
     )
 
-    if passed:
+    if passed and str(attempt.get("attempt_type") or "kb_topic") == "kb_topic":
         await db.execute(
             text(
                 f"""
@@ -851,7 +873,7 @@ async def finish_kb_quiz_attempt(
                 "attempt_id": attempt_id,
             },
         )
-    else:
+    elif not passed and str(attempt.get("attempt_type") or "kb_topic") == "kb_topic":
         await db.execute(
             text(
                 f"""

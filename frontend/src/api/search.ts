@@ -10,9 +10,16 @@ export type SubscriberSearchHit = {
   hotspot_id?: number | null;
 };
 
+export type DeskSearchKbHit = {
+  id: number;
+  slug: string;
+  title: string;
+  excerpt?: string | null;
+};
+
 export type DeskSearchResponse = {
   subscribers: SubscriberSearchHit[];
-  kb: { id: number; title: string; excerpt?: string | null }[];
+  kb: DeskSearchKbHit[];
 };
 
 export async function fetchDeskSearch(q: string, limit = 15): Promise<DeskSearchResponse> {
