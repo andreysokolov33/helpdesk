@@ -11,5 +11,6 @@ from .traffic import *
 from .users import * 
 from .feedback import *
 from .logs import *
+from .helpdesk_kb import *
 
 __all__ = []

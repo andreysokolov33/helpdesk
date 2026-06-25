@@ -1,0 +1,965 @@
+-- База знаний и обучение операторов helpdesk.
+-- Схема: helpdesk
+--
+-- Содержимое:
+--   kb_categories              — дерево разделов (/kb, левая навигация)
+--   kb_articles                — статьи (HTML-тело, правая панель, метаданные)
+--   kb_article_versions        — снимки версий статьи при публикации
+--   kb_quizzes                 — тест по теме (обычно 1:1 со статьёй)
+--   kb_questions               — вопросы теста
+--   kb_question_options        — варианты ответа (1+ правильных)
+--   kb_article_progress        — прогресс оператора по статье (изучено / сдано)
+--   kb_quiz_attempts           — попытки прохождения тестов (история неизменяема)
+--   kb_quiz_attempt_answers    — ответы внутри попытки
+--   kb_courses                 — курсы обучения (/train)
+--   kb_course_articles         — статьи внутри курса (порядок, обязательность)
+--   kb_course_progress         — прогресс оператора по курсу
+--
+-- Операторы: users.skystream_users (id).
+-- Оценки: score / correct_count / passed в kb_quiz_attempts,
+--          is_correct в kb_quiz_attempt_answers.
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- Схема
+-- ---------------------------------------------------------------------------
+
+CREATE SCHEMA IF NOT EXISTS helpdesk;
+
+COMMENT ON SCHEMA helpdesk IS
+    'Модули операторского портала helpdesk: база знаний (/kb), обучение (/train), тестирование.';
+
+-- ---------------------------------------------------------------------------
+-- ENUM-типы
+-- ---------------------------------------------------------------------------
+
+-- Статус прохождения статьи оператором.
+CREATE TYPE helpdesk.kb_progress_status AS ENUM (
+    'not_started',  -- оператор ещё не открывал тему
+    'in_progress',  -- начал читать или проходить тест
+    'studied',      -- дочитал материал (без успешного теста)
+    'completed'     -- дочитал и успешно сдал тест
+);
+
+COMMENT ON TYPE helpdesk.kb_progress_status IS
+    'Этап освоения статьи оператором для /kb и зачёта в курсе /train.';
+
+-- Режим выбора ответа в вопросе.
+CREATE TYPE helpdesk.kb_question_selection_mode AS ENUM (
+    'single',    -- один правильный вариант
+    'multiple'   -- один или несколько правильных вариантов
+);
+
+COMMENT ON TYPE helpdesk.kb_question_selection_mode IS
+    'Тип вопроса: одиночный или множественный выбор.';
+
+-- Источник / контекст попытки тестирования.
+CREATE TYPE helpdesk.kb_quiz_attempt_type AS ENUM (
+    'kb_topic',      -- тест по теме на странице /kb
+    'train_course',  -- итоговый или промежуточный тест курса /train
+    'daily_warmup'   -- ежедневная разминка перед сменой
+);
+
+COMMENT ON TYPE helpdesk.kb_quiz_attempt_type IS
+    'Контекст попытки: тема БЗ, курс обучения или ежедневная разминка.';
+
+-- Статус попытки теста.
+CREATE TYPE helpdesk.kb_quiz_attempt_status AS ENUM (
+    'in_progress',  -- тест начат, ещё не завершён
+    'finished',     -- оператор завершил попытку
+    'abandoned'     -- попытка прервана (таймаут, закрытие вкладки — по бизнес-логике)
+);
+
+COMMENT ON TYPE helpdesk.kb_quiz_attempt_status IS
+    'Жизненный цикл попытки прохождения теста.';
+
+-- Формат хранения тела статьи.
+CREATE TYPE helpdesk.kb_content_format AS ENUM (
+    'html',   -- готовый HTML-фрагмент (импорт из temp/database)
+    'blocks'  -- JSON-блоки (будущий рендер через React-компоненты)
+);
+
+COMMENT ON TYPE helpdesk.kb_content_format IS
+    'Способ хранения контента статьи: HTML или структурированные блоки.';
+
+-- Статус прохождения курса.
+CREATE TYPE helpdesk.kb_course_progress_status AS ENUM (
+    'not_started',
+    'in_progress',
+    'completed'
+);
+
+COMMENT ON TYPE helpdesk.kb_course_progress_status IS
+    'Прогресс оператора по курсу /train.';
+
+-- ---------------------------------------------------------------------------
+-- Разделы базы знаний (дерево)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_categories (
+    id              BIGSERIAL PRIMARY KEY,
+
+  -- Родительский раздел; NULL — корневая папка (например «2. Оплата и баланс»).
+    parent_id       BIGINT NULL
+        REFERENCES helpdesk.kb_categories (id) ON DELETE RESTRICT,
+
+  -- Название раздела для дерева навигации.
+    title           TEXT NOT NULL,
+
+  -- URL-slug раздела (опционально, для будущих маршрутов).
+    slug            TEXT NULL,
+
+  -- Порядок сортировки среди соседей с тем же parent_id.
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+
+  -- FALSE — скрыт из дерева /kb.
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_kb_categories_title_nonempty
+        CHECK (length(trim(title)) > 0),
+    CONSTRAINT chk_kb_categories_sort_order_nonneg
+        CHECK (sort_order >= 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_categories IS
+    'Иерархия разделов базы знаний для дерева на главной странице /kb.';
+
+COMMENT ON COLUMN helpdesk.kb_categories.parent_id IS
+    'Родительский раздел; NULL — корень дерева.';
+
+COMMENT ON COLUMN helpdesk.kb_categories.title IS
+    'Отображаемое название папки в левой навигации.';
+
+COMMENT ON COLUMN helpdesk.kb_categories.slug IS
+    'Стабильный идентификатор раздела в URL (необязательный).';
+
+COMMENT ON COLUMN helpdesk.kb_categories.sort_order IS
+    'Порядок отображения среди разделов одного уровня.';
+
+COMMENT ON COLUMN helpdesk.kb_categories.is_active IS
+    'FALSE — раздел скрыт из интерфейса.';
+
+-- Дерево разделов: быстрая выборка детей по parent_id.
+CREATE INDEX idx_kb_categories_parent_sort
+    ON helpdesk.kb_categories (parent_id, sort_order, id)
+    WHERE is_active;
+
+CREATE UNIQUE INDEX uq_kb_categories_slug
+    ON helpdesk.kb_categories (slug)
+    WHERE slug IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Статьи базы знаний
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_articles (
+    id              BIGSERIAL PRIMARY KEY,
+
+  -- Раздел, к которому относится статья.
+    category_id     BIGINT NOT NULL
+        REFERENCES helpdesk.kb_categories (id) ON DELETE RESTRICT,
+
+  -- Заголовок статьи (h1).
+    title           TEXT NOT NULL,
+
+  -- Уникальный slug для маршрута /kb/{slug}.
+    slug            TEXT NOT NULL,
+
+  -- Подзаголовок под h1 (например «Интерактивное руководство»).
+    subtitle        TEXT NULL,
+
+  -- Краткое описание для списка и поиска на главной.
+    summary         TEXT NULL DEFAULT '',
+
+  -- Тело статьи: HTML-фрагмент (#paneArticle без обёрток) или JSON blocks.
+    content_html    TEXT NOT NULL DEFAULT '',
+
+  -- Формат поля content_html / будущего content_blocks.
+    content_format  helpdesk.kb_content_format NOT NULL DEFAULT 'html',
+
+  -- Правая панель: якоря, шаблон тикета, SLA, напоминания (JSON).
+    sidebar_json    JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+  -- Текущая версия контента; увеличивается при публикации новой редакции.
+    version         INTEGER NOT NULL DEFAULT 1,
+
+  -- Порядок статьи внутри раздела.
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+
+  -- FALSE — статья не показывается операторам.
+    is_published    BOOLEAN NOT NULL DEFAULT FALSE,
+
+  -- Минимальный процент для зачёта теста по теме (100 = только без ошибок).
+    pass_score_percent SMALLINT NOT NULL DEFAULT 100,
+
+  -- Лимит зачётных попыток; NULL — без лимита (история всё равно пишется).
+    max_attempts    SMALLINT NULL,
+
+  -- Требуется ли успешный тест для статуса completed.
+    quiz_required   BOOLEAN NOT NULL DEFAULT TRUE,
+
+  -- Вектор полнотекстового поиска (заголовок + summary).
+    search_vector   TSVECTOR GENERATED ALWAYS AS (
+        to_tsvector(
+            'russian',
+            coalesce(title, '') || ' ' || coalesce(summary, '')
+        )
+    ) STORED,
+
+    published_at    TIMESTAMPTZ NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_articles_slug
+        UNIQUE (slug),
+    CONSTRAINT chk_kb_articles_title_nonempty
+        CHECK (length(trim(title)) > 0),
+    CONSTRAINT chk_kb_articles_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+    CONSTRAINT chk_kb_articles_version_positive
+        CHECK (version > 0),
+    CONSTRAINT chk_kb_articles_sort_order_nonneg
+        CHECK (sort_order >= 0),
+    CONSTRAINT chk_kb_articles_pass_score_percent
+        CHECK (pass_score_percent BETWEEN 0 AND 100),
+    CONSTRAINT chk_kb_articles_max_attempts_positive
+        CHECK (max_attempts IS NULL OR max_attempts > 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_articles IS
+    'Статьи базы знаний: контент, метаданные, настройки тестирования по теме.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.category_id IS
+    'FK на раздел kb_categories.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.title IS
+    'Заголовок статьи (h1).';
+
+COMMENT ON COLUMN helpdesk.kb_articles.slug IS
+    'Уникальный URL-slug, например voprosy-po-spisaniyam.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.subtitle IS
+    'Подзаголовок над или под заголовком.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.summary IS
+    'Краткое описание для списка статей и поиска.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.content_html IS
+    'HTML-фрагмент тела статьи без header/nav/style/script.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.content_format IS
+    'html — готовый HTML; blocks — структурированный JSON (будущее).';
+
+COMMENT ON COLUMN helpdesk.kb_articles.sidebar_json IS
+    'Правая панель: quick_access, ticket_template, sla, reminders.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.version IS
+    'Номер редакции; фиксируется в попытках теста для аудита.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.sort_order IS
+    'Порядок статьи внутри раздела.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.is_published IS
+    'Опубликована ли статья для операторов.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.pass_score_percent IS
+    'Порог успеха теста по теме в процентах (по умолчанию 100).';
+
+COMMENT ON COLUMN helpdesk.kb_articles.max_attempts IS
+    'Макс. число зачётных попыток; NULL — без ограничения.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.quiz_required IS
+    'Нужен ли успешный тест для статуса completed.';
+
+COMMENT ON COLUMN helpdesk.kb_articles.search_vector IS
+    'Автоматический tsvector для полнотекстового поиска (title + summary).';
+
+COMMENT ON COLUMN helpdesk.kb_articles.published_at IS
+    'Дата публикации текущей редакции.';
+
+-- Список статей раздела на главной /kb.
+CREATE INDEX idx_kb_articles_category_sort
+    ON helpdesk.kb_articles (category_id, sort_order, id)
+    WHERE is_published;
+
+-- Полнотекстовый поиск на главной.
+CREATE INDEX idx_kb_articles_search
+    ON helpdesk.kb_articles USING gin (search_vector)
+    WHERE is_published;
+
+-- Быстрый lookup статьи по slug.
+CREATE INDEX idx_kb_articles_slug
+    ON helpdesk.kb_articles (slug)
+    WHERE is_published;
+
+-- ---------------------------------------------------------------------------
+-- Версии статьи (снимки при публикации)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_article_versions (
+    id              BIGSERIAL PRIMARY KEY,
+
+    article_id      BIGINT NOT NULL
+        REFERENCES helpdesk.kb_articles (id) ON DELETE CASCADE,
+
+  -- Номер версии (совпадает с kb_articles.version на момент снимка).
+    version         INTEGER NOT NULL,
+
+  -- Снимок HTML-контента.
+    content_html    TEXT NOT NULL DEFAULT '',
+
+  -- Снимок правой панели.
+    sidebar_json    JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+  -- Кто опубликовал редакцию.
+    created_by      BIGINT NULL
+        REFERENCES users.skystream_users (id) ON DELETE SET NULL,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_article_versions_article_version
+        UNIQUE (article_id, version),
+    CONSTRAINT chk_kb_article_versions_version_positive
+        CHECK (version > 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_article_versions IS
+    'История редакций статьи; привязка попыток теста к версии контента.';
+
+COMMENT ON COLUMN helpdesk.kb_article_versions.article_id IS
+    'FK на статью kb_articles.';
+
+COMMENT ON COLUMN helpdesk.kb_article_versions.version IS
+    'Номер версии, совпадающий с kb_articles.version.';
+
+COMMENT ON COLUMN helpdesk.kb_article_versions.content_html IS
+    'Снимок HTML-тела на момент публикации.';
+
+COMMENT ON COLUMN helpdesk.kb_article_versions.sidebar_json IS
+    'Снимок правой панели на момент публикации.';
+
+COMMENT ON COLUMN helpdesk.kb_article_versions.created_by IS
+    'Оператор/редактор, опубликовавший версию.';
+
+CREATE INDEX idx_kb_article_versions_article
+    ON helpdesk.kb_article_versions (article_id, version DESC);
+
+-- ---------------------------------------------------------------------------
+-- Тесты по теме
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_quizzes (
+    id              BIGSERIAL PRIMARY KEY,
+
+  -- Статья, к которой привязан тест (1:1 для /kb).
+    article_id      BIGINT NOT NULL
+        REFERENCES helpdesk.kb_articles (id) ON DELETE CASCADE,
+
+  -- Заголовок теста (например «Проверка знаний темы: …»).
+    title           TEXT NOT NULL,
+
+  -- Краткое описание / инструкция перед вопросами.
+    description     TEXT NULL DEFAULT '',
+
+  -- FALSE — тест скрыт (статью можно читать без теста).
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+  -- Порог успеха в процентах (может переопределять настройку статьи).
+    passing_score_percent SMALLINT NOT NULL DEFAULT 100,
+
+  -- Сколько вопросов выдавать из пула; NULL — все активные вопросы.
+    questions_per_attempt SMALLINT NULL,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_quizzes_article
+        UNIQUE (article_id),
+    CONSTRAINT chk_kb_quizzes_title_nonempty
+        CHECK (length(trim(title)) > 0),
+    CONSTRAINT chk_kb_quizzes_passing_score
+        CHECK (passing_score_percent BETWEEN 0 AND 100),
+    CONSTRAINT chk_kb_quizzes_questions_per_attempt
+        CHECK (questions_per_attempt IS NULL OR questions_per_attempt > 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_quizzes IS
+    'Тест по теме статьи; обычно одна запись на статью.';
+
+COMMENT ON COLUMN helpdesk.kb_quizzes.article_id IS
+    'FK на статью; уникальная связь 1:1.';
+
+COMMENT ON COLUMN helpdesk.kb_quizzes.title IS
+    'Заголовок блока тестирования.';
+
+COMMENT ON COLUMN helpdesk.kb_quizzes.description IS
+    'Текст-инструкция перед началом теста.';
+
+COMMENT ON COLUMN helpdesk.kb_quizzes.is_active IS
+    'FALSE — тест недоступен операторам.';
+
+COMMENT ON COLUMN helpdesk.kb_quizzes.passing_score_percent IS
+    'Минимальный процент правильных ответов для зачёта.';
+
+COMMENT ON COLUMN helpdesk.kb_quizzes.questions_per_attempt IS
+    'Число случайных вопросов за попытку; NULL — все вопросы.';
+
+CREATE INDEX idx_kb_quizzes_article
+    ON helpdesk.kb_quizzes (article_id)
+    WHERE is_active;
+
+-- ---------------------------------------------------------------------------
+-- Вопросы теста
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_questions (
+    id              BIGSERIAL PRIMARY KEY,
+
+    quiz_id         BIGINT NOT NULL
+        REFERENCES helpdesk.kb_quizzes (id) ON DELETE CASCADE,
+
+  -- Текст вопроса.
+    question_text   TEXT NOT NULL,
+
+  -- Пояснение после ответа («Разбор: …»).
+    explanation     TEXT NULL DEFAULT '',
+
+  -- single — один правильный; multiple — один или несколько.
+    selection_mode  helpdesk.kb_question_selection_mode NOT NULL DEFAULT 'single',
+
+  -- Порядок вопроса в тесте.
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+
+  -- FALSE — вопрос не участвует в новых попытках.
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+  -- Теги темы для аналитики супервайзера (например {списания, карта}).
+    tags            TEXT[] NOT NULL DEFAULT '{}',
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_kb_questions_text_nonempty
+        CHECK (length(trim(question_text)) > 0),
+    CONSTRAINT chk_kb_questions_sort_order_nonneg
+        CHECK (sort_order >= 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_questions IS
+    'Вопросы теста по теме или пул для ежедневной разминки.';
+
+COMMENT ON COLUMN helpdesk.kb_questions.quiz_id IS
+    'FK на тест kb_quizzes.';
+
+COMMENT ON COLUMN helpdesk.kb_questions.question_text IS
+    'Формулировка вопроса.';
+
+COMMENT ON COLUMN helpdesk.kb_questions.explanation IS
+    'Разбор правильного ответа для оператора.';
+
+COMMENT ON COLUMN helpdesk.kb_questions.selection_mode IS
+    'single или multiple — тип выбора ответа.';
+
+COMMENT ON COLUMN helpdesk.kb_questions.sort_order IS
+    'Порядок показа вопросов в тесте.';
+
+COMMENT ON COLUMN helpdesk.kb_questions.is_active IS
+    'FALSE — вопрос исключён из новых попыток.';
+
+COMMENT ON COLUMN helpdesk.kb_questions.tags IS
+    'Тематические теги для отчётов супервайзера.';
+
+CREATE INDEX idx_kb_questions_quiz_sort
+    ON helpdesk.kb_questions (quiz_id, sort_order, id)
+    WHERE is_active;
+
+CREATE INDEX idx_kb_questions_tags
+    ON helpdesk.kb_questions USING gin (tags);
+
+-- ---------------------------------------------------------------------------
+-- Варианты ответа
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_question_options (
+    id              BIGSERIAL PRIMARY KEY,
+
+    question_id     BIGINT NOT NULL
+        REFERENCES helpdesk.kb_questions (id) ON DELETE CASCADE,
+
+  -- Текст варианта ответа.
+    option_text     TEXT NOT NULL,
+
+  -- TRUE — вариант входит в правильный набор (для multiple может быть несколько).
+    is_correct      BOOLEAN NOT NULL DEFAULT FALSE,
+
+  -- Порядок отображения (A, B, C…).
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_kb_question_options_text_nonempty
+        CHECK (length(trim(option_text)) > 0),
+    CONSTRAINT chk_kb_question_options_sort_order_nonneg
+        CHECK (sort_order >= 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_question_options IS
+    'Варианты ответа на вопрос; 1+ записей с is_correct = TRUE.';
+
+COMMENT ON COLUMN helpdesk.kb_question_options.question_id IS
+    'FK на вопрос kb_questions.';
+
+COMMENT ON COLUMN helpdesk.kb_question_options.option_text IS
+    'Текст варианта ответа.';
+
+COMMENT ON COLUMN helpdesk.kb_question_options.is_correct IS
+    'TRUE — вариант считается правильным.';
+
+COMMENT ON COLUMN helpdesk.kb_question_options.sort_order IS
+    'Порядок вариантов на экране.';
+
+CREATE INDEX idx_kb_question_options_question_sort
+    ON helpdesk.kb_question_options (question_id, sort_order, id);
+
+-- ---------------------------------------------------------------------------
+-- Прогресс оператора по статье
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_article_progress (
+    id              BIGSERIAL PRIMARY KEY,
+
+    operator_id     BIGINT NOT NULL
+        REFERENCES users.skystream_users (id) ON DELETE CASCADE,
+
+    article_id      BIGINT NOT NULL
+        REFERENCES helpdesk.kb_articles (id) ON DELETE CASCADE,
+
+  -- Текущий этап: not_started → in_progress → studied → completed.
+    status          helpdesk.kb_progress_status NOT NULL DEFAULT 'not_started',
+
+  -- Когда оператор дочитал материал (IntersectionObserver / кнопка «изучено»).
+    studied_at      TIMESTAMPTZ NULL,
+
+  -- Когда успешно сдал тест по теме.
+    quiz_passed_at  TIMESTAMPTZ NULL,
+
+  -- Последняя завершённая или активная попытка теста.
+    last_attempt_id BIGINT NULL,
+
+  -- Версия статьи, по которой зафиксирован прогресс.
+    content_version INTEGER NOT NULL DEFAULT 1,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_article_progress_operator_article
+        UNIQUE (operator_id, article_id),
+    CONSTRAINT chk_kb_article_progress_content_version
+        CHECK (content_version > 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_article_progress IS
+    'Агрегированный прогресс оператора по статье для дерева /kb и отчётов.';
+
+COMMENT ON COLUMN helpdesk.kb_article_progress.operator_id IS
+    'FK на оператора users.skystream_users.id.';
+
+COMMENT ON COLUMN helpdesk.kb_article_progress.article_id IS
+    'FK на статью kb_articles.';
+
+COMMENT ON COLUMN helpdesk.kb_article_progress.status IS
+    'Текущий статус: not_started, in_progress, studied, completed.';
+
+COMMENT ON COLUMN helpdesk.kb_article_progress.studied_at IS
+    'Момент, когда материал отмечен как прочитанный.';
+
+COMMENT ON COLUMN helpdesk.kb_article_progress.quiz_passed_at IS
+    'Момент успешной сдачи теста по теме.';
+
+COMMENT ON COLUMN helpdesk.kb_article_progress.last_attempt_id IS
+    'Ссылка на последнюю попытку kb_quiz_attempts (без FK — добавляется ниже).';
+
+COMMENT ON COLUMN helpdesk.kb_article_progress.content_version IS
+    'Версия статьи на момент последнего обновления прогресса.';
+
+-- Дерево /kb: статусы всех статей одного оператора одним запросом.
+CREATE INDEX idx_kb_article_progress_operator_status
+    ON helpdesk.kb_article_progress (operator_id, status);
+
+CREATE INDEX idx_kb_article_progress_operator_article
+    ON helpdesk.kb_article_progress (operator_id, article_id);
+
+CREATE INDEX idx_kb_article_progress_article
+    ON helpdesk.kb_article_progress (article_id, status);
+
+-- ---------------------------------------------------------------------------
+-- Попытки прохождения тестов (история)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_quiz_attempts (
+    id              BIGSERIAL PRIMARY KEY,
+
+    operator_id     BIGINT NOT NULL
+        REFERENCES users.skystream_users (id) ON DELETE CASCADE,
+
+    quiz_id         BIGINT NOT NULL
+        REFERENCES helpdesk.kb_quizzes (id) ON DELETE RESTRICT,
+
+  -- Денормализация для быстрых отчётов без JOIN через quiz.
+    article_id      BIGINT NOT NULL
+        REFERENCES helpdesk.kb_articles (id) ON DELETE RESTRICT,
+
+  -- Для attempt_type = train_course.
+    course_id       BIGINT NULL,
+
+  -- kb_topic | train_course | daily_warmup.
+    attempt_type    helpdesk.kb_quiz_attempt_type NOT NULL DEFAULT 'kb_topic',
+
+  -- in_progress | finished | abandoned.
+    status          helpdesk.kb_quiz_attempt_status NOT NULL DEFAULT 'in_progress',
+
+  -- Итоговая оценка: правильных ответов (целое число).
+    score           SMALLINT NOT NULL DEFAULT 0,
+
+  -- Всего вопросов в попытке.
+    total_questions SMALLINT NOT NULL DEFAULT 0,
+
+  -- Число верных ответов (дублирует score, явное поле для отчётов).
+    correct_count   SMALLINT NOT NULL DEFAULT 0,
+
+  -- TRUE — попытка зачтена по порогу passing_score_percent.
+    passed          BOOLEAN NOT NULL DEFAULT FALSE,
+
+  -- Версия статьи на момент попытки.
+    content_version INTEGER NOT NULL DEFAULT 1,
+
+  -- Для daily_warmup: календарный день смены (одна разминка в день).
+    session_date    DATE NULL,
+
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at     TIMESTAMPTZ NULL,
+
+    CONSTRAINT chk_kb_quiz_attempts_score_nonneg
+        CHECK (score >= 0),
+    CONSTRAINT chk_kb_quiz_attempts_total_nonneg
+        CHECK (total_questions >= 0),
+    CONSTRAINT chk_kb_quiz_attempts_correct_lte_total
+        CHECK (correct_count >= 0 AND correct_count <= total_questions),
+    CONSTRAINT chk_kb_quiz_attempts_content_version
+        CHECK (content_version > 0),
+    CONSTRAINT chk_kb_quiz_attempts_finished_after_start
+        CHECK (finished_at IS NULL OR finished_at >= started_at)
+);
+
+COMMENT ON TABLE helpdesk.kb_quiz_attempts IS
+    'История попыток тестирования; записи не удаляются, только дополняются.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.operator_id IS
+    'FK на оператора users.skystream_users.id.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.quiz_id IS
+    'FK на тест kb_quizzes.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.article_id IS
+    'FK на статью; денормализация для отчётов по темам.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.course_id IS
+    'FK на курс kb_courses (заполняется для train_course).';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.attempt_type IS
+    'Контекст: kb_topic, train_course или daily_warmup.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.status IS
+    'Статус попытки: in_progress, finished, abandoned.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.score IS
+    'Число правильных ответов (оценка попытки).';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.total_questions IS
+    'Сколько вопросов было в попытке.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.correct_count IS
+    'Число верных ответов (для отчётов супервайзера).';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.passed IS
+    'TRUE — попытка успешна по порогу прохождения.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.content_version IS
+    'Версия статьи на момент начала попытки.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.session_date IS
+    'Дата ежедневной разминки (attempt_type = daily_warmup).';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.started_at IS
+    'Время начала попытки.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempts.finished_at IS
+    'Время завершения попытки; NULL — ещё в процессе.';
+
+-- История попыток оператора.
+CREATE INDEX idx_kb_quiz_attempts_operator_finished
+    ON helpdesk.kb_quiz_attempts (operator_id, finished_at DESC NULLS LAST);
+
+-- Отчёты супервайзера по статье / теме.
+CREATE INDEX idx_kb_quiz_attempts_article_finished
+    ON helpdesk.kb_quiz_attempts (article_id, finished_at DESC NULLS LAST)
+    WHERE status = 'finished';
+
+-- Фильтр по типу попытки (курс, разминка, тема БЗ).
+CREATE INDEX idx_kb_quiz_attempts_type_operator
+    ON helpdesk.kb_quiz_attempts (attempt_type, operator_id, started_at DESC);
+
+-- Одна ежедневная разминка на оператора в день.
+CREATE UNIQUE INDEX uq_kb_quiz_attempts_daily_session
+    ON helpdesk.kb_quiz_attempts (operator_id, session_date)
+    WHERE attempt_type = 'daily_warmup'
+      AND session_date IS NOT NULL
+      AND status IN ('in_progress', 'finished');
+
+CREATE INDEX idx_kb_quiz_attempts_quiz
+    ON helpdesk.kb_quiz_attempts (quiz_id, started_at DESC);
+
+-- FK last_attempt_id (отложенный, т.к. ссылается на эту же таблицу).
+ALTER TABLE helpdesk.kb_article_progress
+    ADD CONSTRAINT fk_kb_article_progress_last_attempt
+        FOREIGN KEY (last_attempt_id)
+        REFERENCES helpdesk.kb_quiz_attempts (id)
+        ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- Ответы внутри попытки
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_quiz_attempt_answers (
+    id              BIGSERIAL PRIMARY KEY,
+
+    attempt_id      BIGINT NOT NULL
+        REFERENCES helpdesk.kb_quiz_attempts (id) ON DELETE CASCADE,
+
+    question_id     BIGINT NOT NULL
+        REFERENCES helpdesk.kb_questions (id) ON DELETE RESTRICT,
+
+  -- Выбранные варианты (id из kb_question_options); для single — один элемент.
+    selected_option_ids BIGINT[] NOT NULL DEFAULT '{}',
+
+  -- TRUE — ответ полностью совпал с правильным набором.
+    is_correct      BOOLEAN NOT NULL DEFAULT FALSE,
+
+    answered_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_quiz_attempt_answers_attempt_question
+        UNIQUE (attempt_id, question_id)
+);
+
+COMMENT ON TABLE helpdesk.kb_quiz_attempt_answers IS
+    'Детализация ответов оператора внутри одной попытки теста.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempt_answers.attempt_id IS
+    'FK на попытку kb_quiz_attempts.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempt_answers.question_id IS
+    'FK на вопрос kb_questions.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempt_answers.selected_option_ids IS
+    'Массив id выбранных вариантов kb_question_options.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempt_answers.is_correct IS
+    'TRUE — ответ засчитан как верный.';
+
+COMMENT ON COLUMN helpdesk.kb_quiz_attempt_answers.answered_at IS
+    'Момент фиксации ответа.';
+
+CREATE INDEX idx_kb_quiz_attempt_answers_attempt
+    ON helpdesk.kb_quiz_attempt_answers (attempt_id);
+
+-- Аналитика слабых вопросов для супервайзера.
+CREATE INDEX idx_kb_quiz_attempt_answers_question_correct
+    ON helpdesk.kb_quiz_attempt_answers (question_id, is_correct);
+
+-- ---------------------------------------------------------------------------
+-- Курсы обучения (/train)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_courses (
+    id              BIGSERIAL PRIMARY KEY,
+
+  -- Название курса.
+    title           TEXT NOT NULL,
+
+  -- URL-slug курса.
+    slug            TEXT NOT NULL,
+
+  -- Описание для карточки на /train.
+    description     TEXT NULL DEFAULT '',
+
+  -- FALSE — курс скрыт.
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+  -- Порядок на странице /train.
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_courses_slug
+        UNIQUE (slug),
+    CONSTRAINT chk_kb_courses_title_nonempty
+        CHECK (length(trim(title)) > 0),
+    CONSTRAINT chk_kb_courses_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+    CONSTRAINT chk_kb_courses_sort_order_nonneg
+        CHECK (sort_order >= 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_courses IS
+    'Курсы полноценного обучения на странице /train.';
+
+COMMENT ON COLUMN helpdesk.kb_courses.title IS
+    'Название курса.';
+
+COMMENT ON COLUMN helpdesk.kb_courses.slug IS
+    'Уникальный URL-slug курса.';
+
+COMMENT ON COLUMN helpdesk.kb_courses.description IS
+    'Краткое описание для карточки курса.';
+
+COMMENT ON COLUMN helpdesk.kb_courses.is_active IS
+    'FALSE — курс недоступен операторам.';
+
+COMMENT ON COLUMN helpdesk.kb_courses.sort_order IS
+    'Порядок отображения на /train.';
+
+CREATE INDEX idx_kb_courses_active_sort
+    ON helpdesk.kb_courses (sort_order, id)
+    WHERE is_active;
+
+-- FK course_id в kb_quiz_attempts (после создания kb_courses).
+ALTER TABLE helpdesk.kb_quiz_attempts
+    ADD CONSTRAINT fk_kb_quiz_attempts_course
+        FOREIGN KEY (course_id)
+        REFERENCES helpdesk.kb_courses (id)
+        ON DELETE SET NULL;
+
+CREATE INDEX idx_kb_quiz_attempts_course
+    ON helpdesk.kb_quiz_attempts (course_id, operator_id)
+    WHERE course_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Статьи внутри курса
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_course_articles (
+    id              BIGSERIAL PRIMARY KEY,
+
+    course_id       BIGINT NOT NULL
+        REFERENCES helpdesk.kb_courses (id) ON DELETE CASCADE,
+
+    article_id      BIGINT NOT NULL
+        REFERENCES helpdesk.kb_articles (id) ON DELETE RESTRICT,
+
+  -- Порядок прохождения статей в курсе.
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+
+  -- TRUE — статья обязательна для завершения курса.
+    is_required     BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_course_articles_course_article
+        UNIQUE (course_id, article_id),
+    CONSTRAINT chk_kb_course_articles_sort_order_nonneg
+        CHECK (sort_order >= 0)
+);
+
+COMMENT ON TABLE helpdesk.kb_course_articles IS
+    'Связь курс ↔ статья с порядком и обязательностью.';
+
+COMMENT ON COLUMN helpdesk.kb_course_articles.course_id IS
+    'FK на курс kb_courses.';
+
+COMMENT ON COLUMN helpdesk.kb_course_articles.article_id IS
+    'FK на статью kb_articles.';
+
+COMMENT ON COLUMN helpdesk.kb_course_articles.sort_order IS
+    'Порядок статьи внутри курса.';
+
+COMMENT ON COLUMN helpdesk.kb_course_articles.is_required IS
+    'Обязательна ли статья для зачёта курса.';
+
+CREATE INDEX idx_kb_course_articles_course_sort
+    ON helpdesk.kb_course_articles (course_id, sort_order, id);
+
+CREATE INDEX idx_kb_course_articles_article
+    ON helpdesk.kb_course_articles (article_id);
+
+-- ---------------------------------------------------------------------------
+-- Прогресс оператора по курсу
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE helpdesk.kb_course_progress (
+    id              BIGSERIAL PRIMARY KEY,
+
+    operator_id     BIGINT NOT NULL
+        REFERENCES users.skystream_users (id) ON DELETE CASCADE,
+
+    course_id       BIGINT NOT NULL
+        REFERENCES helpdesk.kb_courses (id) ON DELETE CASCADE,
+
+  -- not_started | in_progress | completed.
+    status          helpdesk.kb_course_progress_status NOT NULL DEFAULT 'not_started',
+
+  -- Когда курс полностью завершён.
+    completed_at    TIMESTAMPTZ NULL,
+
+  -- Сколько обязательных статей завершено (денормализация для дашборда).
+    completed_articles_count SMALLINT NOT NULL DEFAULT 0,
+
+  -- Сколько обязательных статей в курсе на момент последнего пересчёта.
+    required_articles_count  SMALLINT NOT NULL DEFAULT 0,
+
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_kb_course_progress_operator_course
+        UNIQUE (operator_id, course_id),
+    CONSTRAINT chk_kb_course_progress_counts_nonneg
+        CHECK (
+            completed_articles_count >= 0
+            AND required_articles_count >= 0
+            AND completed_articles_count <= required_articles_count
+                OR required_articles_count = 0
+        )
+);
+
+COMMENT ON TABLE helpdesk.kb_course_progress IS
+    'Агрегированный прогресс оператора по курсу /train.';
+
+COMMENT ON COLUMN helpdesk.kb_course_progress.operator_id IS
+    'FK на оператора users.skystream_users.id.';
+
+COMMENT ON COLUMN helpdesk.kb_course_progress.course_id IS
+    'FK на курс kb_courses.';
+
+COMMENT ON COLUMN helpdesk.kb_course_progress.status IS
+    'Статус прохождения курса.';
+
+COMMENT ON COLUMN helpdesk.kb_course_progress.completed_at IS
+    'Момент завершения всех обязательных статей курса.';
+
+COMMENT ON COLUMN helpdesk.kb_course_progress.completed_articles_count IS
+    'Число завершённых обязательных статей (кэш для UI).';
+
+COMMENT ON COLUMN helpdesk.kb_course_progress.required_articles_count IS
+    'Число обязательных статей в курсе (кэш для UI).';
+
+CREATE INDEX idx_kb_course_progress_operator
+    ON helpdesk.kb_course_progress (operator_id, status);
+
+CREATE INDEX idx_kb_course_progress_course
+    ON helpdesk.kb_course_progress (course_id, status);
+
+COMMIT;

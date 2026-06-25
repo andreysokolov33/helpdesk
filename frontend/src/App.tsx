@@ -8,6 +8,7 @@ import ChatsTab from "@/workspace/ChatsTab";
 import ChatSectionPage from "@/workspace/ChatSectionPage";
 import StatsTab from "@/workspace/StatsTab";
 import KbTab from "@/workspace/KbTab";
+import KbArticlePage from "@/workspace/KbArticlePage";
 import TrainTab from "@/workspace/TrainTab";
 import NewsTab from "@/workspace/NewsTab";
 import UserProfilePage from "@/workspace/UserProfilePage";
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="chats" element={<RedirectLegacyChatsRoute />} />
             <Route path="stats" element={<StatsTab />} />
             <Route path="kb" element={<KbTab />} />
+            <Route path="kb/:slug" element={<KbArticlePage />} />
             <Route path="train" element={<TrainTab />} />
             <Route path="news" element={<NewsTab />} />
             <Route path="users/:userId" element={<UserProfilePage />} />

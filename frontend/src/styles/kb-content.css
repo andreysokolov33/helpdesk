@@ -1,0 +1,648 @@
+/* Контент статей БЗ — классы из HTML-прототипов, палитра сайта (3 темы). */
+
+.kb-reader {
+  min-width: 0;
+  color: var(--i2);
+  line-height: 1.6;
+  font-size: 14.5px;
+}
+
+.kb-reader strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.kb-reader .section-card {
+  background: var(--p);
+  border: 1px solid var(--ln);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin-bottom: var(--kb-gap, 10px);
+  scroll-margin-top: 72px;
+}
+
+.kb-article-page .kb-reader .section-card:last-child {
+  margin-bottom: 0;
+}
+
+.kb-article-page .kb-reader .rule,
+.kb-article-page .kb-reader .pl-info,
+.kb-article-page .kb-reader .dlg,
+.kb-article-page .kb-reader .tbl,
+.kb-article-page .kb-reader .dl-box-card,
+.kb-article-page .kb-reader .check-card-list,
+.kb-article-page .kb-reader .pl-cheat,
+.kb-article-page .kb-reader .ui-mockup-wrapper,
+.kb-article-page .kb-reader .comp-grid,
+.kb-article-page .kb-reader .step-list {
+  margin-top: 0;
+  margin-bottom: var(--kb-gap, 10px);
+}
+
+.kb-article-page .kb-reader > *:last-child {
+  margin-bottom: 0;
+}
+
+@media (min-width: 1000px) {
+  .kb-reader .section-card {
+    padding: 20px 24px;
+  }
+
+  .kb-article-page .kb-reader .pl-cheat {
+    padding: 20px;
+  }
+}
+
+.kb-reader .section-lbl {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--red);
+  margin-bottom: 6px;
+}
+
+.kb-reader h2 {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 12px;
+}
+
+.kb-reader h3 {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 18px 0 8px;
+}
+
+.kb-reader p {
+  margin: 0 0 12px;
+}
+
+.kb-reader ul,
+.kb-reader ol {
+  padding-left: 20px;
+  margin: 0 0 14px;
+}
+
+.kb-reader li {
+  margin-bottom: 6px;
+}
+
+.kb-reader .rule {
+  border: 1px solid var(--red);
+  border-left: 4px solid var(--red);
+  padding: 14px 16px;
+  background: var(--rbg);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 16px 0;
+  border-radius: 4px;
+}
+
+.kb-reader .rule-title {
+  font-weight: 800;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--red);
+}
+
+.kb-reader .pl-info {
+  background: var(--bg);
+  border: 1px solid var(--ln);
+  border-radius: var(--r);
+  padding: 14px 18px;
+  margin: 16px 0;
+  font-size: 13.5px;
+}
+
+.kb-reader .dlg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.kb-reader .bbl {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  font-size: 13.5px;
+  line-height: 1.5;
+  border: 1.5px solid var(--ln);
+}
+
+.kb-reader .bbl-lbl {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 2px;
+}
+
+.kb-reader .bbl.sub {
+  background: var(--bg);
+  align-self: flex-start;
+}
+
+.kb-reader .bbl.agt {
+  background: var(--ok);
+  border-color: var(--ok);
+  align-self: flex-end;
+  color: #fff;
+}
+
+[data-theme="dark"] .kb-reader .bbl.agt {
+  color: var(--tc);
+}
+
+.kb-reader .tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 13px;
+  border: 1px solid var(--ln);
+}
+
+.kb-reader .tbl th {
+  background: var(--ink);
+  border: 1px solid var(--ln);
+  padding: 10px 12px;
+  font-weight: 700;
+  color: var(--tc);
+}
+
+.kb-reader .tbl td {
+  border: 1px solid var(--ln);
+  padding: 10px 12px;
+  vertical-align: top;
+  background: var(--p);
+}
+
+.kb-reader .dl-box-card {
+  background: var(--p);
+  border: 1px solid var(--ln);
+  border-radius: var(--r);
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.kb-reader .dl-header-bar {
+  background: var(--ink);
+  padding: 12px 20px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--tc);
+  letter-spacing: 0.8px;
+}
+
+.kb-reader .check-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.kb-reader .check-card-item {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 14px 18px;
+  border: 1.5px solid var(--ln);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.kb-reader .check-card-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--obg);
+  color: var(--ok);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.kb-reader .check-card-text {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.kb-reader .pl-cheat {
+  border: 1.5px solid var(--ln);
+  border-radius: var(--r);
+  padding: 20px;
+  margin: 20px 0;
+  background: var(--bg);
+}
+
+.kb-reader .pl-cheat-title {
+  font-weight: 800;
+  color: var(--ink);
+  text-transform: uppercase;
+  font-size: 11px;
+  margin-bottom: 10px;
+}
+
+.kb-reader .pl-cheat-line {
+  font-size: 13.5px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+/* Сравнительные карточки (метод. материалы) */
+.kb-reader .comp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: var(--kb-gap, 12px) 0;
+}
+
+@media (max-width: 768px) {
+  .kb-reader .comp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kb-reader .comp-card {
+  border: 1px solid var(--ln);
+  background: var(--p);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.kb-reader .comp-card h3 {
+  margin-top: 0;
+  color: var(--red);
+  border-bottom: 1.5px solid var(--ln);
+  padding-bottom: 6px;
+}
+
+.kb-reader .comp-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.kb-reader .comp-list li {
+  margin-bottom: 10px;
+  padding-left: 14px;
+  position: relative;
+  font-size: 13.5px;
+}
+
+.kb-reader .comp-list li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background-color: var(--red);
+  border-radius: 50%;
+  position: absolute;
+  left: 0;
+  top: 8px;
+}
+
+/* HTML-макеты экранов ЛК (не растровые картинки) */
+.kb-reader .ui-mockup-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background: #e2e2dc;
+  border-radius: 12px;
+  padding: 32px 16px;
+  margin: var(--kb-gap, 12px) 0;
+}
+
+[data-theme="dark"] .kb-reader .ui-mockup-wrapper {
+  background: #0a1e36;
+  border: 1px solid var(--ln);
+}
+
+.kb-reader .ui-login-box,
+.kb-reader .ui-modal-box {
+  background: #fff;
+  border-radius: 20px;
+  font-family: inherit;
+  color: #3d5068;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 1px 3px rgba(10, 30, 54, 0.06);
+}
+
+.kb-reader .ui-login-box {
+  padding: 40px 32px;
+}
+
+.kb-reader .ui-modal-box {
+  padding: 32px 24px;
+  position: relative;
+}
+
+.kb-reader .ui-logo-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 18px;
+  color: #0a1e36;
+  margin-bottom: 24px;
+}
+
+.kb-reader .ui-logo-sq {
+  width: 18px;
+  height: 18px;
+  background: #ff1300;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kb-reader .ui-logo-inner {
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 50%;
+}
+
+.kb-reader .ui-login-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0a1e36;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.kb-reader .ui-login-subtitle {
+  font-size: 12px;
+  color: #7a8b9a;
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.kb-reader .ui-form-group {
+  margin-bottom: 16px;
+}
+
+.kb-reader .ui-form-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #7a8b9a;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  display: block;
+  letter-spacing: 0.5px;
+}
+
+.kb-reader .ui-form-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border: 1px solid #e2e2dc;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #f5f5f3;
+  color: #0a1e36;
+  font-family: inherit;
+  pointer-events: none;
+}
+
+.kb-reader .ui-form-input-pass {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.kb-reader .ui-form-input-pass .ui-form-input {
+  padding-right: 40px;
+}
+
+.kb-reader .ui-eye-icon {
+  position: absolute;
+  right: 16px;
+  color: #7a8b9a;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.kb-reader .ui-btn-blue,
+.kb-reader .ui-modal-btn-dark {
+  width: 100%;
+  background: #1b5299;
+  color: #fff;
+  border: none;
+  padding: 14px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: default;
+  text-align: center;
+  margin-top: 12px;
+  font-family: inherit;
+}
+
+.kb-reader .ui-link-forgot {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+  color: #1b5299;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  pointer-events: none;
+}
+
+.kb-reader .ui-contacts-block {
+  border-top: 1px solid #e2e2dc;
+  margin-top: 32px;
+  padding-top: 16px;
+  display: flex;
+  gap: 12px;
+}
+
+.kb-reader .ui-contact-col {
+  flex: 1;
+  text-align: center;
+}
+
+.kb-reader .ui-contact-lbl {
+  font-size: 8px;
+  font-weight: 800;
+  color: #7a8b9a;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.kb-reader .ui-contact-val {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0a1e36;
+}
+
+.kb-reader .ui-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f5f5f3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7a8b9a;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.kb-reader .ui-modal-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0a1e36;
+  text-align: center;
+  margin: 12px 0;
+}
+
+.kb-reader .ui-modal-subtitle {
+  font-size: 12.5px;
+  color: #7a8b9a;
+  text-align: center;
+  margin-bottom: 20px;
+  line-height: 1.4;
+}
+
+.kb-reader .ui-modal-option {
+  border: 1px solid #e2e2dc;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a1e36;
+}
+
+.kb-reader .ui-modal-option-icon {
+  color: #ff1300;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kb-reader .ui-modal-back-btn {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #7a8b9a;
+  text-decoration: none;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+
+/* Вкладки ситуаций в статьях */
+.kb-reader .tabs-header {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.kb-reader .tab-btn {
+  background: var(--bg);
+  border: 1.5px solid var(--ln);
+  color: var(--i2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.kb-reader .tab-btn:hover {
+  border-color: var(--okln);
+  color: var(--ink);
+}
+
+.kb-reader .tab-btn.active {
+  background: var(--obg);
+  border-color: var(--okln);
+  color: var(--ok);
+}
+
+.kb-reader .tab-content-container {
+  border: 1.5px solid var(--ln);
+  padding: 20px;
+  border-radius: 8px;
+  background: var(--bg);
+  margin-bottom: var(--kb-gap, 12px);
+}
+
+.kb-reader .tab-content-pane {
+  display: none;
+}
+
+.kb-reader .tab-content-pane.active {
+  display: block;
+}
+
+.kb-reader .step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: var(--kb-gap, 12px) 0;
+}
+
+.kb-reader .step-card {
+  background: var(--bg);
+  border: 1px solid var(--ln);
+  border-radius: 8px;
+  padding: 14px 18px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.kb-reader .step-marker {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--red);
+  background: var(--rbg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.kb-reader .step-text {
+  font-size: 13.5px;
+  color: var(--i2);
+  line-height: 1.5;
+}
+
+.kb-reader .btn-main {
+  display: none !important;
+}

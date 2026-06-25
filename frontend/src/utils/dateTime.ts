@@ -35,6 +35,29 @@ export function viewerTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
+/** Дата/время завершения теста в часовом поясе браузера с подписью зоны. */
+export function formatQuizCompletedAt(iso: string | null | undefined): string {
+  const d = parseApiDate(iso);
+  if (!d) return "";
+
+  const timeZone = viewerTimeZone();
+  const when = d.toLocaleString("ru-RU", {
+    timeZone,
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const zoneLabel =
+    new Intl.DateTimeFormat("ru-RU", { timeZone, timeZoneName: "short" })
+      .formatToParts(d)
+      .find((part) => part.type === "timeZoneName")?.value ?? timeZone;
+
+  return `${when} (${zoneLabel})`;
+}
+
 /** Дата/время в часовом поясе пользователя (локаль браузера). */
 export function formatDateTimeLocal(
   iso: string | null | undefined,
