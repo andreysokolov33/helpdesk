@@ -7,7 +7,7 @@ import {
   type KbQuizFinishResult,
 } from "@/api/kb";
 import { sanitizeKbHtml } from "@/utils/kbHtml";
-import { bindKbReaderTabs } from "@/utils/kbReaderInteractions";
+import { bindKbReaderInteractions } from "@/utils/kbReaderInteractions";
 import { KbArticleStatusBadges } from "@/workspace/KbArticleStatusBadges";
 import { KbArticleQuizCta } from "@/workspace/KbArticleQuizCta";
 import { KbQuizPanel } from "@/workspace/KbQuizPanel";
@@ -77,7 +77,7 @@ export default function KbArticlePage() {
   useEffect(() => {
     const root = readerRef.current;
     if (!root || view !== "article") return;
-    return bindKbReaderTabs(root);
+    return bindKbReaderInteractions(root);
   }, [bodyHtml, view]);
 
   const handleQuizFinished = useCallback((result: KbQuizFinishResult) => {

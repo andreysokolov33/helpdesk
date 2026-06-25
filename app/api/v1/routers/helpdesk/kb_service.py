@@ -9,6 +9,12 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.routers.helpdesk.manager_contacts_service import (
+    apply_contacts_to_quiz_questions,
+    load_manager_contact_lists,
+    substitute_manager_contacts,
+)
+
 _SCHEMA = "helpdesk"
 
 _ARTICLE_ROW_SQL = f"""
@@ -272,9 +278,15 @@ async def fetch_kb_article_detail(
         raise HTTPException(status_code=404, detail="Статья не найдена")
 
     item = _row_to_list_item(dict(row))
+    phones, emails = await load_manager_contact_lists(db)
+    content_html = substitute_manager_contacts(
+        str(content["content_html"] or ""),
+        phones=phones,
+        emails=emails,
+    )
     return {
         **item,
-        "content_html": str(content["content_html"] or ""),
+        "content_html": content_html or "",
         "sidebar_json": content.get("sidebar_json") or {},
         "quiz_id": int(row["quiz_id"]) if row.get("quiz_id") else None,
         "published_at": content.get("published_at"),
@@ -467,6 +479,12 @@ async def fetch_kb_quiz_session(
 
     quiz_id = int(row["quiz_id"])
     questions = await _load_quiz_questions(db, quiz_id)
+    phones, emails = await load_manager_contact_lists(db)
+    questions = apply_contacts_to_quiz_questions(
+        questions,
+        phones=phones,
+        emails=emails,
+    )
 
     attempt = (
         await db.execute(
@@ -716,9 +734,14 @@ async def submit_kb_quiz_answer(
         },
     )
     await db.commit()
+    phones, emails = await load_manager_contact_lists(db)
     return {
         "is_correct": is_correct,
-        "explanation": question.get("explanation"),
+        "explanation": substitute_manager_contacts(
+            question.get("explanation"),
+            phones=phones,
+            emails=emails,
+        ),
         "correct_option_ids": sorted(correct_ids),
     }
 

@@ -143,47 +143,9 @@ def _fail_response(
 
 
 async def _load_jur_managers(session: AsyncSession) -> list[ManagerContact]:
-    try:
-        r = await session.execute(
-            text("""
-                SELECT su.id, su.full_name
-                FROM users.skystream_users su
-                WHERE su.role = 'manager' AND su.is_active = true
-                ORDER BY su.full_name NULLS LAST, su.id
-                LIMIT 20
-            """)
-        )
-        managers: list[ManagerContact] = []
-        for row in r.mappings().all():
-            mid = int(row["id"])
-            phones = (
-                await session.execute(
-                    text(
-                        "SELECT phone FROM users.skystream_user_phones"
-                        " WHERE user_id = :mid ORDER BY is_primary DESC, id"
-                    ),
-                    {"mid": mid},
-                )
-            ).scalars().all()
-            emails = (
-                await session.execute(
-                    text(
-                        "SELECT email FROM users.skystream_user_emails"
-                        " WHERE user_id = :mid ORDER BY is_primary DESC, id"
-                    ),
-                    {"mid": mid},
-                )
-            ).scalars().all()
-            managers.append(
-                ManagerContact(
-                    full_name=(row["full_name"] or "").strip() or None,
-                    phones=[str(p).strip() for p in phones if p],
-                    emails=[str(e).strip() for e in emails if e],
-                )
-            )
-        return [m for m in managers if m.phones or m.emails]
-    except Exception:
-        return []
+    from app.api.v1.routers.helpdesk.manager_contacts_service import load_manager_contacts
+
+    return await load_manager_contacts(session)
 
 
 def _session_detail_line(breakdown: list[dict[str, Any]]) -> str:
