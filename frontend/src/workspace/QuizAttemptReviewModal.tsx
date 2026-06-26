@@ -8,7 +8,6 @@ import {
 } from "@/api/kb";
 import {
   fetchOperatorQuizAttemptReview,
-  startOperatorQuizPractice,
   type OperatorQuizAnsweredReview,
   type OperatorQuizAttemptReview,
 } from "@/api/operatorQuizReview";
@@ -61,7 +60,6 @@ export default function QuizAttemptReviewModal({ attemptId, onClose }: Props) {
   const [feedback, setFeedback] = useState<QuizAnswerFeedback | null>(null);
   const [multipleSelected, setMultipleSelected] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [startingPractice, setStartingPractice] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [practiceResult, setPracticeResult] = useState<KbQuizFinishResult | null>(null);
   const [practiceAnswered, setPracticeAnswered] = useState<OperatorQuizAnsweredReview[]>([]);
@@ -155,26 +153,6 @@ export default function QuizAttemptReviewModal({ attemptId, onClose }: Props) {
     syncReviewFeedback(nextIndex, review);
   };
 
-  const handleStartPractice = async () => {
-    if (!review || startingPractice) return;
-    setStartingPractice(true);
-    setError("");
-    try {
-      const started = await startOperatorQuizPractice(review.attempt_id);
-      setPracticeAttemptId(started.attempt_id);
-      setMode("practice");
-      setQuestionIndex(0);
-      setFeedback(null);
-      setMultipleSelected([]);
-      setPracticeAnswered([]);
-      setPracticeResult(null);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Не удалось начать практику");
-    } finally {
-      setStartingPractice(false);
-    }
-  };
-
   const submitPracticeAnswer = async (selectedOptionIds: number[]) => {
     if (!currentQuestion || !practiceAttemptId || feedback || submitting || !review) return;
     setSubmitting(true);
@@ -249,9 +227,32 @@ export default function QuizAttemptReviewModal({ attemptId, onClose }: Props) {
               <p className="op-quiz-review-sub">{review.category_title}</p>
             ) : null}
           </div>
-          <button type="button" className="op-quiz-review-close" onClick={onClose} aria-label="Закрыть">
-            ×
-          </button>
+          <div className="op-quiz-review-head-aside">
+            {review ? (
+              <div className="op-quiz-review-head-meta">
+                <div className="op-quiz-review-head-score">
+                  <span
+                    className="op-quiz-score-badge"
+                    style={dailyQuizScoreStyle(review.correct_count, review.total_questions)}
+                    title={`${review.score_percent}%`}
+                  >
+                    {review.correct_count}/{review.total_questions}
+                  </span>
+                  <span className={`op-quiz-pass-tag${review.passed ? " is-pass" : " is-fail"}`}>
+                    {review.passed ? "Сдан" : "Не сдан"}
+                  </span>
+                </div>
+                {!isDaily && review.article_slug ? (
+                  <Link to={`/kb/${review.article_slug}`} className="op-quiz-review-article-link">
+                    К статье →
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
+            <button type="button" className="op-quiz-review-close" onClick={onClose} aria-label="Закрыть">
+              ×
+            </button>
+          </div>
         </header>
 
         {loading ? (
@@ -262,38 +263,6 @@ export default function QuizAttemptReviewModal({ attemptId, onClose }: Props) {
           </div>
         ) : review ? (
           <>
-            <div className="op-quiz-review-summary">
-              <span
-                className="op-quiz-score-badge"
-                style={dailyQuizScoreStyle(review.correct_count, review.total_questions)}
-                title={`${review.score_percent}%`}
-              >
-                {review.correct_count}/{review.total_questions}
-              </span>
-              <span className={`op-quiz-pass-tag${review.passed ? " is-pass" : " is-fail"}`}>
-                {review.passed ? "Сдан" : "Не сдан"}
-              </span>
-              {mode === "review" ? (
-                <button
-                  type="button"
-                  className="op-quiz-review-practice-btn"
-                  disabled={startingPractice}
-                  onClick={() => void handleStartPractice()}
-                >
-                  {startingPractice ? "Запуск…" : "Пройти для практики"}
-                </button>
-              ) : (
-                <span className="op-quiz-review-practice-note">
-                  Результат практики не влияет на статистику
-                </span>
-              )}
-              {review.article_slug ? (
-                <Link to={`/kb/${review.article_slug}`} className="op-quiz-review-article-link">
-                  К статье →
-                </Link>
-              ) : null}
-            </div>
-
             {mode === "practice-done" && practiceResult ? (
               <div className="op-quiz-review-body">
                 <div className={`quiz-score-box show`}>

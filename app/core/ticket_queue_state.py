@@ -18,7 +18,7 @@
   • source=call_center|abs — внутренний чат КС ↔ инженеры (без subscriber):
       КС написал → chat_turn=staff, action_by=engineers
       инженер написал → chat_turn=staff, action_by=cs
-      покой (регистрация звонка) → chat_turn=subscriber, action_by=cs
+      регистрация звонка (абонент в базе) → queue_line=engineers, chat_turn=staff, action_by=engineers
   • Эскалация на инженеров / партнёра:
       queue_line=engineers|partner, action_by=engineers|partner
   • Возврат на КС:
@@ -215,6 +215,20 @@ def on_register_call_cs(
         "queue_line": "cs",
         "action_by": "cs",
         "chat_turn": "subscriber",
+        "action_since": now,
+    }
+
+
+def on_register_call_existing_subscriber(
+    *,
+    at: datetime | None = None,
+) -> TicketQueueSnapshot:
+    """Звонок абонента из базы: сразу на линию инженеров, ждём ответа инженеров."""
+    now = at or datetime.now(timezone.utc)
+    return {
+        "queue_line": "engineers",
+        "action_by": "engineers",
+        "chat_turn": "staff",
         "action_since": now,
     }
 

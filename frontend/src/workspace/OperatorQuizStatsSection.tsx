@@ -119,7 +119,7 @@ export default function OperatorQuizStatsSection() {
 
         <div className="op-quiz-block">
           <h3 className="op-quiz-block-title">Ежедневные тесты</h3>
-          <p className="op-quiz-chain-hint">Нажмите на дату — откроется просмотр и практика без изменения результата</p>
+          <p className="op-quiz-chain-hint">Нажмите на дату — откроется просмотр ваших ответов</p>
           <QuizAttemptDotChain
             items={stats.daily_attempts}
             selectedId={selectedAttemptId}

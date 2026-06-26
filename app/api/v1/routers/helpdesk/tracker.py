@@ -45,7 +45,7 @@ from app.api.v1.routers.helpdesk.call_lead_html import build_connection_lead_htm
 from app.core.ticket_queue_state import (
     communication_state_from_v2,
     list_highlight_for_viewer,
-    on_register_call_cs,
+    on_register_call_existing_subscriber,
     on_register_new_subscriber_lead,
     on_register_partner_prospect,
     support_line_to_queue_line,
@@ -424,11 +424,11 @@ async def register_call(
         object_type = "user"
         station_id = payload.station_id
         hotspot_id = payload.hotspot_id
-        support_line = 1
+        support_line = 2
         status = "in_progress"
-        assigned_to = author_id
+        assigned_to = None
         title = _CALL_TITLE_EXISTING
-        queue_snap = on_register_call_cs(at=now)
+        queue_snap = on_register_call_existing_subscriber(at=now)
     elif kind == "new_subscriber":
         lead = payload.lead
         assert lead is not None
