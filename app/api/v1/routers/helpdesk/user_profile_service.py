@@ -67,6 +67,7 @@ from app.core.user_cache import (
     get_disconnect_sessions_remaining,
     on_tariff_freeze_changed,
     on_unarchive,
+    reconcile_user_status_cache,
     record_disconnect_sessions_success,
 )
 from app.api.v1.routers.users.subscriber_search import _format_passport
@@ -1026,6 +1027,7 @@ async def load_subscriber_account_summary(
     user_id: int,
 ) -> TicketSubscriberAccountSummary:
     """Баланс и краткая информация о тарифе для сайдбара тикета."""
+    await reconcile_user_status_cache(session, user_id)
     personal, balance = await _load_personal_with_balance(session, user_id)
     tariff, _, _ = await _load_tariff_bundle(session, user_id, personal)
     return TicketSubscriberAccountSummary(
@@ -1050,6 +1052,7 @@ async def _assemble_tariff_block(
     float,
     ProfileOnline,
 ]:
+    await reconcile_user_status_cache(session, user_id)
     personal, balance_loaded = await _load_personal_with_balance(session, user_id)
     if balance is None:
         balance = balance_loaded
@@ -1068,6 +1071,7 @@ async def get_user_profile(
     *,
     include_tickets: bool = True,
 ) -> UserProfileResponse:
+    await reconcile_user_status_cache(session, user_id)
     personal, balance = await _load_personal_with_balance(session, user_id)
 
     is_online, open_sessions, last_end = await RadacctDAO.get_session_summary(

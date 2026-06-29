@@ -1,0 +1,342 @@
+# Сброс пароля на странице абонента (/users/{user_id})
+
+Документ описывает, как в helpdesk работает смена пароля абонента через код оператора:
+от кнопки на профиле до генерации кода, хранения в БД и отслеживания использования.
+
+Связанный документ для стороны ЛК (проверка кода абонентом): temp/reset_password.txt
+
+---
+
+## 1. Назначение
+
+Оператор на странице профиля абонента выдаёт абоненту **4-значный одноразовый код**.
+Абонент вводит его в личном кабинете (lk.wifitochka.ru): «Забыл пароль» →
+«У меня есть код для восстановления» → ввод 4 цифр → страница нового пароля.
+
+Helpdesk **не меняет пароль напрямую** — только генерирует и показывает код оператору.
+Смена пароля выполняется в ЛК после успешной проверки кода.
+
+---
+
+## 2. UI на странице профиля
+
+### 2.1. Точка входа
+
+Файлы:
+  - frontend/src/workspace/UserProfilePage.tsx
+  - frontend/src/components/PasswordResetModal.tsx
+  - frontend/src/api/userProfile.ts
+
+На карточке «Личные данные» кнопка **«Сменить пароль»** (`up-reset-pwd`).
+Показывается только если `user_status !== 3` (не в архиве).
+
+По клику открывается модальное окно `PasswordResetModal` поверх страницы.
+
+### 2.2. Что видит оператор в модалке
+
+1. **Предупреждение о PPPoE** (если есть) — проверка по `radius.radacct`:
+   если у логина абонента есть сессии с `framedprotocol = 'PPP'`, показывается жёлтый
+   блок: смена пароля сломает автологин на роутере.
+
+2. **Инструкция** — три шага:
+   - абонент идёт на страницу авторизации ЛК и выбирает «У меня есть код»;
+   - оператор жмёт «Сгенерировать код» и диктует 4 цифры;
+   - после ввода кода абонент попадает на страницу нового пароля.
+
+3. **Блок с кодом** — 4 цифры и обратный отсчёт (MM:SS), пока код активен.
+
+4. **Кнопки**:
+   - «Сгенерировать код» — disabled, пока действует текущий код или код уже использован;
+   - «Закрыть».
+
+5. **Успех** — если абонент воспользовался кодом (`used_at` в БД), показывается зелёное
+   сообщение: «Абонент успешно воспользовался кодом…».
+
+### 2.3. Фронтенд: запросы и поллинг
+
+При открытии модалки:
+  GET /api/v1/helpdesk/users/{user_id}/password-reset
+
+При нажатии «Сгенерировать код»:
+  POST /api/v1/helpdesk/users/{user_id}/password-reset/generate
+
+Пока код активен — поллинг каждые 3 секунды:
+  GET /api/v1/helpdesk/users/{user_id}/password-reset/poll?code_id={code_id}
+
+Поллинг отслеживает:
+  - code_used — абонент ввёл код в ЛК (в БД появился used_at);
+  - code_expired — истёк срок (10 минут);
+  - active_code / expires_at — актуальное состояние.
+
+Локальный таймер на фронте (1 с) обнуляет отображение кода по expires_at.
+
+---
+
+## 3. API helpdesk (бэкенд)
+
+Роутер: app/api/v1/routers/helpdesk/user_profile.py
+Сервис:  app/api/v1/routers/helpdesk/password_reset_service.py
+Схемы:   app/api/v1/routers/helpdesk/password_reset_schemas.py
+
+Все эндпоинты требуют авторизации оператора (`require_tracker_user`).
+
+| Метод | Путь | Действие |
+|-------|------|----------|
+| GET   | /api/v1/helpdesk/users/{user_id}/password-reset | Состояние модалки при открытии |
+| POST  | /api/v1/helpdesk/users/{user_id}/password-reset/generate | Генерация кода |
+| GET   | /api/v1/helpdesk/users/{user_id}/password-reset/poll | Статус кода (без записи в лог) |
+
+---
+
+## 4. Генерация кода
+
+Константы (password_reset_service.py):
+  CODE_TTL_MINUTES = 10
+  RESET_TYPE_OPERATOR = "operator"
+
+### 4.1. Алгоритм
+
+1. Проверить, что абонент существует (`users.user` через UsersDAO).
+
+2. Найти активный код (`_get_active_code_row`):
+   - user_id совпадает;
+   - is_active = true;
+   - used_at IS NULL;
+   - самая свежая запись (ORDER BY id DESC LIMIT 1).
+
+3. Если активный код есть и в Redis ещё лежит открытый код для показа —
+   вернуть его без перегенерации (message: «Действующий код ещё активен»).
+
+4. Иначе деактивировать старые активные коды (deactivation_reason = 'superseded').
+
+5. Сгенерировать новый код:
+   ```python
+   code = f"{secrets.randbelow(10_000):04d}"   # 0000–9999, всегда 4 цифры
+   salt = secrets.token_hex(16)                # 32 hex-символа
+   code_hash = SHA256(f"{code}:{salt}").hexdigest()  # 64 символа lowercase
+   expires_at = now_utc + 10 minutes
+   ```
+
+6. INSERT в users.password_reset_code:
+   - user_id, operator_id (текущий оператор helpdesk);
+   - code_hash, code_salt (открытый code в БД НЕ пишется);
+   - expires_at, is_active = true;
+   - reset_type = 'operator'.
+
+7. Сохранить открытый код в Redis:
+   - ключ: helpdesk_pwd_reset_display:{user_id}
+   - значение: { "code": "0428", "code_id": 123, "expires_at": "..." }
+   - TTL = оставшееся время до expires_at
+
+8. Записать в logs.helpdesk_operator_log (action = password_reset.generate).
+
+9. Вернуть оператору: code, expires_at, code_id.
+
+### 4.2. Почему открытый код только в Redis
+
+В PostgreSQL хранится только хэш + соль. При утечке БД коды нельзя восстановить.
+Оператор видит plaintext из Redis; ЛК получает код от абонента устно и сверяет хэш.
+
+ЛК **не читает** Redis helpdesk.
+
+---
+
+## 5. Таблицы и хранилища
+
+### 5.1. users.password_reset_code (основная)
+
+Модель: app/models/users.py → PasswordResetCode
+
+| Поле | Назначение |
+|------|------------|
+| id | PK |
+| user_id | FK → users.user.id (абонент) |
+| operator_id | FK → users.skystream_users.id (кто выдал код) |
+| code_hash | SHA-256 hex открытого кода с солью |
+| code_salt | Соль (secrets.token_hex(16)) |
+| created_at | Время создания |
+| expires_at | Срок действия (+10 мин от генерации) |
+| is_active | Можно ли ещё проверять код |
+| used_at | Когда абонент успешно ввёл код в ЛК |
+| used_ip | IP абонента при использовании (пишет ЛК) |
+| deactivation_reason | used / expired / superseded / cancelled_by_operator |
+| deactivated_at | Когда сняли активность |
+| failed_attempts | Счётчик неверных вводов (увеличивает ЛК) |
+| reset_type | 'operator' для кодов из helpdesk (также email, bot) |
+
+Ограничение в БД: не более одного активного неиспользованного кода на user_id
+(partial unique index uq_password_reset_code_one_active_per_user).
+
+### 5.2. users.user
+
+Чтение при открытии модалки и генерации:
+  - id, login — проверка существования абонента;
+  - login — для проверки PPP-сессий в radius.radacct.
+
+Смена пароля в helpdesk **не выполняется**. Пароль меняет ЛК после verify/confirm.
+
+### 5.3. users.skystream_users
+
+operator_id в password_reset_code и logs.helpdesk_operator_log — оператор helpdesk.
+
+### 5.4. logs.helpdesk_operator_log
+
+Модель: app/models/logs.py → HelpdeskOperatorLog
+
+Записи при работе со сбросом пароля:
+
+| action | Когда |
+|--------|-------|
+| password_reset.modal_open | Открытие модалки (GET password-reset) |
+| password_reset.generate | Успешная генерация кода (POST generate) |
+
+Поля: operator_id, subscriber_id (= user_id абонента), page (/users/{id}),
+password_reset_code_id (при generate), details (JSON), client_ip, user_agent и т.д.
+
+Поллинг (poll) в лог **не пишется**.
+
+### 5.5. radius.radacct (только чтение)
+
+Проверка PPPoE-предупреждения:
+```sql
+SELECT 1 FROM radius.radacct r
+WHERE lower(r.username) = lower(:login)
+  AND r.framedprotocol = 'PPP'
+ORDER BY r.acctstoptime DESC NULLS LAST
+LIMIT 1
+```
+
+### 5.6. Redis: helpdesk_pwd_reset_display:{user_id}
+
+Временное хранение открытого кода для UI оператора.
+Удаляется при истечении срока или деактивации кода.
+
+---
+
+## 6. Жизненный цикл кода (со стороны helpdesk)
+
+```
+[Оператор: «Сменить пароль» → открытие модалки]
+    → GET password-reset
+    → лог modal_open
+    → если есть активный код и он в Redis — показать снова
+
+[Оператор: «Сгенерировать код»]
+    → POST generate
+    → INSERT password_reset_code (hash + salt)
+    → SET Redis helpdesk_pwd_reset_display:{user_id}
+    → лог generate
+    → оператор диктует 4 цифры абоненту
+
+[Абонент вводит код в ЛК]
+    → ЛК проверяет hash в users.password_reset_code
+    → при успехе: used_at, is_active=false, deactivation_reason='used'
+    → (см. temp/reset_password.txt)
+
+[Helpdesk: поллинг poll]
+    → видит used_at → code_used=true → зелёное сообщение в модалке
+
+[Истечение 10 минут без использования]
+    → helpdesk при poll/get деактивирует: deactivation_reason='expired'
+    → Redis ключ удаляется
+    → можно сгенерировать новый код
+
+[Новая генерация при старом активном]
+    → старый: deactivation_reason='superseded'
+    → новый: активная запись
+```
+
+---
+
+## 7. Деактивация кода (helpdesk)
+
+Функция `_deactivate_code(session, code_id, reason)`:
+  is_active = false
+  deactivation_reason = reason
+  deactivated_at = now()
+
+Причины:
+  - expired — истёк TTL;
+  - superseded — выдан новый код вместо старого;
+  - used — выставляет ЛК при успешной проверке;
+  - cancelled_by_operator — при отмене оператором (если реализовано в ЛК/админке).
+
+---
+
+## 8. Схема потока данных
+
+```
+┌─────────────────┐     GET/POST/poll      ┌──────────────────────────┐
+│ UserProfilePage │ ◄────────────────────► │ password_reset_service   │
+│ PasswordReset   │                        │ (helpdesk API)           │
+│ Modal           │                        └───────────┬──────────────┘
+└─────────────────┘                                    │
+                                                       ├──► users.user (read)
+                                                       ├──► users.password_reset_code (CRUD)
+                                                       ├──► logs.helpdesk_operator_log (write)
+                                                       ├──► radius.radacct (read, PPP)
+                                                       └──► Redis helpdesk_pwd_reset_display
+
+┌─────────────────┐     verify + confirm     ┌──────────────────────────┐
+│ ЛК абонента     │ ────────────────────────► │ users.password_reset_code │
+│ (lk.wifitochka) │                           │ users.user (смена пароля) │
+└─────────────────┘                           └──────────────────────────┘
+         ▲
+         │ 4 цифры устно
+         │
+┌─────────────────┐
+│ Оператор        │
+│ (диктует код)   │
+└─────────────────┘
+```
+
+---
+
+## 9. Ключевые файлы в репозитории
+
+| Компонент | Путь |
+|-----------|------|
+| Кнопка на профиле | frontend/src/workspace/UserProfilePage.tsx |
+| Модалка | frontend/src/components/PasswordResetModal.tsx |
+| API-клиент | frontend/src/api/userProfile.ts |
+| Роуты | app/api/v1/routers/helpdesk/user_profile.py |
+| Бизнес-логика | app/api/v1/routers/helpdesk/password_reset_service.py |
+| Pydantic-схемы | app/api/v1/routers/helpdesk/password_reset_schemas.py |
+| Модель кода | app/models/users.py → PasswordResetCode |
+| Журнал оператора | app/models/logs.py → HelpdeskOperatorLog |
+| Логирование | app/api/v1/routers/helpdesk/operator_log_service.py |
+
+---
+
+## 10. Параметры для сверки с ЛК
+
+| Параметр | Значение в helpdesk |
+|----------|---------------------|
+| Длина кода | 4 цифры, 0000–9999 |
+| TTL | 10 минут |
+| Хэш | SHA-256(f"{code}:{salt}").hexdigest() |
+| Соль | secrets.token_hex(16), 32 символа |
+| reset_type | operator |
+| Активных кодов на user_id | не более 1 |
+| Нормализация ввода в ЛК | zfill(4), например "281" → "0281" |
+
+Подробная инструкция для реализации verify/confirm в ЛК: temp/reset_password.txt
+
+---
+
+## 11. Ручная проверка
+
+1. Открыть /users/{id}, нажать «Сменить пароль».
+2. «Сгенерировать код» — на экране 4 цифры, таймер ~10:00.
+3. В psql:
+   ```sql
+   SELECT id, code_hash, code_salt, expires_at, is_active, used_at, reset_type
+   FROM users.password_reset_code
+   WHERE user_id = <id>
+   ORDER BY id DESC LIMIT 1;
+   ```
+4. Проверить хэш в Python (code с экрана, salt из БД) — см. раздел 4.1.
+5. Ввести код в ЛК — poll должен вернуть code_used=true.
+6. В БД: used_at NOT NULL, is_active = false, deactivation_reason = 'used'.
+
+Конец документа.

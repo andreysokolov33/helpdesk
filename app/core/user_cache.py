@@ -84,6 +84,49 @@ async def sync_user_cache_from_db(session: AsyncSession, user_id: int) -> bool:
     return await patch_user_cache(user_id, status_fields_from_user_row(row))
 
 
+async def reconcile_user_status_cache(session: AsyncSession, user_id: int) -> bool:
+    """
+    Сверка users.user.user_status (и производного status) с Redis user:{id}.
+    При расхождении — полный сброс ключа; ответ профиля собирается из БД.
+    """
+    from app.api.v1.routers.users.dao import UsersDAO
+
+    row = await UsersDAO.find_one_or_none(session, id=user_id)
+    if not row:
+        return False
+
+    cached = await user_cache.get(user_id)
+    if not cached:
+        return False
+
+    db_fields = status_fields_from_user_row(row)
+    cached_us = int(cached.get("user_status") if cached.get("user_status") is not None else 1)
+    cached_status = str(cached.get("status") or status_from_user_status(cached_us))
+    cached_archive = bool(cached.get("is_archive"))
+
+    if (
+        cached_us == db_fields["user_status"]
+        and cached_status == db_fields["status"]
+        and cached_archive == db_fields["is_archive"]
+    ):
+        return False
+
+    await invalidate_user_cache(user_id)
+    logger.info(
+        "User cache status mismatch for %s — invalidated "
+        "(db user_status=%s status=%s is_archive=%s; "
+        "cache user_status=%s status=%s is_archive=%s)",
+        user_id,
+        db_fields["user_status"],
+        db_fields["status"],
+        db_fields["is_archive"],
+        cached_us,
+        cached_status,
+        cached_archive,
+    )
+    return True
+
+
 def _prune_disconnect_timestamps(timestamps: list[Any], now: int) -> list[int]:
     cutoff = now - DISCONNECT_SESSIONS_WINDOW_SEC
     out: list[int] = []

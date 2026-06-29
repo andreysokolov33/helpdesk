@@ -25,6 +25,7 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     resolve_freeze_reason_label,
 )
 from app.api.v1.routers.users.dao import UsersDAO
+from app.core.user_cache import reconcile_user_status_cache
 from app.models.users import FastCheckDatabase
 
 _UNLIM_SESSION_LIMIT = 2
@@ -190,6 +191,7 @@ def _managers_html(contacts: list[ManagerContact]) -> str:
 
 
 async def _build_ctx(session: AsyncSession, user_id: int) -> _Ctx:
+    await reconcile_user_status_cache(session, user_id)
     personal = await _load_personal(session, user_id)
     urow = await UsersDAO.find_one_or_none(session, id=user_id) or {}
     id_grp = int(urow.get("id_grp") or 0)

@@ -322,3 +322,20 @@ UPDATE helpdesk.kb_question_options SET option_text = 'Потому что Ме�
 UPDATE helpdesk.kb_question_options SET option_text = 'Потому что Медиасервер — пилотный проект, и его техподдержкой занимаются инженеры' WHERE id = 881;
 
 COMMIT;
+
+-- mediakontent-videoservis-multikast: замена «Мультикаст» в теле статьи (content_html)
+BEGIN;
+
+UPDATE helpdesk.kb_articles
+SET content_html = REPLACE(
+         REPLACE(
+         REPLACE(
+         REPLACE(content_html,
+           'Мультикаста', 'Медиасервера'),
+           'Мультикасте', 'Медиасервере'),
+           'Мультикасту', 'Медиасерверу'),
+           'Мультикаст', 'Медиасервер'),
+    updated_at = NOW()
+WHERE slug = 'mediakontent-videoservis-multikast';
+
+COMMIT;
