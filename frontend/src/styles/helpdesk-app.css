@@ -7038,12 +7038,35 @@ a.clf-btn.pri.tk-xref-modal__go-ft {
   font-size: 12px;
   font-weight: 800;
   line-height: 1;
-  color: #fff;
   border: none;
   outline: none;
   box-shadow: none;
   flex-shrink: 0;
-  text-shadow: 0 1px 1px color-mix(in srgb, #000 22%, transparent);
+  text-shadow: none;
+  background: linear-gradient(
+    145deg,
+    hsl(var(--quiz-score-hue) 32% 91%),
+    hsl(var(--quiz-score-hue) 28% 84%)
+  );
+  color: hsl(var(--quiz-score-hue) 38% 38%);
+}
+
+[data-theme="comfort"] .daily-quiz-history__dot {
+  background: linear-gradient(
+    145deg,
+    hsl(var(--quiz-score-hue) 26% 88%),
+    hsl(var(--quiz-score-hue) 24% 80%)
+  );
+  color: hsl(var(--quiz-score-hue) 34% 36%);
+}
+
+[data-theme="dark"] .daily-quiz-history__dot {
+  background: linear-gradient(
+    145deg,
+    hsl(var(--quiz-score-hue) 22% 28%),
+    hsl(var(--quiz-score-hue) 20% 22%)
+  );
+  color: hsl(var(--quiz-score-hue) 30% 72%);
 }
 
 .daily-quiz-history__stem {

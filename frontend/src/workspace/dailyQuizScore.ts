@@ -10,19 +10,15 @@ export function quizScoreHue(percent: number): number {
   return Math.round(ratio * 128);
 }
 
-/** Градиент кружка: 0/N — красный, середина — жёлтый, N/N — зелёный. */
+/** Пастельный кружок: оттенок задаётся hue (0 — красный, середина — жёлтый, 100% — зелёный). */
 export function dailyQuizScoreStyle(
   correct: number,
   total: number,
 ): CSSProperties {
   const percent = total > 0 ? (correct / total) * 100 : 0;
-  const ratio = percent / 100;
-  const hue = quizScoreHue(percent);
-  const light = 46 + ratio * 8;
-  const light2 = 36 + ratio * 8;
   return {
-    background: `linear-gradient(145deg, hsl(${hue} 78% ${light}%), hsl(${hue} 74% ${light2}%))`,
-  };
+    "--quiz-score-hue": String(quizScoreHue(percent)),
+  } as CSSProperties;
 }
 
 export function quizScoreBarStyle(percent: number): CSSProperties {
