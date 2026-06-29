@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { TicketDetail } from "@/api/ticket";
 import type { FastCheckResponse, UserProfileResponse } from "@/api/userProfile";
 import FastCheckPanel from "@/components/FastCheckPanel";
+import TicketKbSearch from "@/components/TicketKbSearch";
 import TicketStaffParticipants from "@/components/TicketStaffParticipants";
 import { formatDateTimeLocal } from "@/utils/dateTime";
 import { ticketListStatusColumn } from "@/api/tracker";
@@ -29,6 +30,8 @@ type Props = {
   onTakeBack: () => void;
   onReopen: () => void;
   onLinkSubscriber: () => void;
+  onOpenKbArticle: (slug: string) => void;
+  kbArticleOpen?: boolean;
   onMobileClose?: () => void;
 };
 
@@ -48,6 +51,8 @@ export default function TicketHelperPanel({
   onTakeBack,
   onReopen,
   onLinkSubscriber,
+  onOpenKbArticle,
+  kbArticleOpen = false,
   onMobileClose,
 }: Props) {
   const [diagOpen, setDiagOpen] = useState(false);
@@ -265,27 +270,20 @@ export default function TicketHelperPanel({
 
         <div className="tk-cc-helper__section tk-cc-helper__section--kb">
           <div className="tk-cc-helper__section-title">Интегрированная база знаний</div>
-          <div className="tk-cc-kb-stub">
-            <input
-              type="search"
-              className="tk-cc-kb-stub__search"
-              placeholder="Поиск решений…"
-              disabled
-              aria-disabled
-            />
-            <p className="tk-cc-kb-stub__note">Раздел в разработке</p>
-          </div>
+          <TicketKbSearch onOpenArticle={onOpenKbArticle} />
         </div>
       </section>
 
-      <button
-        type="button"
-        className="tk-cc-split-handle"
-        onClick={onToggle}
-        aria-label={collapsed ? "Показать панель абонента" : "Скрыть панель абонента"}
-      >
-        <span aria-hidden>{collapsed ? "›" : "‹"}</span>
-      </button>
+      {!kbArticleOpen ? (
+        <button
+          type="button"
+          className="tk-cc-split-handle"
+          onClick={onToggle}
+          aria-label={collapsed ? "Показать панель абонента" : "Скрыть панель абонента"}
+        >
+          <span aria-hidden>{collapsed ? "›" : "‹"}</span>
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -74,6 +74,7 @@ import {
 } from "@/api/ticketComments";
 import TicketQueueSidebar from "@/components/TicketQueueSidebar";
 import TicketHelperPanel from "@/components/TicketHelperPanel";
+import TicketKbArticleOverlay from "@/components/TicketKbArticleOverlay";
 import TicketLinkSubscriberModal from "@/workspace/TicketLinkSubscriberModal";
 import { fetchUserProfile, type UserProfileResponse } from "@/api/userProfile";
 import { macroTextToEditorHtml, type HelpdeskMacro } from "@/api/macros";
@@ -114,6 +115,7 @@ export default function TicketPage() {
   const [editorEmpty, setEditorEmpty] = useState(true);
   const [sending, setSending] = useState(false);
   const [helperCollapsed, setHelperCollapsed] = useState(false);
+  const [kbArticleSlug, setKbArticleSlug] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<null | "queue" | "info">(null);
   const isMobileLayout = useMediaQuery("(max-width: 900px)");
   const [subscriberProfile, setSubscriberProfile] = useState<UserProfileResponse | null>(null);
@@ -260,6 +262,7 @@ export default function TicketPage() {
     setSubscriberChatUnread(0);
     subscriberSeenMaxIdRef.current = 0;
     setCheckCache(null);
+    setKbArticleSlug(null);
   }, [ticketId]);
 
   useEffect(() => {
@@ -1246,6 +1249,13 @@ export default function TicketPage() {
 
   const closeMobilePanel = useCallback(() => setMobilePanel(null), []);
 
+  const openKbArticle = useCallback((slug: string) => {
+    setHelperCollapsed(false);
+    setKbArticleSlug(slug);
+  }, []);
+
+  const closeKbArticle = useCallback(() => setKbArticleSlug(null), []);
+
   const toggleMobilePanel = useCallback((panel: "queue" | "info") => {
     setMobilePanel((current) => (current === panel ? null : panel));
   }, []);
@@ -1496,34 +1506,42 @@ export default function TicketPage() {
             onClick={closeMobilePanel}
           />
         ) : null}
-        <TicketQueueSidebar
-          activeTicketId={ticketId}
-          onTicketSelect={closeMobilePanel}
-          onClose={isMobileLayout ? closeMobilePanel : undefined}
-        />
+        <div className="tk-cc-left-rail">
+          <TicketQueueSidebar
+            activeTicketId={ticketId}
+            onTicketSelect={closeMobilePanel}
+            onClose={isMobileLayout ? closeMobilePanel : undefined}
+          />
 
-        <TicketHelperPanel
-          detail={detail}
-          profile={subscriberProfile}
-          collapsed={isMobileLayout ? false : helperCollapsed}
-          onToggle={() => setHelperCollapsed((v) => !v)}
-          nowPulse={nowPulse}
-          checkCache={checkCache}
-          onCheckCache={setCheckCache}
-          onDisconnect={() =>
-            postDisconnect(detail.user_id!).then(() => {
-              void load();
-            })
-          }
-          transferLoading={transferLoading}
-          takeBackLoading={takeBackLoading}
-          reopenLoading={reopenLoading}
-          onTransfer={() => void handleTransferToEngineers()}
-          onTakeBack={() => void handleTakeBackToKs()}
-          onReopen={() => void handleReopenTicket()}
-          onLinkSubscriber={() => setLinkSubscriberOpen(true)}
-          onMobileClose={isMobileLayout ? closeMobilePanel : undefined}
-        />
+          <TicketHelperPanel
+            detail={detail}
+            profile={subscriberProfile}
+            collapsed={isMobileLayout ? false : kbArticleSlug ? false : helperCollapsed}
+            onToggle={() => setHelperCollapsed((v) => !v)}
+            nowPulse={nowPulse}
+            checkCache={checkCache}
+            onCheckCache={setCheckCache}
+            onDisconnect={() =>
+              postDisconnect(detail.user_id!).then(() => {
+                void load();
+              })
+            }
+            transferLoading={transferLoading}
+            takeBackLoading={takeBackLoading}
+            reopenLoading={reopenLoading}
+            onTransfer={() => void handleTransferToEngineers()}
+            onTakeBack={() => void handleTakeBackToKs()}
+            onReopen={() => void handleReopenTicket()}
+            onLinkSubscriber={() => setLinkSubscriberOpen(true)}
+            onOpenKbArticle={openKbArticle}
+            kbArticleOpen={Boolean(kbArticleSlug)}
+            onMobileClose={isMobileLayout ? closeMobilePanel : undefined}
+          />
+
+          {kbArticleSlug ? (
+            <TicketKbArticleOverlay slug={kbArticleSlug} onClose={closeKbArticle} />
+          ) : null}
+        </div>
 
         <div className={`tk-cc-chat${isCommentsPanel ? " tk-cc-chat--comments" : ""}`}>
           <header className="tk-cc-chat__head">
