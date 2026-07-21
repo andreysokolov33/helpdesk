@@ -1548,23 +1548,25 @@ export default function TicketPage() {
             <div className="tk-cc-chat__head-main">
               {renderMobileQueueButton()}
               <div className="tk-cc-chat__head-left">
-                {detail.subscriber_profile_user_id != null ? (
-                  <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-cc-chat__title">
-                    {subscriberSidebarName}
-                  </Link>
-                ) : (
-                  <span className="tk-cc-chat__title">{subscriberSidebarName}</span>
-                )}
-                <span className={`tk-cc-online${online ? " tk-cc-online--on" : " tk-cc-online--off"}`}>
-                  {onlineStatusLabel}
-                </span>
+                <div className="tk-cc-chat__identity">
+                  <div className="tk-cc-chat__identity-row">
+                    {detail.subscriber_profile_user_id != null ? (
+                      <Link to={`/users/${detail.subscriber_profile_user_id}`} className="tk-cc-chat__title">
+                        {subscriberSidebarName}
+                      </Link>
+                    ) : (
+                      <span className="tk-cc-chat__title">{subscriberSidebarName}</span>
+                    )}
+                    <span className={`tk-cc-online${online ? " tk-cc-online--on" : " tk-cc-online--off"}`}>
+                      {onlineStatusLabel}
+                    </span>
+                  </div>
+                  <span className="tk-cc-chat__ticket-meta" title={detail.title}>
+                    #{detail.id} · {detail.title}
+                  </span>
+                </div>
               </div>
               {renderMobileInfoButton()}
-            </div>
-            <div className="tk-cc-chat__head-right">
-              <span className="tk-cc-chat__ticket-meta" title={detail.title}>
-                #{detail.id} · {detail.title}
-              </span>
             </div>
           </header>
 

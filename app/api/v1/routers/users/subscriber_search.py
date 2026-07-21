@@ -55,16 +55,33 @@ def _join_latest_ud(ud_sq, user_model=User):
 
 
 def _format_passport(pas_series: str | None, pas_number: str | None, user_passport: str | None) -> str | None:
-    series = (pas_series or "").strip()
-    number = (pas_number or "").strip()
+    series, number = _passport_parts(pas_series, pas_number, user_passport)
     if series and number:
         return f"{series} {number}"
     if series:
         return series
     if number:
         return number
+    return None
+
+
+def _passport_parts(
+    pas_series: str | None, pas_number: str | None, user_passport: str | None
+) -> tuple[str | None, str | None]:
+    series = (pas_series or "").strip()
+    number = (pas_number or "").strip()
+    if series or number:
+        return series or None, number or None
     legacy = (user_passport or "").strip()
-    return legacy or None
+    if not legacy:
+        return None, None
+    compact = legacy.replace(" ", "")
+    if compact.isdigit() and len(compact) == 10:
+        return compact[:4], compact[4:]
+    parts = legacy.split()
+    if len(parts) >= 2:
+        return parts[0], " ".join(parts[1:])
+    return legacy, None
 
 
 def _passport_sql(ud_sq, user_model=User):

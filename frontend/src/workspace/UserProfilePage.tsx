@@ -16,12 +16,13 @@ import {
 import type { SubscriberSearchHit } from "@/api/search";
 import { copyPhone, formatPhoneDisplay } from "@/utils/phone";
 import { AuthPageHelp } from "@/components/AuthPageHelp";
+import { ProfileHelpTip } from "@/components/ProfileHelpTip";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import PaymentsHistoryPanel from "@/components/PaymentsHistoryPanel";
 import TariffsHistoryPanel from "@/components/TariffsHistoryPanel";
 import TicketsHistoryPanel from "@/components/TicketsHistoryPanel";
 import OpenSessionsCard from "@/components/OpenSessionsCard";
-import DatePickerField, { dateYmdToIso } from "@/components/DatePickerField";
+import DatePickerField, { addDaysYmd, dateYmdToIso, todayYmd } from "@/components/DatePickerField";
 import { PasswordResetModal } from "@/components/PasswordResetModal";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 
@@ -136,15 +137,171 @@ function PhoneValue({ phone }: { phone: string | null }) {
   );
 }
 
-function PassportSpoiler({ passport }: { passport: string | null }) {
+function formatPassportSeries(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 4) return `${digits.slice(0, 2)} ${digits.slice(2)}`;
+  return value.trim();
+}
+
+function formatPassportNumber(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+  return value.trim();
+}
+
+function PassportSpoiler({
+  series,
+  number,
+  fallback,
+}: {
+  series: string | null;
+  number: string | null;
+  fallback: string | null;
+}) {
   const [open, setOpen] = useState(false);
+  const hasParts = Boolean(series || number);
+
   return (
     <div className="up-pass-spoiler">
       <button type="button" className="up-pass-btn" onClick={() => setOpen((v) => !v)}>
         {open ? "Скрыть" : "Показать паспортные данные"}
       </button>
-      {open ? <div className="up-pass-data">{passport ?? "—"}</div> : null}
+      {open ? (
+        hasParts ? (
+          <div className="up-pass-grid">
+            {series ? (
+              <div className="up-pass-item">
+                <span className="up-pass-lbl">Серия</span>
+                <span className="up-pass-val">{formatPassportSeries(series)}</span>
+              </div>
+            ) : null}
+            {number ? (
+              <div className="up-pass-item">
+                <span className="up-pass-lbl">Номер</span>
+                <span className="up-pass-val">{formatPassportNumber(number)}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="up-pass-data">{fallback ?? "—"}</div>
+        )
+      ) : null}
     </div>
+  );
+}
+
+const MSK_GMT = 3;
+
+function isMskTimezone(gmt: number | null | undefined): boolean {
+  return gmt === MSK_GMT;
+}
+
+function formatGmtLabel(gmt: number): string {
+  return gmt === 0 ? "GMT" : `GMT${gmt > 0 ? "+" : ""}${gmt}`;
+}
+
+/** Местное время сброса; для не-МСК — в скобках время по МСК. */
+function formatTrafficResetLine(
+  localReset: string | null,
+  mskReset: string | null,
+  gmt: number | null | undefined,
+): string {
+  const stripTz = (value: string) =>
+    value.replace(/\s*\([^)]*\)\s*$/, "").replace(/\s*МСК\s*$/i, "").trim();
+  const localTime = localReset ? stripTz(localReset) : "";
+  const mskTime = mskReset ? stripTz(mskReset) : "";
+  const time = localTime || mskTime;
+  if (!time) return "—";
+  if (isMskTimezone(gmt)) return time;
+  const mskPart = mskReset?.includes("МСК") ? mskReset : `${mskTime || time} МСК`;
+  return `${localTime || mskTime} (${mskPart})`;
+}
+
+function formatLocalClock(gmt: number, at: Date = new Date()): string {
+  const shifted = new Date(at.getTime() + gmt * 3_600_000);
+  const hh = String(shifted.getUTCHours()).padStart(2, "0");
+  const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm} (${formatGmtLabel(gmt)})`;
+}
+
+function LocalTimeValue({
+  gmt,
+  fallback,
+}: {
+  gmt: number | null | undefined;
+  fallback: string | null | undefined;
+}) {
+  const [label, setLabel] = useState(() => {
+    if (gmt != null) return formatLocalClock(gmt);
+    return fallback ?? "—";
+  });
+
+  useEffect(() => {
+    if (gmt == null) {
+      setLabel(fallback ?? "—");
+      return;
+    }
+    const tick = () => setLabel(formatLocalClock(gmt));
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, [gmt, fallback]);
+
+  return <span className="up-v">{label}</span>;
+}
+
+function TrafficResetHelp() {
+  return (
+    <ProfileHelpTip
+      compact
+      title="Сброс суточного трафика"
+      ariaLabel="Справка: сброс суточного трафика на безлимитном тарифе"
+    >
+      <p>
+        Суточный сброс восстанавливает объём трафика на безлимитном тарифе. Независимо от того, был ли
+        полностью израсходован дневной пакет, он обновляется ежедневно в час, выбранный абонентом.
+      </p>
+      <p>
+        Для досрочного восстановления пакета до наступления установленного времени абоненту необходимо
+        подключить турбо-кнопку в личном кабинете.
+      </p>
+    </ProfileHelpTip>
+  );
+}
+
+function TrafficRenewHelp({ count }: { count: number }) {
+  const abs = Math.abs(count) % 100;
+  const d = abs % 10;
+  const word =
+    abs > 10 && abs < 20
+      ? "обновлений"
+      : d === 1
+        ? "обновление"
+        : d >= 2 && d <= 4
+          ? "обновления"
+          : "обновлений";
+
+  return (
+    <ProfileHelpTip
+      compact
+      title="Обновления суточного трафика"
+      ariaLabel="Справка: остаток обновлений суточного трафика"
+    >
+      <p>
+        По данному пакету услуг осталось <strong>{count}</strong> {word} суточного трафика.
+      </p>
+      <p>
+        Как правило, число доступных сбросов соответствует сроку действия тарифа в днях минус один.
+      </p>
+      <p>
+        Если сбросы исчерпаны (равно 0), а до окончания тарифа ещё остались дни, вероятно, обновление
+        трафика уже выполнялось инженерами в рамках действующего пакета.
+      </p>
+      <p>
+        Для досрочного восстановления суточного объёма трафика абоненту необходимо активировать
+        турбо-кнопку в личном кабинете.
+      </p>
+    </ProfileHelpTip>
   );
 }
 
@@ -231,6 +388,7 @@ function TariffCard({
   netflowTariff,
   isJuridical,
   userStatus,
+  stationGmt,
   onFreeze,
   onUnfreeze,
   onCancelPlan,
@@ -246,6 +404,7 @@ function TariffCard({
   netflowTariff: string | null;
   isJuridical: number;
   userStatus: number | null;
+  stationGmt: number | null;
   openSessionsCount: number;
   disconnectSessionsRemaining: number;
   disconnectSessionsLimit: number;
@@ -489,7 +648,11 @@ function TariffCard({
               <span className="up-v">
                 {tariff.disconnect_at_label}
                 {tariff.valid_date_label ? (
-                  <span className="up-kv-sub"> · до {tariff.valid_date_label}</span>
+                  <span className="up-kv-sub">
+                    {" · до "}
+                    {tariff.valid_date_label}
+                    {!isMskTimezone(stationGmt) ? " (МСК)" : ""}
+                  </span>
                 ) : null}
               </span>
             </div>
@@ -528,9 +691,14 @@ function TariffCard({
           {tariff.speed_unlimited && tariff.msk_reset ? (
             <>
               <div className="up-kv up-kv--multiline">
-                <span className="up-k">Сброс суточного трафика</span>
+                <span className="up-k up-k--with-help">
+                  Сброс суточного трафика
+                  <TrafficResetHelp />
+                </span>
                 <span className="up-v up-v-col">
-                  <span className="up-v-main">{tariff.msk_reset}</span>
+                  <span className="up-v-main">
+                    {formatTrafficResetLine(tariff.local_reset, tariff.msk_reset, stationGmt)}
+                  </span>
                   {tariff.last_traffic_reset_label ? (
                     <span className="up-kv-sub">
                       Последний сброс: {tariff.last_traffic_reset_label}
@@ -539,15 +707,12 @@ function TariffCard({
                 </span>
               </div>
               <div className="up-kv">
-                <span className="up-k">Местное время (по МСК)</span>
-                <span className="up-v">{tariff.local_reset}</span>
+                <span className="up-k up-k--with-help">
+                  Сбросов доступно
+                  <TrafficRenewHelp count={tariff.traffic_renew_count ?? 0} />
+                </span>
+                <span className="up-v">{tariff.traffic_renew_count ?? 0}</span>
               </div>
-              {tariff.traffic_renew_count != null ? (
-                <div className="up-kv">
-                  <span className="up-k">Сбросов доступно</span>
-                  <span className="up-v">{tariff.traffic_renew_count}</span>
-                </div>
-              ) : null}
             </>
           ) : null}
         </>
@@ -567,6 +732,16 @@ export default function UserProfilePage() {
   const [freezeDate, setFreezeDate] = useState("");
   const [unfreezeDate, setUnfreezeDate] = useState("");
   const [showUnfreezeDate, setShowUnfreezeDate] = useState(false);
+  const freezeMinDate = todayYmd();
+  const unfreezeMinDate = addDaysYmd(freezeDate || freezeMinDate, 1) ?? freezeMinDate;
+
+  const handleFreezeDateChange = (next: string) => {
+    setFreezeDate(next);
+    const nextUnfreezeMin = addDaysYmd(next || freezeMinDate, 1);
+    if (unfreezeDate && nextUnfreezeMin && unfreezeDate < nextUnfreezeMin) {
+      setUnfreezeDate("");
+    }
+  };
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant: ToastVariant } | null>(null);
   const reload = useCallback(() => {
@@ -677,20 +852,25 @@ export default function UserProfilePage() {
           </Link>
           <div className="up-top-head">
             <h1 className="up-title">{p.name}</h1>
-            <button
-              type="button"
-              className="up-btn sec up-call-register"
-              onClick={() =>
-                navigate("/call", {
-                  state: {
-                    returnTo: `/users/${uid}`,
-                    prefillSubscriber: profileToSearchHit(p),
-                  },
-                })
-              }
-            >
-              Регистрация звонка
-            </button>
+            <div className="up-top-actions">
+              <Link to={`/chat?id=${uid}`} className="up-btn sec up-call-register">
+                Чат
+              </Link>
+              <button
+                type="button"
+                className="up-btn sec up-call-register"
+                onClick={() =>
+                  navigate("/call", {
+                    state: {
+                      returnTo: `/users/${uid}`,
+                      prefillSubscriber: profileToSearchHit(p),
+                    },
+                  })
+                }
+              >
+                Регистрация звонка
+              </button>
+            </div>
           </div>
           <div className="up-top-meta">
             <span className={statusClass(p.user_status)}>{p.status_label}</span>
@@ -699,7 +879,10 @@ export default function UserProfilePage() {
               {data.online.is_online ? "В сети" : "Офлайн"}
             </span>
             {!data.online.is_online && data.online.last_session_end_label ? (
-              <span className="up-session-meta">последняя авторизация {data.online.last_session_end_label}</span>
+              <span className="up-session-meta">
+                <span className="up-session-meta__lbl">Последняя авторизация</span>
+                <time className="up-session-meta__val">{data.online.last_session_end_label}</time>
+              </span>
             ) : null}
           </div>
         </div>
@@ -732,13 +915,21 @@ export default function UserProfilePage() {
                     <span className="up-k">Адрес</span>
                     <span className="up-v">{p.residence_address ?? "—"}</span>
                   </div>
+                  <div className="up-kv">
+                    <span className="up-k">Местное время</span>
+                    <LocalTimeValue gmt={p.gmt} fallback={p.local_time_label} />
+                  </div>
                   {p.is_juridical === 2 ? (
                     <div className="up-kv">
                       <span className="up-k">{idDocLabel}</span>
                       <span className="up-v">{p.id_doc ?? "—"}</span>
                     </div>
                   ) : (
-                    <PassportSpoiler passport={p.id_doc} />
+                    <PassportSpoiler
+                      series={p.passport_series}
+                      number={p.passport_number}
+                      fallback={p.id_doc}
+                    />
                   )}
                   {p.is_juridical === 2 ? (
                     <div className="up-kv">
@@ -771,6 +962,7 @@ export default function UserProfilePage() {
                 netflowTariff={data.netflow_tariff}
                 isJuridical={p.is_juridical}
                 userStatus={p.user_status}
+                stationGmt={p.gmt}
                 openSessionsCount={data.open_sessions_count}
                 disconnectSessionsRemaining={data.disconnect_sessions_remaining}
                 disconnectSessionsLimit={data.disconnect_sessions_limit}
@@ -1051,7 +1243,8 @@ export default function UserProfilePage() {
                   <span className="up-label-hint">необязательно — пустое поле = заморозка сейчас</span>
                   <DatePickerField
                     value={freezeDate}
-                    onChange={setFreezeDate}
+                    onChange={handleFreezeDateChange}
+                    minDate={freezeMinDate}
                     id="freeze-date"
                     placeholder="Не выбрано — заморозка сейчас"
                   />
@@ -1077,7 +1270,7 @@ export default function UserProfilePage() {
                     <DatePickerField
                       value={unfreezeDate}
                       onChange={setUnfreezeDate}
-                      minDate={freezeDate || undefined}
+                      minDate={unfreezeMinDate}
                       id="unfreeze-date"
                       placeholder="Выберите дату"
                     />

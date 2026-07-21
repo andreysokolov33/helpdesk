@@ -1,4 +1,10 @@
 import DOMPurify from "dompurify";
+import { marked } from "marked";
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
 
 const HTML_TAG_RE = /<\/?[a-z][\s\S]*?>/i;
 
@@ -41,6 +47,19 @@ export function normalizeMessageContent(text: string | null | undefined): string
 /** Есть ли в строке HTML-разметка. */
 export function messageLooksLikeHtml(text: string | null | undefined): boolean {
   return HTML_TAG_RE.test(normalizeMessageContent(text));
+}
+
+/** Преобразует Markdown в HTML для отображения в чате. */
+export function messageMarkdownToHtml(text: string): string {
+  const parsed = marked.parse(text, { async: false });
+  return typeof parsed === "string" ? parsed : "";
+}
+
+/** HTML для тела сообщения: готовый HTML или Markdown → HTML. */
+export function messageContentToHtml(text: string): string {
+  const normalized = normalizeMessageContent(text);
+  if (!normalized) return "";
+  return messageLooksLikeHtml(normalized) ? normalized : messageMarkdownToHtml(normalized);
 }
 
 /** Безопасный HTML для тела сообщения в чате. */

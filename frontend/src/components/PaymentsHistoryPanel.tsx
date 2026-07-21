@@ -64,10 +64,11 @@ export default function PaymentsHistoryPanel({ userId }: Props) {
 
   return (
     <div className="up-payments">
+      <p className="up-history-tz-note">Дата и время указаны по московскому времени (МСК).</p>
       <table className="dt up-payments-table">
         <thead>
           <tr>
-            <th>Дата</th>
+            <th>Дата (МСК)</th>
             <th>Статус</th>
             <th>Система</th>
             <th className="up-payments-th-amt">Сумма</th>

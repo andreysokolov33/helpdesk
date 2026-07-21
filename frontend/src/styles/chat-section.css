@@ -192,11 +192,19 @@
 
 #cs-page .cs-chat__dot.is-online {
   background: var(--presence-on);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--presence-on) 40%, transparent);
+}
+
+#cs-page .cs-chat__name-row {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 #cs-page .cs-chat__name {
-  grid-column: 2;
-  grid-row: 1;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
@@ -206,6 +214,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 #cs-page .cs-chat.is-unread .cs-chat__name {
@@ -589,16 +598,23 @@
 }
 
 /* Цветовая дифференциация авторов исходящих сообщений */
-[data-theme="light"] #cs-page .cs-bbl.ag.k-engineer, [data-theme="comfort"] #cs-page .cs-bbl.ag.k-engineer {
-  background: #e4f0ec;
-  color: #1d473c;
-  border: 1px solid #c4ddd3;
+/* Инженер — как пузырь абонента, лёгкий зелёный оттенок */
+[data-theme="light"] #cs-page .cs-bbl.ag.k-engineer {
+  background: color-mix(in srgb, #5d9a78 10%, #fff);
+  color: var(--i2);
+  border: 1px solid color-mix(in srgb, #5d9a78 16%, #e2e6ec);
+}
+
+[data-theme="comfort"] #cs-page .cs-bbl.ag.k-engineer {
+  background: color-mix(in srgb, #5d9a78 10%, var(--p));
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, #5d9a78 18%, var(--ln));
 }
 
 [data-theme="dark"] #cs-page .cs-bbl.ag.k-engineer {
-  background: #173d34;
-  color: #d3e9e1;
-  border: 1px solid #25504490;
+  background: color-mix(in srgb, #6fb896 14%, var(--p));
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, #6fb896 24%, var(--lm));
 }
 
 [data-theme="light"] #cs-page .cs-bbl.ag.k-partner, [data-theme="comfort"] #cs-page .cs-bbl.ag.k-partner {
@@ -614,11 +630,11 @@
 }
 
 [data-theme="light"] #cs-page .cs-mav.ag.k-engineer, [data-theme="comfort"] #cs-page .cs-mav.ag.k-engineer {
-  background: #2f7a66;
+  background: #3d8a72;
 }
 
 [data-theme="dark"] #cs-page .cs-mav.ag.k-engineer {
-  background: #3a8a73;
+  background: #4a9e84;
   color: #eaf6f1;
 }
 

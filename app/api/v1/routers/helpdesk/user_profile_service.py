@@ -43,8 +43,10 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     format_valid_date_remaining,
     format_jur_active_contract,
     format_residence_address,
+    format_local_time_label,
     format_session_duration,
     format_traffic_mb,
+    is_msk_gmt,
     jur_frozen_traffic_mb,
     jur_traffic_overrun_mb,
     parse_speed_line,
@@ -70,7 +72,7 @@ from app.core.user_cache import (
     reconcile_user_status_cache,
     record_disconnect_sessions_success,
 )
-from app.api.v1.routers.users.subscriber_search import _format_passport
+from app.api.v1.routers.users.subscriber_search import _format_passport, _passport_parts
 from app.constants import STATUS_DISPLAY, SUPPORT_LINE_DISPLAY
 from app.models.users import TrackerTickets, User, UserDetails, UserFreezeTariff
 
@@ -176,7 +178,8 @@ async def _load_personal_with_balance(
                     jcl.house AS jur_house,
                     jcl.addr_organization,
                     coalesce(sf.station_name, ig.name) AS station_name,
-                    h.ip AS auth_page
+                    h.ip AS auth_page,
+                    ig.gmt
                 FROM users."user" u
                 LEFT JOIN LATERAL (
                     SELECT ud.surname, ud.name, ud.patronymic, ud.pas_series, ud.pas_number,
@@ -199,6 +202,8 @@ async def _load_personal_with_balance(
         raise HTTPException(status_code=404, detail="Абонент не найден")
 
     is_jur = int(row["is_juridical"] or 0)
+    passport_series: str | None = None
+    passport_number: str | None = None
     active_contract: str | None = None
     residence_address: str | None = None
     if is_jur == 2:
@@ -220,7 +225,10 @@ async def _load_personal_with_balance(
         name = " ".join(p for p in parts if p and str(p).strip()).strip() or (row["full_name"] or "")
         email = row["email"]
         phone = row["mob_tel"]
-        id_doc = _format_passport(row["ud_pas_series"], row["ud_pas_number"], None)
+        id_doc = _format_passport(row["ud_pas_series"], row["ud_pas_number"], row["passport"])
+        passport_series, passport_number = _passport_parts(
+            row["ud_pas_series"], row["ud_pas_number"], row["passport"]
+        )
         residence_address = format_residence_address(
             0,
             address=row.get("ud_address"),
@@ -231,6 +239,7 @@ async def _load_personal_with_balance(
         )
 
     us = int(row["user_status"]) if row["user_status"] is not None else 1
+    gmt = int(row["gmt"]) if row["gmt"] is not None else None
     personal = ProfilePersonal(
         user_id=int(row["id"]),
         name=name or f"#{row['id']}",
@@ -238,6 +247,8 @@ async def _load_personal_with_balance(
         email=(email or "").strip() or None,
         phone=(phone or "").strip() or None,
         id_doc=id_doc,
+        passport_series=passport_series,
+        passport_number=passport_number,
         active_contract=active_contract,
         is_juridical=is_jur,
         entity_label=_ENTITY.get(is_jur, "Физическое лицо"),
@@ -246,6 +257,8 @@ async def _load_personal_with_balance(
         station_name=row["station_name"],
         auth_page=row["auth_page"],
         residence_address=residence_address,
+        gmt=gmt,
+        local_time_label=format_local_time_label(gmt),
     )
     return personal, float(row["balanse"] or 0)
 
@@ -411,8 +424,15 @@ def _is_limited_tariff_ended(trow: Optional[dict[str, Any]]) -> bool:
     return (trow.get("real_type") or "").strip() == "default" and gn == "disabled"
 
 
-def _last_traffic_reset_label(ts: Optional[datetime]) -> str:
-    return format_dt_msk(ts) if ts else "Еще не было"
+def _last_traffic_reset_label(ts: Optional[datetime], gmt: int | None = None) -> str:
+    if not ts:
+        return "Еще не было"
+    label = format_dt_msk(ts)
+    if not label:
+        return "Еще не было"
+    if is_msk_gmt(gmt):
+        return label
+    return f"{label} (МСК)"
 
 
 def _build_tariff(
@@ -495,7 +515,7 @@ def _build_tariff(
     renew = None
     if real_type == "unlim_fap" and trow:
         msk_reset, local_reset = traffic_reset_labels(trow.get("msk_hour"), trow.get("gmt"))
-        renew = trow.get("traffic_renew_count")
+        renew = int(trow.get("traffic_renew_count") or 0)
 
     tariff_ended = _is_limited_tariff_ended(trow)
     if tariff_ended:
@@ -536,7 +556,7 @@ def _build_tariff(
         msk_reset=msk_reset,
         local_reset=local_reset,
         last_traffic_reset_label=(
-            _last_traffic_reset_label(last_script_reset_at)
+            _last_traffic_reset_label(last_script_reset_at, trow.get("gmt") if trow else None)
             if real_type == "unlim_fap"
             else None
         ),

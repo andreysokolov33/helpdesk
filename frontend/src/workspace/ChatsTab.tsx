@@ -13,6 +13,7 @@ import {
 } from "@/api/tracker";
 import TicketAssigneePill from "@/components/TicketAssigneePill";
 import CallCenterPhoneIcon from "@/components/CallCenterPhoneIcon";
+import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import {
   formatRatingAvg,
   formatTicketListDate,
@@ -399,6 +400,7 @@ export default function ChatsTab() {
                 <CallCenterPhoneIcon />
               </span>
             ) : null}
+            <TopSubscriberBadge rank={row.top_subscriber_rank} />
             {row.object_type === "user" && (row.subscriber_is_juridical ?? 0) === 2 ? (
               <span className="ch-jur-mark" title="Юридическое лицо">
                 ЮЛ

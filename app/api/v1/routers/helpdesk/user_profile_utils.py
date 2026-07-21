@@ -114,16 +114,49 @@ def _format_speed_token(token: str) -> str:
     return f"{num} {label}"
 
 
-def traffic_reset_labels(msk_hour: int | None, gmt_offset: int | None) -> tuple[str, str]:
-    """МСК и местное время сброса суточного трафика."""
-    hour = int(msk_hour or 0) % 24
-    msk = f"{hour:02d}:00 МСК"
+_MSK_GMT = 3
+
+
+def is_msk_gmt(gmt_offset: int | None) -> bool:
+    """Часовой пояс станции совпадает с московским (GMT+3)."""
+    return gmt_offset is not None and int(gmt_offset) == _MSK_GMT
+
+
+def format_gmt_label(gmt_offset: int | None) -> str | None:
+    """Подпись часового пояса станции: GMT+3, GMT−5, GMT."""
     if gmt_offset is None:
-        return msk, "—"
-    local_h = (hour + int(gmt_offset)) % 24
-    local = f"{local_h:02d}:00"
-    gmt_lbl = f"GMT{int(gmt_offset):+d}" if gmt_offset != 0 else "GMT"
-    return msk, f"{local} ({gmt_lbl})"
+        return None
+    offset = int(gmt_offset)
+    return f"GMT{offset:+d}" if offset != 0 else "GMT"
+
+
+def format_local_time_label(
+    gmt_offset: int | None, *, now: datetime | None = None
+) -> str | None:
+    """Текущее время в населённом пункте абонента по GMT станции: «14:32 (GMT+3)»."""
+    if gmt_offset is None:
+        return None
+    offset = int(gmt_offset)
+    ref = now or datetime.now(timezone.utc)
+    if ref.tzinfo is None:
+        ref = ref.replace(tzinfo=timezone.utc)
+    local = ref.astimezone(timezone(timedelta(hours=offset)))
+    gmt_lbl = format_gmt_label(offset)
+    return f"{local.strftime('%H:%M')} ({gmt_lbl})"
+
+
+def traffic_reset_labels(msk_hour: int | None, gmt_offset: int | None) -> tuple[str, str]:
+    """МСК и местное время сброса. traffic_update_hour уже задан по МСК."""
+    hour = int(msk_hour or 0) % 24
+    msk_time = f"{hour:02d}:00"
+    if gmt_offset is None:
+        return f"{msk_time} МСК", "—"
+    gmt = int(gmt_offset)
+    local_h = (hour + (gmt - _MSK_GMT) + 24) % 24
+    local_time = f"{local_h:02d}:00"
+    if is_msk_gmt(gmt):
+        return msk_time, local_time
+    return f"{msk_time} МСК", local_time
 
 
 def tariff_display_name(

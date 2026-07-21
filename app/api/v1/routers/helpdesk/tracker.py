@@ -10,6 +10,7 @@ from sqlalchemy.exc import NotSupportedError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
+from app.api.v1.routers.helpdesk.top_subscribers import enrich_rows_with_top_rank
 from app.api.v1.routers.helpdesk.schemas import (
     LinkTicketSubscriberRequest,
     CloseTicketRequest,
@@ -239,6 +240,9 @@ def map_tracker_list_rows_to_items(
                 assignee_is_viewer=assignee_is_viewer,
                 assigned_to=int(m["assigned_to"]) if m.get("assigned_to") is not None else None,
                 has_unread=has_unread,
+                top_subscriber_rank=int(m["top_subscriber_rank"])
+                if m.get("top_subscriber_rank") is not None
+                else None,
                 communication_state=comm_state,
                 communication_label=comm_label,
                 date_of_create=m["date_of_create"],
@@ -335,6 +339,7 @@ async def list_tracker_tickets(
                 continue
             raise
 
+    await enrich_rows_with_top_rank(db, rows)
     items = map_tracker_list_rows_to_items(rows, user)
 
     stats = None

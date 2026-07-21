@@ -42,6 +42,7 @@ export type TrackerTicketListItem = {
   assignee_is_viewer: boolean;
   assigned_to: number | null;
   has_unread: boolean;
+  top_subscriber_rank?: number | null;
   communication_state: "needs_reply" | "awaiting_subscriber" | null;
   communication_label: string | null;
   date_of_create: string;
@@ -112,6 +113,7 @@ const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
   "assignee_is_viewer",
   "assigned_to",
   "has_unread",
+  "top_subscriber_rank",
   "communication_state",
   "communication_label",
   "updated_at",

@@ -5,6 +5,8 @@ export type ProfilePersonal = {
   email: string | null;
   phone: string | null;
   id_doc: string | null;
+  passport_series: string | null;
+  passport_number: string | null;
   active_contract: string | null;
   is_juridical: number;
   entity_label: string;
@@ -13,6 +15,8 @@ export type ProfilePersonal = {
   station_name: string | null;
   auth_page: string | null;
   residence_address: string | null;
+  gmt: number | null;
+  local_time_label: string | null;
 };
 
 export type ProfileOpenSession = {

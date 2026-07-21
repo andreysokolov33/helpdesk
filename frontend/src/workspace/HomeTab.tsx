@@ -483,6 +483,16 @@ export default function HomeTab() {
             </table>
           </div>
         ) : null}
+
+        <p
+          className="home-contact"
+          data-tip="Любые пожелания, идеи и рекомендации по улучшению интерфейса писать на эту почту."
+        >
+          По всем вопросам и предложениям:{" "}
+          <a className="home-contact__mail" href="mailto:os@wifitochka.ru">
+            os@wifitochka.ru
+          </a>
+        </p>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { messageLooksLikeHtml, normalizeMessageContent, sanitizeMessageHtml } from "@/utils/messageHtml";
+import { messageContentToHtml, sanitizeMessageHtml } from "@/utils/messageHtml";
 
 type MessageBodyProps = {
   text: string | null | undefined;
@@ -11,17 +11,13 @@ function htmlModifierClass(base: string): string {
 }
 
 export default function MessageBody({ text, className = "tk-msg-text" }: MessageBodyProps) {
-  const normalized = normalizeMessageContent(text);
-  if (!normalized) return null;
+  const html = messageContentToHtml(text);
+  if (!html) return null;
 
-  if (messageLooksLikeHtml(normalized)) {
-    return (
-      <div
-        className={`${className} ${htmlModifierClass(className)}`}
-        dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(normalized) }}
-      />
-    );
-  }
-
-  return <div className={className}>{normalized}</div>;
+  return (
+    <div
+      className={`${className} ${htmlModifierClass(className)}`}
+      dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(html) }}
+    />
+  );
 }

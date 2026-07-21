@@ -61,12 +61,13 @@ export default function TariffsHistoryPanel({ userId }: Props) {
 
   return (
     <div className="up-tariffs">
+      <p className="up-history-tz-note">Дата и время указаны по московскому времени (МСК).</p>
       <table className="dt up-tariffs-table">
         <thead>
           <tr>
-            <th className="up-tariffs-th-date">Подключение</th>
+            <th className="up-tariffs-th-date">Подключение (МСК)</th>
             <th className="up-tariffs-th-type">Тип</th>
-            <th className="up-tariffs-th-date">Отключение</th>
+            <th className="up-tariffs-th-date">Отключение (МСК)</th>
             <th className="up-tariffs-th-amt">Цена</th>
           </tr>
         </thead>

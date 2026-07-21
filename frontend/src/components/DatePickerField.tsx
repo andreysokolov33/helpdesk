@@ -25,6 +25,17 @@ function toYmd(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+export function todayYmd(): string {
+  return toYmd(new Date());
+}
+
+export function addDaysYmd(ymd: string, days: number): string | null {
+  const d = parseYmd(ymd);
+  if (!d) return null;
+  d.setDate(d.getDate() + days);
+  return toYmd(d);
+}
+
 function parseYmd(s: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const [y, m, d] = s.split("-").map(Number);
@@ -208,6 +219,7 @@ export default function DatePickerField({
         <button
           type="button"
           className="up-dp-foot-btn up-dp-foot-btn--pri"
+          disabled={!!(min && todayYmd < min)}
           onClick={() => pick(todayYmd)}
         >
           Сегодня

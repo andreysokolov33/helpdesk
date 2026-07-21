@@ -5,6 +5,7 @@ import type { FastCheckResponse, UserProfileResponse } from "@/api/userProfile";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import TicketKbSearch from "@/components/TicketKbSearch";
 import TicketStaffParticipants from "@/components/TicketStaffParticipants";
+import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import { formatDateTimeLocal } from "@/utils/dateTime";
 import { ticketListStatusColumn } from "@/api/tracker";
 import { formatWorkDurationSince } from "@/utils/ticketFormat";
@@ -129,16 +130,28 @@ export default function TicketHelperPanel({
             </div>
           ) : (
             <>
-              {detail.subscriber_profile_user_id != null ? (
-                <Link
-                  to={`/users/${detail.subscriber_profile_user_id}`}
-                  className="tk-cc-sub-name"
-                >
-                  {subscriberName}
-                </Link>
-              ) : (
-                <span className="tk-cc-sub-name">{subscriberName}</span>
-              )}
+              <div className="tk-cc-sub-head">
+                {detail.subscriber_profile_user_id != null ? (
+                  <Link
+                    to={`/users/${detail.subscriber_profile_user_id}`}
+                    className="tk-cc-sub-name"
+                  >
+                    {subscriberName}
+                  </Link>
+                ) : (
+                  <span className="tk-cc-sub-name">{subscriberName}</span>
+                )}
+                <div className="tk-cc-sub-meta">
+                  <span
+                    className={`tk-cc-entity ${
+                      detail.subscriber_is_juridical === 2 ? "tk-cc-entity--jur" : "tk-cc-entity--phys"
+                    }`}
+                  >
+                    {detail.subscriber_is_juridical === 2 ? "Юр. лицо" : "Физ. лицо"}
+                  </span>
+                  <TopSubscriberBadge rank={detail.top_subscriber_rank} labeled />
+                </div>
+              </div>
               <div className="tk-cc-data-grid">
                 <div className="tk-cc-data-cell">
                   <div className="tk-cc-data-cell__label">ID учётной записи</div>
@@ -181,18 +194,20 @@ export default function TicketHelperPanel({
             {detail.is_open && detail.queue_line === "cs" && detail.support_line !== 4 ? (
               <button
                 type="button"
-                className="tk-cc-btn tk-cc-btn--outline"
+                className="tk-cc-btn tk-cc-btn--transfer"
                 disabled={transferLoading}
                 onClick={onTransfer}
+                data-tip="Перевести тикет в зону ответственности инженеров"
               >
                 {transferLoading ? "Передаю…" : "Передать инженерам"}
               </button>
             ) : detail.is_open && detail.queue_line === "engineers" ? (
               <button
                 type="button"
-                className="tk-cc-btn tk-cc-btn--outline"
+                className="tk-cc-btn tk-cc-btn--takeback"
                 disabled={takeBackLoading}
                 onClick={onTakeBack}
+                data-tip="Перевести тикет в зону ответственности первой линии техподдержки"
               >
                 {takeBackLoading ? "Возврат…" : "Взять в работу"}
               </button>

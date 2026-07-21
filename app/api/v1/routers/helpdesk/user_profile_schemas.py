@@ -13,6 +13,8 @@ class ProfilePersonal(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     id_doc: Optional[str] = None
+    passport_series: Optional[str] = None
+    passport_number: Optional[str] = None
     active_contract: Optional[str] = None
     is_juridical: int
     entity_label: str
@@ -21,6 +23,10 @@ class ProfilePersonal(BaseModel):
     station_name: Optional[str] = None
     auth_page: Optional[str] = None
     residence_address: Optional[str] = None
+    gmt: Optional[int] = None
+    """Часовой пояс станции (ip_group.gmt), смещение относительно UTC."""
+    local_time_label: Optional[str] = None
+    """Текущее местное время в населённом пункте: «14:32 (GMT+3)»."""
 
 
 class ProfileOnline(BaseModel):

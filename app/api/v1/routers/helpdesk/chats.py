@@ -33,6 +33,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
 from app.api.v1.routers.helpdesk.ticket_service import assert_subscriber_chat_write_allowed
+from app.api.v1.routers.helpdesk.top_subscribers import (
+    enrich_chats_with_top_rank,
+    fetch_top_subscriber_rank,
+)
 from app.config import settings
 from app.core.ticket_message_validation import html_to_plain_text
 from app.database import get_db, redis_client
@@ -257,6 +261,7 @@ async def get_all_users_chats(
     result = await db.execute(text(query), params)
     chats = [dict(r) for r in result.mappings().all()]
     _enrich_chat_dates(chats)
+    await enrich_chats_with_top_rank(db, chats)
     return chats
 
 
@@ -311,6 +316,12 @@ async def search_users_chats(db: AsyncSession, query: str, limit: int) -> List[d
     result = await db.execute(text(sql), params)
     chats = [dict(r) for r in result.mappings().all()]
     _enrich_chat_dates(chats)
+    # Поиск по ID: абонент без истории сообщений всё равно должен находиться
+    if is_id_search and not chats:
+        created = await find_or_create_chat(db, int(query))
+        if created:
+            return [created]
+    await enrich_chats_with_top_rank(db, chats)
     return chats
 
 
@@ -350,7 +361,7 @@ async def find_or_create_chat(db: AsyncSession, user_id: int) -> Optional[dict]:
         "unread_count": 0,
         "has_unread": False,
         "is_jur": (rec.get("is_juridical") or 0) != 0,
-        "top_subscriber_rank": None,
+        "top_subscriber_rank": await fetch_top_subscriber_rank(db, user_id),
     }
 
 

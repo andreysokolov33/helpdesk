@@ -116,6 +116,7 @@ export type TicketDetail = {
   subscriber_online?: boolean;
   subscriber_is_juridical: number;
   subscriber_profile_user_id?: number | null;
+  top_subscriber_rank?: number | null;
   assignee_label?: string | null;
   assignee_role?: string | null;
   assignee_is_viewer: boolean;

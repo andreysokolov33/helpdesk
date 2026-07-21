@@ -4,6 +4,7 @@ import MessageBody from "@/components/MessageBody";
 import FileBadge, { resolveFileExt, truncateFilename } from "@/components/FileBadge";
 import ChatMessageContextMenu, { type ChatMenuAction } from "@/components/ChatMessageContextMenu";
 import TicketChatScrollDown from "@/components/TicketChatScrollDown";
+import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import { fetchAuthMe } from "@/api/auth";
 import { formatDateTimeLocal } from "@/utils/dateTime";
 import { formatBytes } from "@/utils/formatBytes";
@@ -15,6 +16,7 @@ import {
   fetchChatReadReceipts,
   fetchChatUpdates,
   fetchChats,
+  findOrCreateChat,
   markChatRead,
   mergeChatMessages,
   searchChats,
@@ -115,6 +117,7 @@ export default function ChatSectionPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
+  const chatsRef = useRef<ChatListItem[]>([]);
   const atBottomRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const pendingScrollToBottomRef = useRef(false);
@@ -128,6 +131,10 @@ export default function ChatSectionPage() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
 
   useEffect(() => {
     if (!file) {
@@ -171,6 +178,28 @@ export default function ChatSectionPage() {
   useEffect(() => {
     void loadChats();
   }, [loadChats]);
+
+  // Открытие чата по ?id= даже без истории сообщений
+  useEffect(() => {
+    if (!activeId || chatsLoading) return;
+    if (chatsRef.current.some((c) => c.chat_id === activeId)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const chat = await findOrCreateChat(activeId);
+        if (cancelled) return;
+        setChats((prev) => {
+          if (prev.some((c) => c.chat_id === chat.chat_id)) return prev;
+          return [chat, ...prev];
+        });
+      } catch {
+        /* абонент не найден — шапка покажет «Абонент #id» */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, chatsLoading]);
 
   useEffect(() => {
     fetchAuthMe()
@@ -245,7 +274,13 @@ export default function ChatSectionPage() {
   const baseChats = searchResults ?? chats;
   const visibleChats = unreadOnly ? baseChats.filter((c) => c.has_unread) : baseChats;
 
-  function selectChat(id: number) {
+  function selectChat(id: number, item?: ChatListItem) {
+    if (item) {
+      setChats((prev) => {
+        if (prev.some((c) => c.chat_id === item.chat_id)) return prev;
+        return [item, ...prev];
+      });
+    }
     const next = new URLSearchParams(params);
     next.set("id", String(id));
     setParams(next);
@@ -573,14 +608,17 @@ export default function ChatSectionPage() {
         key={c.chat_id}
         type="button"
         className={`cs-chat${c.chat_id === activeId ? " is-active" : ""}${c.has_unread ? " is-unread" : ""}`}
-        onClick={() => selectChat(c.chat_id)}
+        onClick={() => selectChat(c.chat_id, c)}
       >
         <span className={`cs-chat__av${c.is_jur ? " cs-chat__av--jur" : ""}`}>
           {initials(c.fullname)}
           <span className={`cs-chat__dot${c.is_online ? " is-online" : ""}`} />
         </span>
-        <span className="cs-chat__name" title={c.fullname}>
-          {c.fullname}
+        <span className="cs-chat__name-row">
+          <TopSubscriberBadge rank={c.top_subscriber_rank} />
+          <span className="cs-chat__name" title={c.fullname}>
+            {c.fullname}
+          </span>
         </span>
         <span className="cs-chat__time">{chatTime(c.last_message_date_iso)}</span>
         <span className="cs-chat__last">{plainPreview(c.last_message_text || "") || "—"}</span>

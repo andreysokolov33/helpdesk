@@ -52,6 +52,8 @@ class TrackerTicketListItem(BaseModel):
     assigned_to: Optional[int] = None
     has_unread: bool = False
     """Есть сообщения абонента, которые ещё не прочитал ни один сотрудник."""
+    top_subscriber_rank: Optional[int] = None
+    """Место в ТОП-50 по платежам (monitoring.top_history, stat_id=4); иначе None."""
     communication_state: Optional[str] = None
     """needs_reply | awaiting_subscriber"""
     communication_label: Optional[str] = None
@@ -412,6 +414,8 @@ class TicketDetailResponse(BaseModel):
     subscriber_online: bool = False
     subscriber_is_juridical: int = 0
     subscriber_profile_user_id: int | None = None
+    top_subscriber_rank: int | None = None
+    """Место в ТОП-50 по платежам; None если не в топе."""
     assignee_label: str | None = None
     assignee_role: str | None = None
     assignee_is_viewer: bool = False

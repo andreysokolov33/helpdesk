@@ -41,6 +41,7 @@ from app.models.users import (
     UserMailAttachment,
 )
 from app.api.v1.routers.helpdesk import user_profile_service as profile_svc
+from app.api.v1.routers.helpdesk.top_subscribers import fetch_top_subscriber_rank
 from app.database import redis_client
 from app.core.ticket_queue_state import (
     StaffParty,
@@ -2798,11 +2799,13 @@ async def load_ticket_detail(
         sub_name = str(d["caller_name"]).strip()
 
     subscriber_account = None
+    top_subscriber_rank = None
     if uid:
         try:
             subscriber_account = await profile_svc.load_subscriber_account_summary(db, uid)
         except HTTPException:
             subscriber_account = None
+        top_subscriber_rank = await fetch_top_subscriber_rank(db, uid)
 
     chat_mode = chat_mode_for_source(source)
     date_of_close = d.get("date_of_close")
@@ -2895,6 +2898,7 @@ async def load_ticket_detail(
         "subscriber_online": bool(d.get("subscriber_online")),
         "subscriber_is_juridical": sub_is_juridical,
         "subscriber_profile_user_id": int(d["user_id"]) if d.get("user_id") is not None else None,
+        "top_subscriber_rank": top_subscriber_rank,
         "assignee_label": assignee_disp["assignee_label"],
         "assignee_role": assignee_disp["assignee_role"],
         "assignee_is_viewer": assignee_disp["assignee_is_viewer"],

@@ -16,6 +16,7 @@ from app.api.v1.routers.helpdesk.schemas import (
     HomeTicketsResponse,
 )
 from app.api.v1.routers.helpdesk.tracker import map_tracker_list_rows_to_items
+from app.api.v1.routers.helpdesk.top_subscribers import enrich_rows_with_top_rank
 from app.database import get_db
 
 router = APIRouter(prefix="/v1/helpdesk/home", tags=["Helpdesk — главная"])
@@ -29,8 +30,12 @@ async def home_tickets(
     """Тикеты для главной: «ждут ответа» (до 3) и «открытые» (до 7)."""
     viewer_id = int(user["user_id"])
     bundle = await ticket_svc.fetch_home_tickets_bundle(db, viewer_id=viewer_id)
-    needs_reply = map_tracker_list_rows_to_items(bundle["needs_reply"], user)
-    open_items = map_tracker_list_rows_to_items(bundle["open"], user)
+    needs_reply_rows = bundle["needs_reply"]
+    open_rows = bundle["open"]
+    await enrich_rows_with_top_rank(db, needs_reply_rows)
+    await enrich_rows_with_top_rank(db, open_rows)
+    needs_reply = map_tracker_list_rows_to_items(needs_reply_rows, user)
+    open_items = map_tracker_list_rows_to_items(open_rows, user)
     return HomeTicketsResponse(
         total_open=int(bundle["total_open"]),
         needs_reply_count=int(bundle["needs_reply_count"]),

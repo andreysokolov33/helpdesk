@@ -10,6 +10,7 @@ import {
   type TrackerTicketListItem,
 } from "@/api/tracker";
 import CallCenterPhoneIcon from "@/components/CallCenterPhoneIcon";
+import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import { isCallCenterTicketSource } from "@/utils/ticketLabels";
 import { loadTicketsPerPage, type TicketsListPerPage } from "@/utils/ticketsListPrefs";
 
@@ -243,6 +244,7 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
                       <CallCenterPhoneIcon />
                     </span>
                   ) : null}
+                  <TopSubscriberBadge rank={row.top_subscriber_rank} />
                   <span className="tk-cc-queue__item-name">{displayName(row)}</span>
                 </div>
                 <span className="tk-cc-queue__item-time">{formatQueueRelativeTime(timeIso)}</span>

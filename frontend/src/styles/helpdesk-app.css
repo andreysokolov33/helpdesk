@@ -2633,6 +2633,39 @@
   padding: 8px 0;
 }
 
+.home-contact {
+  margin: 28px 0 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--i3);
+  line-height: 1.5;
+}
+
+.home-contact[data-tip]::after {
+  max-width: 280px;
+  text-align: left;
+}
+
+.home-contact__mail {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.home-contact__mail:hover {
+  border-bottom-color: var(--ink);
+}
+
+[data-theme="dark"] .home-page .home-contact__mail {
+  color: var(--ok);
+}
+
+[data-theme="dark"] .home-page .home-contact__mail:hover {
+  border-bottom-color: var(--ok);
+}
+
 .home-score-critical {
   color: var(--red);
   font-weight: 700;
@@ -4147,6 +4180,27 @@
   object-fit: contain;
   border-radius: 8px;
   margin-top: 6px;
+}
+
+#tp-ticket .tk-msg-text--html blockquote {
+  margin: 0.4em 0;
+  padding: 4px 10px;
+  border-left: 3px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  opacity: 0.9;
+}
+
+#tp-ticket .tk-msg-text--html pre,
+#tp-ticket .tk-msg-text--html code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+#tp-ticket .tk-msg-text--html pre {
+  margin: 0.4em 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  overflow-x: auto;
 }
 
 #tp-ticket .tk-intro__text.tk-msg-text--html {
@@ -5827,12 +5881,71 @@
   font-weight: 800;
   color: var(--ink);
   text-decoration: none;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 #tp-ticket .tk-cc-sub-name:hover {
   color: var(--red);
   text-decoration: underline;
+}
+
+#tp-ticket .tk-cc-sub-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+#tp-ticket .tk-cc-sub-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+#tp-ticket .tk-cc-entity {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+
+[data-theme="light"] #tp-ticket .tk-cc-entity--phys {
+  background: #e8f1ff;
+  color: #1450a0;
+  border-color: #c5daf5;
+}
+[data-theme="comfort"] #tp-ticket .tk-cc-entity--phys {
+  background: var(--obg);
+  color: var(--ok);
+  border-color: var(--okln);
+}
+[data-theme="dark"] #tp-ticket .tk-cc-entity--phys {
+  background: var(--obg);
+  color: var(--ok);
+  border-color: var(--okln);
+}
+
+[data-theme="light"] #tp-ticket .tk-cc-entity--jur {
+  background: #fdf3e0;
+  color: #8a5a0a;
+  border-color: #f0d9b0;
+}
+[data-theme="comfort"] #tp-ticket .tk-cc-entity--jur {
+  background: var(--wbg);
+  color: var(--wn);
+  border-color: var(--lm);
+}
+[data-theme="dark"] #tp-ticket .tk-cc-entity--jur {
+  background: var(--wbg);
+  color: #c9a060;
+  border-color: rgba(240, 168, 48, 0.22);
 }
 
 #tp-ticket .tk-cc-sub-unknown p {
@@ -5915,9 +6028,142 @@
   cursor: not-allowed;
 }
 
-#tp-ticket .tk-cc-btn--active {
+/* Активная диагностика — без смены цвета текста */
+#tp-ticket .tk-cc-btn--accent.tk-cc-btn--active {
+  color: #fff;
+  border-color: var(--red);
+  box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.12);
+  filter: brightness(0.94);
+}
+
+#tp-ticket .tk-cc-btn--active:not(.tk-cc-btn--accent) {
   border-color: var(--ink);
   color: var(--ink);
+}
+
+/* Передать инженерам — тёплый пастельный */
+#tp-ticket .tk-cc-btn--transfer {
+  background: #f3ebe0;
+  color: #7a5c38;
+  border-color: #e2d4c0;
+}
+
+#tp-ticket .tk-cc-btn--transfer:hover:not(:disabled) {
+  background: #eee3d4;
+  border-color: #d4c2a8;
+  color: #6a4e2e;
+}
+
+/* Взять в работу — холодный пастельный */
+#tp-ticket .tk-cc-btn--takeback {
+  background: #e4eef6;
+  color: #3d5f8a;
+  border-color: #c8d4e4;
+}
+
+#tp-ticket .tk-cc-btn--takeback:hover:not(:disabled) {
+  background: #d9e7f2;
+  border-color: #b5c8dc;
+  color: #325278;
+}
+
+[data-theme="comfort"] #tp-ticket .tk-cc-btn--transfer {
+  background: #ebe4d8;
+  color: #6e5740;
+  border-color: #d6cdc0;
+}
+
+[data-theme="comfort"] #tp-ticket .tk-cc-btn--transfer:hover:not(:disabled) {
+  background: #e4dbcd;
+  border-color: #c9bdae;
+  color: #5c4835;
+}
+
+[data-theme="comfort"] #tp-ticket .tk-cc-btn--takeback {
+  background: #dfe8ee;
+  color: #456b85;
+  border-color: #c2d2dc;
+}
+
+[data-theme="comfort"] #tp-ticket .tk-cc-btn--takeback:hover:not(:disabled) {
+  background: #d4e0e8;
+  border-color: #b4c7d4;
+  color: #3a5c74;
+}
+
+[data-theme="dark"] #tp-ticket .tk-cc-btn--transfer {
+  background: rgba(240, 168, 48, 0.12);
+  color: #e0b86a;
+  border-color: rgba(240, 168, 48, 0.28);
+}
+
+[data-theme="dark"] #tp-ticket .tk-cc-btn--transfer:hover:not(:disabled) {
+  background: rgba(240, 168, 48, 0.18);
+  border-color: rgba(240, 168, 48, 0.4);
+  color: #ecc27a;
+}
+
+[data-theme="dark"] #tp-ticket .tk-cc-btn--takeback {
+  background: rgba(111, 155, 208, 0.14);
+  color: #9bb8d8;
+  border-color: rgba(111, 155, 208, 0.3);
+}
+
+[data-theme="dark"] #tp-ticket .tk-cc-btn--takeback:hover:not(:disabled) {
+  background: rgba(111, 155, 208, 0.22);
+  border-color: rgba(111, 155, 208, 0.42);
+  color: #b0cae4;
+}
+
+/* Тултипы у кнопок действий — внутри панели, поверх чата */
+#tp-ticket .tk-cc-helper-wrap {
+  z-index: 2;
+}
+
+#tp-ticket .tk-cc-helper-wrap:has(.tk-cc-btn[data-tip]:hover),
+#tp-ticket .tk-cc-helper-wrap:has(.tk-cc-btn[data-tip]:focus-visible) {
+  z-index: 30;
+}
+
+#tp-ticket .tk-cc-chat {
+  z-index: 1;
+}
+
+#tp-ticket .tk-cc-actions {
+  position: relative;
+  z-index: 40;
+}
+
+#tp-ticket .tk-cc-btn[data-tip] {
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
+#tp-ticket .tk-cc-btn[data-tip]:hover,
+#tp-ticket .tk-cc-btn[data-tip]:focus-visible {
+  z-index: 100060;
+}
+
+#tp-ticket .tk-cc-btn[data-tip]::after {
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 1.4;
+  max-width: 300px;
+  white-space: normal;
+  text-align: left;
+  z-index: 100060;
+  /* Растёт влево — не залезает под чат */
+  left: auto;
+  right: 0;
+  transform: translateX(0) scale(0.92);
+}
+
+#tp-ticket .tk-cc-btn[data-tip]:hover::after,
+#tp-ticket .tk-cc-btn[data-tip]:focus-visible::after {
+  transform: translateX(0) scale(1);
 }
 
 #tp-ticket .tk-cc-diag {
@@ -6294,13 +6540,14 @@
 }
 
 #tp-ticket .tk-cc-chat__head {
-  height: 56px;
+  min-height: 56px;
+  height: auto;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 20px;
+  padding: 10px 20px;
   background: var(--p);
   border-bottom: 1.5px solid var(--ln);
 }
@@ -6336,7 +6583,24 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+
+#tp-ticket .tk-cc-chat__identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+#tp-ticket .tk-cc-chat__identity-row {
+  display: flex;
+  align-items: baseline;
   flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 #tp-ticket .tk-cc-chat__title {
@@ -6347,6 +6611,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 #tp-ticket .tk-cc-chat__title:hover {
@@ -6387,7 +6652,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 36vw;
+  max-width: 100%;
+  line-height: 1.35;
 }
 
 #tp-ticket .tk-cc-chat__body {
@@ -6504,43 +6770,38 @@
   border-top-left-radius: 12px;
 }
 
-/* Сообщения инженера — те же цвета, что в /users/chat */
+/* Инженер — как пузырь абонента, лёгкий зелёный оттенок */
 [data-theme="light"] #tp-ticket .tk-tg-bubble__body--engineer,
 [data-theme="comfort"] #tp-ticket .tk-tg-bubble__body--engineer {
-  background: #e4f0ec;
-  color: #1d473c;
-  border-color: #c4ddd3;
+  background: color-mix(in srgb, #5d9a78 10%, var(--p));
+  color: var(--i2);
+  border-color: color-mix(in srgb, #5d9a78 18%, var(--ln));
 }
 
 [data-theme="dark"] #tp-ticket .tk-tg-bubble__body--engineer {
-  background: #173d34;
-  color: #d3e9e1;
-  border-color: rgba(37, 80, 68, 0.56);
+  background: color-mix(in srgb, #6fb896 14%, var(--p));
+  color: var(--i2);
+  border-color: color-mix(in srgb, #6fb896 24%, var(--ln));
 }
 
-[data-theme="light"] #tp-ticket .tk-tg-bubble--engineer .tk-tg-bubble__info,
-[data-theme="comfort"] #tp-ticket .tk-tg-bubble--engineer .tk-tg-bubble__info {
-  color: #3d6b5c;
-}
-
-[data-theme="dark"] #tp-ticket .tk-tg-bubble--engineer .tk-tg-bubble__info {
-  color: #8fb8a9;
+#tp-ticket .tk-tg-bubble--engineer .tk-tg-bubble__info {
+  color: var(--i3);
 }
 
 #tp-ticket .tk-tg-bubble__body--out.tk-tg-bubble__body--engineer .tk-delivery {
-  color: color-mix(in srgb, #1d473c 55%, transparent);
+  color: color-mix(in srgb, var(--i2) 42%, transparent);
 }
 
 #tp-ticket .tk-tg-bubble__body--out.tk-tg-bubble__body--engineer .tk-delivery--read {
-  color: #2f7a66;
+  color: var(--presence-on);
 }
 
 [data-theme="dark"] #tp-ticket .tk-tg-bubble__body--out.tk-tg-bubble__body--engineer .tk-delivery {
-  color: rgba(211, 233, 225, 0.55);
+  color: color-mix(in srgb, var(--i2) 48%, transparent);
 }
 
 [data-theme="dark"] #tp-ticket .tk-tg-bubble__body--out.tk-tg-bubble__body--engineer .tk-delivery--read {
-  color: #8fd4bc;
+  color: var(--presence-on);
 }
 
 #tp-ticket .tk-tg-bubble__body:has(.tk-att-grid):not(:has(.tk-msg-text)) {
@@ -6624,7 +6885,7 @@
 
 [data-theme="dark"] #tp-ticket .tk-cc-queue__item-preview,
 [data-theme="dark"] #tp-ticket .tk-cc-sub-unknown p,
-[data-theme="dark"] #tp-ticket .tk-cc-btn:not(.tk-cc-btn--accent):not(:disabled) {
+[data-theme="dark"] #tp-ticket .tk-cc-btn:not(.tk-cc-btn--accent):not(.tk-cc-btn--transfer):not(.tk-cc-btn--takeback):not(:disabled) {
   color: var(--tk-cc-secondary);
 }
 
@@ -6765,6 +7026,13 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     overflow: hidden;
+  }
+
+  #tp-ticket .tk-cc-chat__ticket-meta {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   #tp-ticket .tk-cc-online {
@@ -7067,9 +7335,9 @@ a.clf-btn.pri.tk-xref-modal__go-ft {
 }
 
 .tk-xref-msg--engineer .tk-xref-msg__body {
-  background: #e4f0ec;
-  color: #1d473c;
-  border-color: #c4ddd3;
+  background: color-mix(in srgb, #5d9a78 10%, var(--p));
+  color: var(--i2);
+  border-color: color-mix(in srgb, #5d9a78 18%, var(--ln));
 }
 
 [data-theme="dark"] .tk-xref-msg--out .tk-xref-msg__body {
@@ -7079,9 +7347,9 @@ a.clf-btn.pri.tk-xref-modal__go-ft {
 }
 
 [data-theme="dark"] .tk-xref-msg--engineer .tk-xref-msg__body {
-  background: #173d34;
-  color: #d3e9e1;
-  border-color: rgba(37, 80, 68, 0.56);
+  background: color-mix(in srgb, #6fb896 14%, var(--p));
+  color: var(--i2);
+  border-color: color-mix(in srgb, #6fb896 24%, var(--ln));
 }
 
 .tk-xref-msg--bot .tk-xref-msg__body {
