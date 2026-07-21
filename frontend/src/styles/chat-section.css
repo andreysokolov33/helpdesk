@@ -396,8 +396,36 @@
   flex-shrink: 0;
 }
 
-#cs-page .cs-head__profile {
+#cs-page .cs-head__actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+#cs-page .cs-head__create-ticket {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--ln);
+  background: var(--p);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--a), border-color var(--a), color var(--a);
+}
+
+#cs-page .cs-head__create-ticket:hover {
+  background: var(--rbg);
+  border-color: var(--rsf);
+  color: var(--rdk);
+}
+
+#cs-page .cs-head__profile {
+  margin-left: 0;
   font-size: 12px;
   color: #3d5f8a;
   text-decoration: none;
@@ -411,6 +439,293 @@
 
 #cs-page .cs-head__profile:hover {
   text-decoration: underline;
+}
+
+#cs-page .cs-ticket-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+#cs-page .cs-ticket-modal {
+  width: min(440px, 100%);
+  background: var(--p);
+  border: 1.5px solid var(--ln);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#cs-page .cs-ticket-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#cs-page .cs-ticket-modal__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+#cs-page .cs-ticket-modal__close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--ln);
+  background: var(--p);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--i3);
+  cursor: pointer;
+}
+
+#cs-page .cs-ticket-modal__close:hover:not(:disabled) {
+  background: var(--rbg);
+  color: var(--red);
+}
+
+#cs-page .cs-ticket-modal__sub {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--i2);
+}
+
+#cs-page .cs-ticket-modal__existing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--ln);
+  background: var(--bg);
+}
+
+#cs-page .cs-ticket-modal__existing-hint {
+  font-size: 12px;
+  color: var(--i3);
+}
+
+#cs-page .cs-ticket-modal__existing-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+#cs-page .cs-ticket-modal__existing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#cs-page .cs-ticket-modal__existing-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ln);
+  background: var(--p);
+}
+
+#cs-page .cs-ticket-modal__existing-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  grid-column: 1;
+}
+
+#cs-page .cs-ticket-modal__existing-id {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--i3);
+}
+
+#cs-page .cs-ticket-modal__existing-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+#cs-page .cs-ticket-modal__existing-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--i2);
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--ln);
+  background: var(--nbg);
+}
+
+#cs-page .cs-ticket-modal__existing-meta {
+  grid-column: 1;
+  font-size: 11px;
+  color: var(--i3);
+}
+
+#cs-page .cs-ticket-modal__existing-go {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  height: 30px;
+  padding: 0 10px;
+}
+
+#cs-page .cs-ticket-modal__existing-or {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--i3);
+}
+
+#cs-page .cs-ticket-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#cs-page .cs-ticket-modal__lbl {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--i3);
+}
+
+#cs-page .cs-ticket-modal__priority {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+#cs-page .cs-ticket-modal__prio {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1.5px solid var(--ln);
+  background: var(--p);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--i2);
+  cursor: pointer;
+}
+
+#cs-page .cs-ticket-modal__prio:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#cs-page .cs-ticket-modal__prio--low.cs-ticket-modal__prio--on {
+  background: var(--nbg);
+  color: var(--i3);
+}
+
+#cs-page .cs-ticket-modal__prio--middle.cs-ticket-modal__prio--on {
+  background: var(--nbg);
+  color: var(--i2);
+}
+
+#cs-page .cs-ticket-modal__prio--high.cs-ticket-modal__prio--on {
+  background: var(--wbg);
+  color: var(--wn);
+  border-color: var(--okln);
+}
+
+#cs-page .cs-ticket-modal__prio--critical.cs-ticket-modal__prio--on {
+  background: var(--rbg);
+  color: var(--rdk);
+  border-color: var(--rsf);
+}
+
+#cs-page .cs-ticket-modal__req {
+  color: var(--red);
+}
+
+#cs-page .cs-ticket-modal__textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1.5px solid var(--ln);
+  background: var(--bg);
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.45;
+  box-sizing: border-box;
+}
+
+#cs-page .cs-ticket-modal__textarea:focus {
+  outline: none;
+  border-color: var(--rsf);
+  box-shadow: 0 0 0 2px rgba(255, 45, 26, 0.12);
+}
+
+#cs-page .cs-ticket-modal__err {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rdk);
+}
+
+#cs-page .cs-ticket-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+#cs-page .cs-ticket-modal__btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1.5px solid var(--ln);
+  background: var(--p);
+  color: var(--ink);
+}
+
+#cs-page .cs-ticket-modal__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#cs-page .cs-ticket-modal__btn--ghost:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+#cs-page .cs-ticket-modal__btn--primary {
+  background: var(--rbg);
+  border-color: var(--rsf);
+  color: var(--rdk);
+}
+
+#cs-page .cs-ticket-modal__btn--primary:hover:not(:disabled) {
+  filter: brightness(0.98);
 }
 
 /* ----------------------------- Лента сообщений ----------------------------- */

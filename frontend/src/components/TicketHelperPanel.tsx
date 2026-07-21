@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import type { TicketDetail } from "@/api/ticket";
+import type { TicketDetail, TicketPriority } from "@/api/ticket";
 import type { FastCheckResponse, UserProfileResponse } from "@/api/userProfile";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import TicketKbSearch from "@/components/TicketKbSearch";
@@ -9,7 +9,23 @@ import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import { formatDateTimeLocal } from "@/utils/dateTime";
 import { ticketListStatusColumn } from "@/api/tracker";
 import { formatWorkDurationSince } from "@/utils/ticketFormat";
-import { queueLineBadgeClass, queueLineShortLabel } from "@/utils/ticketLabels";
+import {
+  priorityBadgeClass,
+  queueLineBadgeClass,
+  queueLineShortLabel,
+} from "@/utils/ticketLabels";
+
+const PRIORITY_OPTIONS: { id: TicketPriority; label: string }[] = [
+  { id: "low", label: "Низкий" },
+  { id: "middle", label: "Средний" },
+  { id: "high", label: "Высокий" },
+  { id: "critical", label: "Критический" },
+];
+
+function priorityLabel(priority: string | null | undefined): string {
+  const id = (priority as TicketPriority) || "middle";
+  return PRIORITY_OPTIONS.find((o) => o.id === id)?.label ?? "Средний";
+}
 
 function fmtMoney(n: number) {
   return `${n.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽`;
@@ -27,9 +43,11 @@ type Props = {
   transferLoading: boolean;
   takeBackLoading: boolean;
   reopenLoading: boolean;
+  priorityLoading: boolean;
   onTransfer: () => void;
   onTakeBack: () => void;
   onReopen: () => void;
+  onChangePriority: (priority: TicketPriority) => void;
   onLinkSubscriber: () => void;
   onOpenKbArticle: (slug: string) => void;
   kbArticleOpen?: boolean;
@@ -48,9 +66,11 @@ export default function TicketHelperPanel({
   transferLoading,
   takeBackLoading,
   reopenLoading,
+  priorityLoading,
   onTransfer,
   onTakeBack,
   onReopen,
+  onChangePriority,
   onLinkSubscriber,
   onOpenKbArticle,
   kbArticleOpen = false,
@@ -59,6 +79,18 @@ export default function TicketHelperPanel({
   const [diagOpen, setDiagOpen] = useState(false);
   const [runNonce, setRunNonce] = useState(0);
   const [checkLoading, setCheckLoading] = useState(false);
+  const prioritySizerRef = useRef<HTMLSpanElement>(null);
+  const [priorityWidth, setPriorityWidth] = useState<number | undefined>(undefined);
+  const currentPriority = (detail.priority as TicketPriority) || "middle";
+  const currentPriorityLabel = priorityLabel(detail.priority);
+  const priorityMod = priorityBadgeClass(detail.priority);
+
+  useLayoutEffect(() => {
+    const el = prioritySizerRef.current;
+    if (!el) return;
+    const w = Math.ceil(el.getBoundingClientRect().width);
+    setPriorityWidth(w > 0 ? w : undefined);
+  }, [currentPriorityLabel, priorityMod]);
 
   useEffect(() => {
     setDiagOpen(false);
@@ -260,6 +292,32 @@ export default function TicketHelperPanel({
                 }
               >
                 {statusColumn.label}
+              </span>
+            </div>
+            <div className="tk-cc-meta__row">
+              <span className="tk-cc-meta__label">Приоритет</span>
+              <span className="tk-cc-meta__priority-wrap">
+                <span
+                  ref={prioritySizerRef}
+                  className={`tk-cc-meta__priority tk-cc-meta__priority--${priorityMod} tk-cc-meta__priority--sizer`}
+                  aria-hidden
+                >
+                  {currentPriorityLabel}
+                </span>
+                <select
+                  className={`tk-cc-meta__priority tk-cc-meta__priority--${priorityMod}`}
+                  value={currentPriority}
+                  disabled={priorityLoading}
+                  aria-label="Приоритет тикета"
+                  style={priorityWidth != null ? { width: priorityWidth } : undefined}
+                  onChange={(e) => onChangePriority(e.target.value as TicketPriority)}
+                >
+                  {PRIORITY_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </span>
             </div>
             {reopenLabel ? (

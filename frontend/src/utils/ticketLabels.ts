@@ -72,6 +72,7 @@ export function priorityBadgeClass(priority: string | null | undefined): Priorit
 const SOURCE_BADGE_KEYS = [
   "lk",
   "call_center",
+  "old_cs",
   "abs",
   "partner",
   "tech",

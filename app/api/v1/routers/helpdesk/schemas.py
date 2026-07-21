@@ -252,6 +252,14 @@ class RegisterCallRequest(BaseModel):
     )
     station_id: int | None = None
     hotspot_id: int | None = None
+    source: str | None = Field(
+        None,
+        description="Источник тикета: call_center (по умолчанию) | old_cs (из старого чата, только existing)",
+    )
+    priority: str | None = Field(
+        "middle",
+        description="Приоритет: low | middle | high | critical (по умолчанию middle)",
+    )
 
     @model_validator(mode="after")
     def validate_connection_kind(self) -> "RegisterCallRequest":
@@ -259,6 +267,18 @@ class RegisterCallRequest(BaseModel):
         if kind not in ("existing", "new_subscriber", "new_partner"):
             raise ValueError("Некорректный тип обращения")
         self.connection_kind = kind
+
+        src = (self.source or "call_center").strip() or "call_center"
+        if src not in ("call_center", "old_cs"):
+            raise ValueError("Некорректный источник тикета")
+        if src == "old_cs" and kind != "existing":
+            raise ValueError("Источник old_cs доступен только для существующего абонента")
+        self.source = src
+
+        pr = (self.priority or "middle").strip() or "middle"
+        if pr not in ("low", "middle", "high", "critical"):
+            raise ValueError("Некорректный приоритет")
+        self.priority = pr
 
         if kind == "existing":
             if self.user_id is None:
@@ -286,8 +306,36 @@ class RegisterCallResponse(BaseModel):
     id: int
 
 
+class OpenSubscriberTicketItem(BaseModel):
+    id: int
+    title: str
+    status: str
+    status_label: str
+    date_of_create: datetime
+    updated_at: datetime | None = None
+
+
+class OpenSubscriberTicketsResponse(BaseModel):
+    items: list[OpenSubscriberTicketItem] = Field(default_factory=list)
+
+
 class LinkTicketSubscriberRequest(BaseModel):
     user_id: int = Field(..., ge=1, description="ID выбранного абонента")
+
+
+class UpdateTicketPriorityRequest(BaseModel):
+    priority: str = Field(
+        ...,
+        description="Приоритет: low | middle | high | critical",
+    )
+
+    @model_validator(mode="after")
+    def validate_priority(self) -> "UpdateTicketPriorityRequest":
+        pr = (self.priority or "").strip()
+        if pr not in ("low", "middle", "high", "critical"):
+            raise ValueError("Некорректный приоритет")
+        self.priority = pr
+        return self
 
 
 class TransferTicketToEngineersRequest(BaseModel):

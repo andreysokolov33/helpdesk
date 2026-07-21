@@ -197,6 +197,19 @@ export async function reopenTicket(ticketId: number): Promise<TicketDetail> {
   return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/reopen`, { method: "POST" });
 }
 
+export type TicketPriority = "low" | "middle" | "high" | "critical";
+
+export async function updateTicketPriority(
+  ticketId: number,
+  priority: TicketPriority,
+): Promise<TicketDetail> {
+  return apiJson(`/api/v1/helpdesk/tracker/${ticketId}/priority`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ priority }),
+  });
+}
+
 export type FetchTicketMessagesOpts = {
   sinceId?: number;
   beforeId?: number;

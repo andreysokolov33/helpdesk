@@ -585,6 +585,39 @@ async def fetch_subscriber_identity(
     }
 
 
+async def fetch_subscriber_station_hotspot(
+    db: AsyncSession,
+    user_id: int | None,
+) -> tuple[int | None, int | None]:
+    """station_id / hotspot_id абонента: users.user.id_grp + wifitochka.ip_group.id_hotspot."""
+    if not user_id:
+        return None, None
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    CASE WHEN u.id_grp > 0 THEN u.id_grp ELSE NULL END AS station_id,
+                    CASE WHEN ig.id_hotspot > 0 THEN ig.id_hotspot ELSE NULL END AS hotspot_id
+                FROM users."user" u
+                LEFT JOIN wifitochka.ip_group ig ON ig.id = u.id_grp
+                WHERE u.id = :uid
+                LIMIT 1
+                """
+            ),
+            {"uid": int(user_id)},
+        )
+    ).mappings().first()
+    if not row:
+        return None, None
+    sid = row.get("station_id")
+    hid = row.get("hotspot_id")
+    return (
+        int(sid) if sid is not None else None,
+        int(hid) if hid is not None else None,
+    )
+
+
 async def fetch_subscriber_display_name(
     db: AsyncSession,
     user_id: int | None,
@@ -1005,56 +1038,8 @@ def _tracker_list_lk_staff_pending_sql() -> str:
 
 
 def _tracker_list_status_needs_answer_sql(viewer_role: str) -> str:
-    """Статус «Нужен ответ» в колонке списка (как ticketListStatusColumn / _home_row_show_needs_answer)."""
-    role = (viewer_role or "support").strip().lower()
-    staff_actions = (
-        "'cs'::users.tracker_action_by, "
-        "'engineers'::users.tracker_action_by, "
-        "'partner'::users.tracker_action_by"
-    )
-    internal_src = "COALESCE(q.source, 'call_center') IN ('call_center', 'abs')"
-    external_src = f"NOT ({internal_src})"
-    ops_pause = """(
-        q.action_by = 'cs'::users.tracker_action_by
-        AND q.status::text IN ('waiting_cs', 'cc_handover')
-    )"""
-
-    non_internal = f"""(
-        {external_src}
-        AND q.chat_turn = 'staff'::users.tracker_chat_turn
-        AND q.action_by IN ({staff_actions})
-    )"""
-    lk_staff = f"""(
-        COALESCE(q.source, 'call_center') = 'lk'
-        AND q.chat_turn = 'staff'::users.tracker_chat_turn
-        AND q.action_by IN ({staff_actions})
-    )"""
-
-    if role == "engineer":
-        internal_line = f"""(
-            {internal_src}
-            AND q.chat_turn = 'staff'::users.tracker_chat_turn
-            AND q.action_by = 'engineers'::users.tracker_action_by
-        )"""
-    elif role in ("partner", "technician"):
-        internal_line = f"""(
-            {internal_src}
-            AND q.chat_turn = 'staff'::users.tracker_chat_turn
-            AND q.action_by = 'partner'::users.tracker_action_by
-        )"""
-    else:
-        internal_line = f"""(
-            {internal_src}
-            AND q.chat_turn = 'staff'::users.tracker_chat_turn
-            AND q.action_by = 'cs'::users.tracker_action_by
-        )"""
-
-    return f"""(
-        q.support_line <> 4
-        AND q.action_by <> 'external'::users.tracker_action_by
-        AND NOT {ops_pause}
-        AND ({non_internal} OR {lk_staff} OR {internal_line})
-    )"""
+    """Статус «Нужен ответ» = нужен ответ на линии зрителя (как бейдж /tickets)."""
+    return _viewer_tickets_need_attention_sql(viewer_role)
 
 
 def _tracker_list_sort_tier_sql(*, viewer_role: str) -> str:
@@ -1488,12 +1473,10 @@ async def fetch_tracker_list_page(
 _HOME_URGENT_LIMIT = 3
 _HOME_SORTED_POOL = 10
 _HOME_ACTIVE_STATUSES = ("pending", "open", "in_progress")
-_HOME_STAFF_ACTION = frozenset({"cs", "engineers", "partner"})
-_HOME_INTERNAL_STAFF_CHAT_SOURCES = frozenset({"call_center", "abs"})
 
 
 def _home_row_show_needs_answer(row: dict[str, Any], *, viewer_role: str) -> bool:
-    """Статус «Нужен ответ» — как колонка статуса на /tickets (ticketListStatusColumn)."""
+    """Статус «Нужен ответ» — как колонка /tickets и бейдж навигации (list_highlight=chat)."""
     st = str(row.get("status") or "")
     support_line = int(row.get("support_line") or 1)
     if support_line == 4 or st in TRACKER_CLOSED_STATUSES:
@@ -1505,7 +1488,7 @@ def _home_row_show_needs_answer(row: dict[str, Any], *, viewer_role: str) -> boo
     src = str(row.get("source") or "call_center").lower()
     queue_line = str(row.get("queue_line") or "cs")
 
-    if row.get("action_by") == "external":
+    if action_by == "external":
         return False
 
     queue_snap = {
@@ -1522,28 +1505,7 @@ def _home_row_show_needs_answer(row: dict[str, Any], *, viewer_role: str) -> boo
         source=src,
         support_line=support_line,
     )
-    if highlight == "ops":
-        return False
-
-    comm_state = communication_state_from_v2(chat_turn, action_by, source=src)
-    if comm_state == "needs_reply":
-        return True
-    if comm_state == "awaiting_subscriber":
-        return False
-
-    internal_staff_chat = src in _HOME_INTERNAL_STAFF_CHAT_SOURCES
-    if internal_staff_chat and chat_turn == "subscriber" and st == "in_progress" and action_by == "cs":
-        return False
-    if internal_staff_chat and chat_turn == "subscriber":
-        return False
-    if chat_turn == "subscriber" and st == "in_progress" and action_by == "cs":
-        return False
-
-    if chat_turn == "staff" and action_by in _HOME_STAFF_ACTION:
-        if src == "lk" or highlight == "chat":
-            return True
-
-    return False
+    return highlight == "chat"
 
 
 def _home_support_assigned_sql() -> str:
@@ -2003,7 +1965,7 @@ async def count_tickets_nav_badge(
     viewer_role: str | None,
     viewer_level: int | None,
 ) -> int:
-    """Счётчик вкладки «Тикеты»: админ — все открытые; оператор — нужен ответ."""
+    """Счётчик вкладки «Тикеты» / очереди: тикеты, где нужен ответ зрителю."""
     hide_manager = await _viewer_hides_manager_line(db, viewer_id)
     filter_sql, filter_params = _tracker_list_filter_sql(
         closed=False,
@@ -2013,21 +1975,6 @@ async def count_tickets_nav_badge(
         hide_manager_line=hide_manager,
         assigned_to=None,
     )
-
-    if _is_support_admin_view(role=viewer_role, level=viewer_level):
-        row = (
-            await db.execute(
-                text(
-                    f"""
-                    SELECT COUNT(*)::int AS cnt
-                    FROM users.tracker_tickets tt
-                    WHERE {filter_sql}
-                    """
-                ),
-                filter_params,
-            )
-        ).mappings().first()
-        return int(row["cnt"] if row else 0)
 
     needs_sql = _viewer_tickets_need_attention_sql(viewer_role or "support")
     queue_ctes = _build_tracker_list_queue_ctes_sql(filter_sql=filter_sql)
@@ -2539,7 +2486,7 @@ def catalog_source_for_ticket(ticket_source: str | None) -> str:
     s = (ticket_source or "call_center").strip()
     if s in ("partner", "tech"):
         return "partner"
-    if s == "call_center":
+    if s in ("call_center", "old_cs"):
         return "lk"
     return s
 
@@ -2972,6 +2919,45 @@ async def link_ticket_subscriber(
             """
         ),
         {"uid": user_id, "now": now, "ticket_id": ticket_id},
+    )
+    await db.commit()
+    return await load_ticket_detail(db, ticket_id, viewer_id)
+
+
+async def update_ticket_priority(
+    db: AsyncSession,
+    ticket_id: int,
+    priority: str,
+    viewer_id: int,
+) -> dict[str, Any]:
+    """Сменить приоритет тикета (low | middle | high | critical)."""
+    pr = (priority or "").strip()
+    if pr not in PRIORITY_DICT:
+        raise HTTPException(status_code=400, detail="Некорректный приоритет")
+
+    row = (
+        await db.execute(
+            text("SELECT id, priority::text AS priority FROM users.tracker_tickets WHERE id = :id"),
+            {"id": ticket_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+
+    if str(row.get("priority") or "") == pr:
+        return await load_ticket_detail(db, ticket_id, viewer_id)
+
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        text(
+            """
+            UPDATE users.tracker_tickets
+            SET priority = CAST(:priority AS users.tracker_priority),
+                updated_at = :now
+            WHERE id = :ticket_id
+            """
+        ),
+        {"priority": pr, "now": now, "ticket_id": ticket_id},
     )
     await db.commit()
     return await load_ticket_detail(db, ticket_id, viewer_id)

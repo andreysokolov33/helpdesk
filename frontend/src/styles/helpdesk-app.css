@@ -2283,6 +2283,63 @@
   color: var(--i2);
 }
 
+.call-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .call-priority-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.call-priority-btn {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--ln);
+  background: var(--p);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--i2);
+  cursor: pointer;
+  transition: background var(--a), border-color var(--a), color var(--a);
+}
+
+.call-priority-btn:hover {
+  background: var(--bg);
+}
+
+.call-priority-btn--on {
+  border-color: var(--rsf);
+}
+
+.call-priority-btn--low.call-priority-btn--on {
+  background: var(--nbg);
+  color: var(--i3);
+  border-color: var(--ln);
+}
+
+.call-priority-btn--middle.call-priority-btn--on {
+  background: var(--nbg);
+  color: var(--i2);
+  border-color: var(--ln);
+}
+
+.call-priority-btn--high.call-priority-btn--on {
+  background: var(--wbg);
+  color: var(--wn);
+  border-color: var(--okln);
+}
+
+.call-priority-btn--critical.call-priority-btn--on {
+  background: var(--rbg);
+  color: var(--rdk);
+  border-color: var(--rsf);
+}
+
 .call-lead-form {
   display: flex;
   flex-direction: column;
@@ -2537,7 +2594,8 @@
   white-space: nowrap;
 }
 
-.home-open-cell--status .tag {
+.home-open-cell--status .ch-comm,
+.home-open-cell--status .ch-status {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5745,10 +5803,18 @@
 
 #tp-ticket .tk-cc-queue__item-name-row {
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
   min-width: 0;
   flex: 1;
+}
+
+#tp-ticket .tk-cc-queue__item-name-row .ch-call-ico,
+#tp-ticket .tk-cc-queue__item-name-row .top-rank-badge,
+#tp-ticket .tk-cc-queue__item-name-row .ch-jur-mark {
+  flex-shrink: 0;
 }
 
 #tp-ticket .tk-cc-queue__item-name {
@@ -5823,6 +5889,14 @@
   border-radius: 4px;
   background: var(--rbg);
   color: var(--red);
+}
+
+#tp-ticket .tk-cc-queue__badge--awaiting {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--nbg);
+  color: var(--i2);
+  border: 1px solid var(--ln);
 }
 
 #tp-ticket .tk-cc-helper-wrap {
@@ -6297,6 +6371,70 @@
   font-weight: 700;
   color: var(--ink);
   text-align: right;
+}
+
+#tp-ticket .tk-cc-meta__priority-wrap {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+#tp-ticket .tk-cc-meta__priority {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 22px 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--ln);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23666' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 8px 5px;
+}
+
+#tp-ticket .tk-cc-meta__priority--sizer {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  height: auto;
+}
+
+#tp-ticket .tk-cc-meta__priority:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+#tp-ticket .tk-cc-meta__priority--low {
+  background-color: var(--nbg);
+  color: var(--i3);
+  border-color: var(--ln);
+}
+
+#tp-ticket .tk-cc-meta__priority--middle {
+  background-color: var(--nbg);
+  color: var(--i2);
+  border-color: var(--ln);
+}
+
+#tp-ticket .tk-cc-meta__priority--high {
+  background-color: var(--wbg);
+  color: var(--wn);
+  border-color: var(--okln);
+}
+
+#tp-ticket .tk-cc-meta__priority--critical {
+  background-color: var(--rbg);
+  color: var(--rdk);
+  border-color: var(--rsf);
 }
 
 #tp-ticket .tk-cc-meta__value--reopened {
@@ -6906,6 +7044,11 @@
 [data-theme="comfort"] #tp-ticket .tk-cc-queue__badge--comm {
   background: #ede4e1;
   color: #b55248;
+}
+
+[data-theme="comfort"] #tp-ticket .tk-cc-queue__badge--awaiting {
+  background: #e8e6e1;
+  color: #6a6860;
 }
 
 [data-theme="comfort"] #tp-ticket .tk-cc-queue__item--active::before {

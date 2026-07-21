@@ -130,10 +130,10 @@ TRACKER_CHAT_TURN_DISPLAY = {
 }
 
 # Список тикетов helpdesk (/tickets): только эти источники (users.tracker_tickets.source)
-TRACKER_HELPDESK_LIST_SOURCES = ('lk', 'call_center', 'abs')
+TRACKER_HELPDESK_LIST_SOURCES = ('lk', 'call_center', 'abs', 'old_cs')
 
 # Внутренний чат staff↔staff (без абонента в цепочке v2)
-TRACKER_INTERNAL_STAFF_CHAT_SOURCES = ('call_center', 'abs')
+TRACKER_INTERNAL_STAFF_CHAT_SOURCES = ('call_center', 'abs', 'old_cs')
 
 
 def is_subscriber_chat_source(source: str | None) -> bool:
@@ -154,6 +154,7 @@ SOURCE_DISPLAY = {
     'abs': 'АБС',
     'tech': 'Прямое обращение',
     'call_center': 'Колл-центр',
+    'old_cs': 'Старый чат',
     'ks': 'По звонку',
     'chat': 'Чат',
     'technician': 'Техник',

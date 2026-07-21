@@ -11,6 +11,15 @@ type CallLocationState = {
   prefillSubscriber?: SubscriberSearchHit;
 };
 
+type TicketPriority = "low" | "middle" | "high" | "critical";
+
+const PRIORITY_OPTIONS: { id: TicketPriority; label: string }[] = [
+  { id: "low", label: "Низкий" },
+  { id: "middle", label: "Средний" },
+  { id: "high", label: "Высокий" },
+  { id: "critical", label: "Критический" },
+];
+
 const EMPTY_LEAD: ConnectionLeadPayload = {
   full_name: "",
   address: "",
@@ -99,6 +108,7 @@ export default function CallTab() {
     locState?.prefillSubscriber ? "existing" : "existing",
   );
   const [desc, setDesc] = useState("");
+  const [priority, setPriority] = useState<TicketPriority>("middle");
   const [subscriber, setSubscriber] = useState<SubscriberSearchHit | null>(
     locState?.prefillSubscriber ?? null,
   );
@@ -163,6 +173,7 @@ export default function CallTab() {
           user_id: subscriber.id,
           station_id: subscriber.station_id ?? null,
           hotspot_id: subscriber.hotspot_id ?? null,
+          priority,
         });
         navigate(`/tickets/${result.id}`);
       } catch (err: unknown) {
@@ -223,6 +234,7 @@ export default function CallTab() {
           plans_new_station: mode === "new_partner" ? lead.plans_new_station : undefined,
           notes: lead.notes?.trim() || null,
         },
+        priority,
       });
       if (mode === "new_partner") {
         setPartnerTicketId(result.id);
@@ -295,6 +307,29 @@ export default function CallTab() {
           <section className="call-step">
             <div className="call-step__head">
               <span className="call-step__num">2</span>
+              <span className="call-step__label">Приоритет</span>
+            </div>
+            <div className="call-priority-grid" role="radiogroup" aria-label="Приоритет">
+              {PRIORITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={priority === opt.id}
+                  className={`call-priority-btn call-priority-btn--${opt.id}${
+                    priority === opt.id ? " call-priority-btn--on" : ""
+                  }`}
+                  onClick={() => setPriority(opt.id)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="call-step">
+            <div className="call-step__head">
+              <span className="call-step__num">3</span>
               <span className="call-step__label">{step2Label}</span>
             </div>
 

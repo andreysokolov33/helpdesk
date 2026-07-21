@@ -78,64 +78,52 @@ export default function TicketsListHelpDrawer({ open, onClose, closedMode }: Pro
           <HelpSection title="Статус">
             {!closedMode ? (
               <>
-                <p className="ch-help-subhead">Коммуникация</p>
                 <HelpItem
                   badge={<span className="ch-comm ch-comm--needs_reply">Нужен ответ</span>}
-                  text="ожидается ответ оператора"
+                  text="ожидается ответ на вашей линии"
                 />
                 <HelpItem
-                  badge={<span className="ch-comm ch-comm--awaiting_subscriber">Ждём абонента</span>}
-                  text="ответ отправлен, ждём абонента"
+                  badge={<span className="ch-comm ch-comm--awaiting_reply">Ждём ответа</span>}
+                  text="ответ вашей линии сейчас не требуется"
                 />
-                <p className="ch-help-subhead">Рабочий статус</p>
               </>
-            ) : null}
-            <HelpItem
-              badge={<span className="ch-status ch-status--pending">Ожидает</span>}
-              text="ещё не взят в работу"
-            />
-            <HelpItem
-              badge={<span className="ch-status ch-status--open">Открыт</span>}
-              text="активно обрабатывается"
-            />
-            <HelpItem
-              badge={<span className="ch-status ch-status--in_progress">В работе</span>}
-              text="активно обрабатывается"
-            />
-            <HelpItem
-              badge={<span className="ch-status ch-status--resolved">Решён</span>}
-              text="проблема решена"
-            />
-            <HelpItem
-              badge={<span className="ch-status ch-status--closed">Закрыт</span>}
-              text="тикет завершён"
-            />
-            <HelpItem
-              badge={<span className="ch-status ch-status--deferred">Отложен</span>}
-              text="отложен без решения"
-            />
-            <HelpItem
-              badge={<span className="ch-status ch-status--cancelled">Отменён</span>}
-              text="тикет отменён"
-            />
-            <HelpItem
-              badge={<span className="ch-status ch-status--not_resolved">Нерешён</span>}
-              text="закрыт без решения"
-            />
+            ) : (
+              <>
+                <HelpItem
+                  badge={<span className="ch-status ch-status--resolved">Решён</span>}
+                  text="проблема решена"
+                />
+                <HelpItem
+                  badge={<span className="ch-status ch-status--closed">Закрыт</span>}
+                  text="тикет завершён"
+                />
+                <HelpItem
+                  badge={<span className="ch-status ch-status--deferred">Отложен</span>}
+                  text="отложен без решения"
+                />
+                <HelpItem
+                  badge={<span className="ch-status ch-status--cancelled">Отменён</span>}
+                  text="тикет отменён"
+                />
+                <HelpItem
+                  badge={<span className="ch-status ch-status--not_resolved">Нерешён</span>}
+                  text="закрыт без решения"
+                />
+              </>
+            )}
           </HelpSection>
 
-          {!closedMode ? (
-            <HelpSection title="Выделение строки">
-              <div className="ch-help-item ch-help-item--highlight">
-                <span className="ch-help-item__badge ch-row--unread ch-help-highlight-strip" aria-hidden />
-                <span className="ch-help-item__text">
-                  красноватый фон — непрочитанные сообщения или нужен ответ на вашей линии
-                </span>
-              </div>
-            </HelpSection>
-          ) : null}
-
           <HelpSection title="Значки">
+            <div className="ch-help-item">
+              <span className="ch-help-item__badge">
+                <span className="top-rank-badge" title="ТОП-50 абонентов по платежам">
+                  12
+                </span>
+              </span>
+              <span className="ch-help-item__text">
+                место в ТОП-50 по платежам — приоритетный абонент для обработки
+              </span>
+            </div>
             <div className="ch-help-item">
               <span className="ch-help-item__badge">
                 <span className="ch-call-ico" aria-hidden>

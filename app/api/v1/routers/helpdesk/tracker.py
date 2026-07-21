@@ -6,6 +6,7 @@ from typing import Any, Optional
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from sqlalchemy import text
 from sqlalchemy.exc import NotSupportedError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,9 @@ from app.api.v1.routers.helpdesk.schemas import (
     LinkTicketSubscriberRequest,
     CloseTicketRequest,
     TransferTicketToEngineersRequest,
+    UpdateTicketPriorityRequest,
+    OpenSubscriberTicketsResponse,
+    OpenSubscriberTicketItem,
     RegisterCallRequest,
     RegisterCallResponse,
     TicketCategoriesResponse,
@@ -56,10 +60,11 @@ from app.constants import (
     PRIORITY_DICT,
     SOURCE_DISPLAY,
     STATUS_DISPLAY,
+    TRACKER_OPEN_STATUSES,
     TRACKER_QUEUE_LINE_DISPLAY,
 )
 from app.database import get_db
-from app.models.users import TrackerTicketLineHistory, TrackerTickets
+from app.models.users import TrackerTicketLineHistory, TrackerMessages, TrackerTickets
 
 router = APIRouter(prefix="/v1/helpdesk/tracker", tags=["Helpdesk — трекер"])
 
@@ -429,9 +434,17 @@ async def register_call(
         object_type = "user"
         station_id = payload.station_id
         hotspot_id = payload.hotspot_id
+        if station_id is None or hotspot_id is None:
+            resolved_station, resolved_hotspot = await ticket_svc.fetch_subscriber_station_hotspot(
+                db, ticket_user_id,
+            )
+            if station_id is None:
+                station_id = resolved_station
+            if hotspot_id is None:
+                hotspot_id = resolved_hotspot
         support_line = 2
         status = "in_progress"
-        assigned_to = None
+        assigned_to = author_id
         title = _CALL_TITLE_EXISTING
         queue_snap = on_register_call_existing_subscriber(at=now)
     elif kind == "new_subscriber":
@@ -476,11 +489,17 @@ async def register_call(
         hotspot_id = None
         support_line = 4
         status = "pending"
-        assigned_to = None
+        assigned_to = author_id
         title = _CALL_TITLE_NEW_PARTNER
         queue_snap = on_register_partner_prospect(at=now)
 
     category_id = _CALL_PARTNER_CATEGORY_ID if support_line == 4 else None
+    ticket_source = (payload.source or "call_center").strip() or "call_center"
+    if kind == "existing" and ticket_source == "old_cs":
+        title = "Чат"
+
+    # Суть обращения / анкета — первое сообщение в tracker_messages, body тикета пустой
+    initial_tracker_message = (body_text or "").strip() or None
 
     ticket = TrackerTickets(
         author=author_id,
@@ -491,9 +510,9 @@ async def register_call(
         category_id=category_id,
         status=status,
         title=title,
-        body=body_text,
-        priority="middle",
-        source="call_center",
+        body=None,
+        priority=(payload.priority or "middle").strip() or "middle",
+        source=ticket_source,
         complexity="L1",
         person_type=person_type,
         caller_name=caller_name,
@@ -509,6 +528,17 @@ async def register_call(
     )
     db.add(ticket)
     await db.flush()
+
+    if initial_tracker_message:
+        db.add(
+            TrackerMessages(
+                ticket_id=int(ticket.id),
+                author_id=author_id,
+                body=initial_tracker_message,
+                created_at=now,
+                person_type="skystream",
+            )
+        )
 
     db.add(
         TrackerTicketLineHistory(
@@ -528,7 +558,7 @@ async def register_call(
             event_type="created",
             payload={
                 "status": status,
-                "source": "call_center",
+                "source": ticket_source,
                 "connection_kind": kind,
             },
         )
@@ -538,6 +568,53 @@ async def register_call(
     await db.commit()
 
     return RegisterCallResponse(id=int(ticket.id))
+
+
+@router.get("/open-for-subscriber", response_model=OpenSubscriberTicketsResponse)
+async def list_open_tickets_for_subscriber(
+    db: AsyncSession = Depends(get_db),
+    _user: dict[str, Any] = Depends(require_tracker_user),
+    user_id: int = Query(..., ge=1, description="ID абонента"),
+    source: str = Query("old_cs", description="Источник тикета (по умолчанию old_cs)"),
+    limit: int = Query(2, ge=1, le=10, description="Максимум тикетов в ответе"),
+) -> OpenSubscriberTicketsResponse:
+    """Открытые тикеты абонента с указанным source (для модалки создания из /chat)."""
+    src = (source or "old_cs").strip() or "old_cs"
+    open_in = ", ".join(f"'{s}'" for s in TRACKER_OPEN_STATUSES)
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    tt.id,
+                    tt.title,
+                    tt.status::text AS status,
+                    tt.date_of_create,
+                    tt.updated_at
+                FROM users.tracker_tickets tt
+                WHERE tt.user_id = :uid
+                  AND tt.object_type = 'user'
+                  AND COALESCE(tt.source, 'call_center') = :src
+                  AND tt.status::text IN ({open_in})
+                ORDER BY COALESCE(tt.updated_at, tt.date_of_create) DESC, tt.id DESC
+                LIMIT :lim
+                """
+            ),
+            {"uid": int(user_id), "src": src, "lim": int(limit)},
+        )
+    ).mappings().all()
+    items = [
+        OpenSubscriberTicketItem(
+            id=int(r["id"]),
+            title=(r["title"] or f"Тикет #{r['id']}").strip() or f"Тикет #{r['id']}",
+            status=str(r["status"] or ""),
+            status_label=STATUS_DISPLAY.get(str(r["status"] or ""), str(r["status"] or "")),
+            date_of_create=r["date_of_create"],
+            updated_at=r.get("updated_at"),
+        )
+        for r in rows
+    ]
+    return OpenSubscriberTicketsResponse(items=items)
 
 
 @router.get("/categories", response_model=TicketCategoriesResponse)
@@ -594,6 +671,23 @@ async def link_ticket_subscriber(
         db,
         ticket_id,
         int(payload.user_id),
+        int(user["user_id"]),
+    )
+    return TicketDetailResponse(**data)
+
+
+@router.patch("/{ticket_id}/priority", response_model=TicketDetailResponse)
+async def update_ticket_priority(
+    ticket_id: int,
+    payload: UpdateTicketPriorityRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> TicketDetailResponse:
+    """Сменить приоритет тикета."""
+    data = await ticket_svc.update_ticket_priority(
+        db,
+        ticket_id,
+        payload.priority,
         int(user["user_id"]),
     )
     return TicketDetailResponse(**data)

@@ -116,8 +116,6 @@ const HomeOpenTicketRow = memo(function HomeOpenTicketRow({
 }) {
   const t = trackerApiRowToTicketRow(row);
   const statusCol = ticketListStatusColumn(row);
-  const statusLabel = statusCol.kind === "comm" ? statusCol.label : row.status_label;
-  const tagClass = t.status === "new" ? "tn" : t.status === "wait" ? "tw" : "tk";
   const workDuration = formatWorkDurationSince(row.date_of_create, nowMs);
   const updatedLabel = formatTicketListDate(row.updated_at || row.date_of_create);
 
@@ -148,7 +146,15 @@ const HomeOpenTicketRow = memo(function HomeOpenTicketRow({
       </td>
       <td className="home-open-cell home-open-cell--topic">{t.topic}</td>
       <td className="home-open-cell home-open-cell--status">
-        <span className={`tag ${tagClass}`}>{statusLabel}</span>
+        {statusCol.kind === "comm" ? (
+          <span className={`ch-comm ch-comm--${statusCol.state}`} title={statusCol.label}>
+            {statusCol.label}
+          </span>
+        ) : (
+          <span className={`ch-status ch-status--${statusCol.status}`} title={statusCol.label}>
+            {statusCol.label}
+          </span>
+        )}
       </td>
       <td className="home-open-cell home-open-cell--duration">{workDuration}</td>
       <td className="home-open-cell home-open-cell--updated">{updatedLabel}</td>

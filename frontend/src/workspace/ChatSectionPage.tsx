@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import MessageBody from "@/components/MessageBody";
 import FileBadge, { resolveFileExt, truncateFilename } from "@/components/FileBadge";
 import ChatMessageContextMenu, { type ChatMenuAction } from "@/components/ChatMessageContextMenu";
 import TicketChatScrollDown from "@/components/TicketChatScrollDown";
 import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import { fetchAuthMe } from "@/api/auth";
+import { registerCall, fetchOpenTicketsForSubscriber, type OpenSubscriberTicketItem } from "@/api/tracker";
 import { formatDateTimeLocal } from "@/utils/dateTime";
 import { formatBytes } from "@/utils/formatBytes";
 import {
@@ -83,6 +84,7 @@ function plainPreview(text: string): string {
 }
 
 export default function ChatSectionPage() {
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const activeId = Number(params.get("id")) || 0;
 
@@ -113,6 +115,13 @@ export default function ChatSectionPage() {
   const [subscriberChatReadonly, setSubscriberChatReadonly] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [pendingNewCount, setPendingNewCount] = useState(0);
+  const [createTicketOpen, setCreateTicketOpen] = useState(false);
+  const [createTicketBody, setCreateTicketBody] = useState("");
+  const [createTicketPriority, setCreateTicketPriority] = useState<"low" | "middle" | "high" | "critical">("middle");
+  const [createTicketSubmitting, setCreateTicketSubmitting] = useState(false);
+  const [createTicketError, setCreateTicketError] = useState("");
+  const [existingOpenTickets, setExistingOpenTickets] = useState<OpenSubscriberTicketItem[]>([]);
+  const [existingOpenLoading, setExistingOpenLoading] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
@@ -137,6 +146,42 @@ export default function ChatSectionPage() {
   }, [chats]);
 
   useEffect(() => {
+    setCreateTicketOpen(false);
+    setCreateTicketBody("");
+    setCreateTicketError("");
+    setExistingOpenTickets([]);
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!createTicketOpen || !activeId) return;
+    let cancelled = false;
+    setExistingOpenLoading(true);
+    setExistingOpenTickets([]);
+    fetchOpenTicketsForSubscriber({ user_id: activeId, source: "old_cs", limit: 2 })
+      .then((data) => {
+        if (!cancelled) setExistingOpenTickets(data.items);
+      })
+      .catch(() => {
+        if (!cancelled) setExistingOpenTickets([]);
+      })
+      .finally(() => {
+        if (!cancelled) setExistingOpenLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createTicketOpen, activeId]);
+
+  useEffect(() => {
+    if (!createTicketOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !createTicketSubmitting) closeCreateTicket();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createTicketOpen, createTicketSubmitting]);
+
+  useEffect(() => {
     if (!file) {
       setFilePreviewUrl(null);
       return;
@@ -148,6 +193,51 @@ export default function ChatSectionPage() {
 
   function clearAttachedFile() {
     setFile(null);
+  }
+
+  function openCreateTicket() {
+    setCreateTicketBody("");
+    setCreateTicketPriority("middle");
+    setCreateTicketError("");
+    setExistingOpenTickets([]);
+    setCreateTicketOpen(true);
+  }
+
+  function closeCreateTicket() {
+    if (createTicketSubmitting) return;
+    setCreateTicketOpen(false);
+    setCreateTicketBody("");
+    setCreateTicketPriority("middle");
+    setCreateTicketError("");
+    setExistingOpenTickets([]);
+  }
+
+  async function submitCreateTicket() {
+    if (!activeId) return;
+    const body = createTicketBody.trim();
+    if (!body) {
+      setCreateTicketError("Опишите суть обращения");
+      return;
+    }
+    setCreateTicketSubmitting(true);
+    setCreateTicketError("");
+    try {
+      const result = await registerCall({
+        connection_kind: "existing",
+        body,
+        user_id: activeId,
+        source: "old_cs",
+        priority: createTicketPriority,
+      });
+      setCreateTicketOpen(false);
+      setCreateTicketBody("");
+      setCreateTicketPriority("middle");
+      navigate(`/tickets/${result.id}`);
+    } catch (err: unknown) {
+      setCreateTicketError(err instanceof Error ? err.message : "Не удалось создать тикет");
+    } finally {
+      setCreateTicketSubmitting(false);
+    }
   }
 
   function attachImage(next: File) {
@@ -785,9 +875,14 @@ export default function ChatSectionPage() {
                     {` · ID ${activeId}`}
                   </div>
                 </div>
-                <Link to={`/users/${activeId}`} className="cs-head__profile">
-                  Карточка абонента →
-                </Link>
+                <div className="cs-head__actions">
+                  <button type="button" className="cs-head__create-ticket" onClick={openCreateTicket}>
+                    Создать тикет
+                  </button>
+                  <Link to={`/users/${activeId}`} className="cs-head__profile">
+                    Карточка абонента →
+                  </Link>
+                </div>
               </div>
 
               <div className="cs-chat-viewport">
@@ -953,6 +1048,139 @@ export default function ChatSectionPage() {
       {lightbox ? (
         <div className="cs-imgv" role="dialog" aria-modal="true" onClick={() => setLightbox(null)}>
           <img src={lightbox} alt="Просмотр" onClick={(e) => e.stopPropagation()} />
+        </div>
+      ) : null}
+
+      {createTicketOpen ? (
+        <div
+          className="cs-ticket-modal-backdrop"
+          role="presentation"
+          onClick={closeCreateTicket}
+        >
+          <div
+            className="cs-ticket-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cs-ticket-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="cs-ticket-modal__head">
+              <h2 id="cs-ticket-modal-title" className="cs-ticket-modal__title">
+                Создать тикет
+              </h2>
+              <button
+                type="button"
+                className="cs-ticket-modal__close"
+                onClick={closeCreateTicket}
+                disabled={createTicketSubmitting}
+                aria-label="Закрыть"
+              >
+                ×
+              </button>
+            </div>
+            <p className="cs-ticket-modal__sub">
+              {activeChat?.fullname || `Абонент #${activeId}`}
+            </p>
+            {existingOpenLoading ? (
+              <div className="cs-ticket-modal__existing-hint">Проверяем открытые тикеты…</div>
+            ) : existingOpenTickets.length > 0 ? (
+              <div className="cs-ticket-modal__existing">
+                <div className="cs-ticket-modal__existing-title">
+                  {existingOpenTickets.length === 1
+                    ? "У абонента уже есть открытый тикет из чата"
+                    : "У абонента уже есть открытые тикеты из чата"}
+                </div>
+                <ul className="cs-ticket-modal__existing-list">
+                  {existingOpenTickets.map((t) => (
+                    <li key={t.id} className="cs-ticket-modal__existing-item">
+                      <div className="cs-ticket-modal__existing-main">
+                        <span className="cs-ticket-modal__existing-id">#{t.id}</span>
+                        <span className="cs-ticket-modal__existing-name" title={t.title}>
+                          {t.title}
+                        </span>
+                        <span className="cs-ticket-modal__existing-status">{t.status_label}</span>
+                      </div>
+                      <div className="cs-ticket-modal__existing-meta">
+                        {formatDateTimeLocal(t.updated_at || t.date_of_create) || "—"}
+                      </div>
+                      <button
+                        type="button"
+                        className="cs-ticket-modal__btn cs-ticket-modal__btn--ghost cs-ticket-modal__existing-go"
+                        disabled={createTicketSubmitting}
+                        onClick={() => {
+                          setCreateTicketOpen(false);
+                          navigate(`/tickets/${t.id}`);
+                        }}
+                      >
+                        Перейти
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="cs-ticket-modal__existing-or">или создайте новый</div>
+              </div>
+            ) : null}
+            <div className="cs-ticket-modal__field">
+              <span className="cs-ticket-modal__lbl">Приоритет</span>
+              <div className="cs-ticket-modal__priority" role="radiogroup" aria-label="Приоритет">
+                {(
+                  [
+                    ["low", "Низкий"],
+                    ["middle", "Средний"],
+                    ["high", "Высокий"],
+                    ["critical", "Критический"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={createTicketPriority === id}
+                    className={`cs-ticket-modal__prio cs-ticket-modal__prio--${id}${
+                      createTicketPriority === id ? " cs-ticket-modal__prio--on" : ""
+                    }`}
+                    disabled={createTicketSubmitting}
+                    onClick={() => setCreateTicketPriority(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="cs-ticket-modal__field">
+              <span className="cs-ticket-modal__lbl">
+                Суть обращения <span className="cs-ticket-modal__req">*</span>
+              </span>
+              <textarea
+                className="cs-ticket-modal__textarea"
+                rows={5}
+                autoFocus
+                placeholder="Опишите, с чем обратился абонент…"
+                value={createTicketBody}
+                disabled={createTicketSubmitting}
+                onChange={(e) => setCreateTicketBody(e.target.value)}
+              />
+            </label>
+            {createTicketError ? <div className="cs-ticket-modal__err">{createTicketError}</div> : null}
+            <div className="cs-ticket-modal__actions">
+              <button
+                type="button"
+                className="cs-ticket-modal__btn cs-ticket-modal__btn--ghost"
+                onClick={closeCreateTicket}
+                disabled={createTicketSubmitting}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="cs-ticket-modal__btn cs-ticket-modal__btn--primary"
+                onClick={() => void submitCreateTicket()}
+                disabled={createTicketSubmitting}
+              >
+                {createTicketSubmitting ? "Создание…" : "Создать"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

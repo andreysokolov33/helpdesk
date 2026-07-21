@@ -387,7 +387,7 @@ class TrackerTickets(Base):
                 "status IN ('pending', 'open', 'in_progress', 'waiting_client', "
                 "'waiting_technician', 'no_technician', 'waiting_parts', "
                 "'waiting_logistics', 'cc_handover', 'waiting_cs') "
-                "AND source IN ('lk', 'call_center', 'abs')"
+                "AND source IN ('lk', 'call_center', 'abs', 'old_cs')"
             ),
         ),
         Index('idx_tickets_field_tech', 'field_technician_id'),

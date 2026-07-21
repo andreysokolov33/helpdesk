@@ -6,7 +6,6 @@ import {
   fetchOpenTrackerTickets,
   fetchTrackerListDigest,
   mergeTrackerListPage,
-  ticketListNeedsAttention,
   ticketListStatusColumn,
   type TrackerTicketListItem,
   type TrackerTicketListStats,
@@ -434,7 +433,6 @@ export default function ChatsTab() {
 
     function renderRow(row: TrackerTicketListItem) {
       const statusCol = ticketListStatusColumn(row);
-      const needsAttention = !closedMode && ticketListNeedsAttention(row);
       const workEnd = closedMode ? row.date_of_close || row.updated_at : null;
       const workDuration = closedMode
         ? formatWorkDurationBetween(row.date_of_create, workEnd, nowPulse)
@@ -443,7 +441,7 @@ export default function ChatsTab() {
       return (
         <div
           key={row.id}
-          className={`ch-row${needsAttention ? " ch-row--unread" : ""}${closedMode ? " ch-row--closed" : ""}${enteringRowIds.has(row.id) ? " ch-row--enter" : ""}`}
+          className={`ch-row${closedMode ? " ch-row--closed" : ""}${enteringRowIds.has(row.id) ? " ch-row--enter" : ""}`}
           role="button"
           tabIndex={0}
           onClick={() => openChatFromApi(row)}

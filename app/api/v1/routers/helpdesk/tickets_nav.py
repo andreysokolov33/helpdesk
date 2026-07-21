@@ -21,7 +21,7 @@ async def get_unread_tickets_count(
     user: dict[str, Any] = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> UnreadTicketsResponse:
-    """Счётчик вкладки «Тикеты»: админ — открытые; оператор — тикеты, где нужен ответ."""
+    """Счётчик вкладки «Тикеты»: тикеты, где нужен ответ."""
     user_id = int(user["user_id"])
     cache_key = f"unread_stats:{user_id}"
     try:

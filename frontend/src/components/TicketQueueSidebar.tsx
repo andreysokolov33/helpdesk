@@ -9,6 +9,7 @@ import {
   ticketListStatusColumn,
   type TrackerTicketListItem,
 } from "@/api/tracker";
+import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
 import CallCenterPhoneIcon from "@/components/CallCenterPhoneIcon";
 import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import { isCallCenterTicketSource } from "@/utils/ticketLabels";
@@ -30,9 +31,11 @@ function formatQueueRelativeTime(iso: string | null | undefined): string {
   return `${diffD} д`;
 }
 
-function queueBadgeMod(row: TrackerTicketListItem): "new" | "work" | "wait" | "comm" {
+function queueBadgeMod(row: TrackerTicketListItem): "new" | "work" | "wait" | "comm" | "awaiting" {
   const statusCol = ticketListStatusColumn(row);
-  if (statusCol.kind === "comm") return "comm";
+  if (statusCol.kind === "comm") {
+    return statusCol.state === "needs_reply" ? "comm" : "awaiting";
+  }
   if (row.status === "pending" || row.status === "open") return "new";
   if (row.status === "in_progress") return "work";
   return "wait";
@@ -47,7 +50,7 @@ type Props = {
 export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onClose }: Props) {
   const navigate = useNavigate();
   const [rows, setRows] = useState<TrackerTicketListItem[]>([]);
-  const [total, setTotal] = useState(0);
+  const [needsReplyCount, setNeedsReplyCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
   const [prefsReady, setPrefsReady] = useState(false);
@@ -113,7 +116,12 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
           }
         };
         apply(data.items);
-        setTotal(data.total);
+        try {
+          const unread = await fetchUnreadTicketsCount();
+          if (gen === loadGenRef.current) setNeedsReplyCount(unread);
+        } catch {
+          /* keep previous */
+        }
         try {
           const dig = await fetchTrackerListDigest({ page: 1, per_page: perPage });
           if (gen === loadGenRef.current) digestRef.current = dig.digest;
@@ -145,7 +153,14 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
       });
       digestRef.current = dig.digest;
       if (dig.changed) await loadList({ silent: true });
-      else setTotal((prev) => (prev !== dig.total ? dig.total : prev));
+      else {
+        try {
+          const unread = await fetchUnreadTicketsCount();
+          setNeedsReplyCount(unread);
+        } catch {
+          /* keep previous */
+        }
+      }
     } catch {
       await loadList({ silent: true });
     } finally {
@@ -191,8 +206,11 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
       <div className="tk-cc-queue__head">
         <span className="tk-cc-queue__title">Очередь чатов</span>
         <div className="tk-cc-queue__head-actions">
-          <span className="tk-cc-queue__count" title={polling ? "Обновление…" : undefined}>
-            {total > 99 ? "99+" : total}
+          <span
+            className="tk-cc-queue__count"
+            title={polling ? "Обновление…" : "Тикеты, где нужен ответ"}
+          >
+            {needsReplyCount > 99 ? "99+" : needsReplyCount}
           </span>
           {onClose ? (
             <button
@@ -222,7 +240,7 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
           const preview = row.title?.trim() || "Без темы";
           const timeIso = row.updated_at || row.date_of_create;
           const badgeLabel =
-            badgeMod === "comm"
+            badgeMod === "comm" || badgeMod === "awaiting"
               ? statusCol.label.toLowerCase()
               : badgeMod === "new"
                 ? "новый"
@@ -245,6 +263,11 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
                     </span>
                   ) : null}
                   <TopSubscriberBadge rank={row.top_subscriber_rank} />
+                  {row.object_type === "user" && (row.subscriber_is_juridical ?? 0) === 2 ? (
+                    <span className="ch-jur-mark" title="Юридическое лицо">
+                      ЮЛ
+                    </span>
+                  ) : null}
                   <span className="tk-cc-queue__item-name">{displayName(row)}</span>
                 </div>
                 <span className="tk-cc-queue__item-time">{formatQueueRelativeTime(timeIso)}</span>

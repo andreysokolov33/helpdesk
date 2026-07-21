@@ -25,6 +25,8 @@ import {
   sendTicketMessage,
   takeTicketBackToKs,
   transferTicketToEngineers,
+  updateTicketPriority,
+  type TicketPriority,
   updateTicketMessage,
   uploadTicketAttachment,
   detachTicketAttachment,
@@ -122,6 +124,7 @@ export default function TicketPage() {
   const [takeBackLoading, setTakeBackLoading] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
   const [reopenLoading, setReopenLoading] = useState(false);
+  const [priorityLoading, setPriorityLoading] = useState(false);
   const [chatPanel, setChatPanel] = useState<TicketChatPanelMode>("subscriber");
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [commentsHasOlder, setCommentsHasOlder] = useState(false);
@@ -847,6 +850,24 @@ export default function TicketPage() {
     }
   }
 
+  async function handleChangePriority(priority: TicketPriority) {
+    if (!detail || priorityLoading) return;
+    if ((detail.priority || "middle") === priority) return;
+    setPriorityLoading(true);
+    try {
+      const next = await updateTicketPriority(detail.id, priority);
+      setDetail(next);
+      setToast({ message: "Приоритет обновлён", variant: "success" });
+    } catch (e: unknown) {
+      setToast({
+        message: e instanceof Error ? e.message : "Не удалось сменить приоритет",
+        variant: "error",
+      });
+    } finally {
+      setPriorityLoading(false);
+    }
+  }
+
   function setChatPanelMode(mode: TicketChatPanelMode) {
     if (!isLkTicketSource(detail?.source)) return;
     if (mode === chatPanel) return;
@@ -1387,13 +1408,18 @@ export default function TicketPage() {
     return parts.length >= 2 ? parts[1] : subscriberSidebarName;
   })();
   const introBody = detail.body?.trim() || "";
+  const introPlain = introBody
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const chatMessages = messages.filter((m) => !m.is_initial);
   const isLkTicket = isLkTicketSource(detail.source);
   const isCommentsPanel = isLkTicket && chatPanel === "comments";
   const subscriberChatReadonly = Boolean(detail.subscriber_chat_readonly) && !isCommentsPanel;
   const hideQuickReplies = !isLkTicket;
   const feedMessages = isCommentsPanel ? comments.map(commentToMessage) : chatMessages;
-  const hasIntro = !isCommentsPanel && introBody.length > 0;
+  const hasIntro = !isCommentsPanel && introPlain.length > 0;
   const feedLoadingOlder = isCommentsPanel ? commentsLoadingOlder : loadingOlder;
   const online = Boolean(detail.user_id) ? Boolean(detail.subscriber_online) : false;
   const offlineAuthLabel = subscriberProfile?.online.last_session_end_label?.trim() || null;
@@ -1529,9 +1555,11 @@ export default function TicketPage() {
             transferLoading={transferLoading}
             takeBackLoading={takeBackLoading}
             reopenLoading={reopenLoading}
+            priorityLoading={priorityLoading}
             onTransfer={() => void handleTransferToEngineers()}
             onTakeBack={() => void handleTakeBackToKs()}
             onReopen={() => void handleReopenTicket()}
+            onChangePriority={(p) => void handleChangePriority(p)}
             onLinkSubscriber={() => setLinkSubscriberOpen(true)}
             onOpenKbArticle={openKbArticle}
             kbArticleOpen={Boolean(kbArticleSlug)}

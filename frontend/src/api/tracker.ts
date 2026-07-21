@@ -68,7 +68,7 @@ export type TrackerTicketListResponse = {
 /** Подписи коммуникационного слоя в колонке «Статус». */
 export const COMMUNICATION_LABELS = {
   needs_reply: "Нужен ответ",
-  awaiting_subscriber: "Ждём абонента",
+  awaiting_reply: "Ждём ответа",
 } as const;
 
 const TRACKER_CLOSED_STATUSES = new Set([
@@ -78,11 +78,6 @@ const TRACKER_CLOSED_STATUSES = new Set([
   "deferred",
   "not_resolved",
 ]);
-
-const STAFF_ACTION: TrackerActionBy[] = ["cs", "engineers", "partner"];
-
-/** Внутренний чат КС↔инженеры (без абонента в цепочке v2). */
-const INTERNAL_STAFF_CHAT_SOURCES = new Set(["call_center", "abs"]);
 
 export type TicketStatusColumn =
   | { kind: "comm"; state: keyof typeof COMMUNICATION_LABELS; label: string }
@@ -226,83 +221,24 @@ export function ticketListStatusColumn(
     | "support_line"
   >,
 ): TicketStatusColumn {
-  if (row.support_line === 4) {
-    return { kind: "workflow", status: row.status, label: row.status_label };
-  }
-
   if (TRACKER_CLOSED_STATUSES.has(row.status)) {
     return { kind: "workflow", status: row.status, label: row.status_label };
   }
 
-  if (row.list_highlight === "ops") {
-    return { kind: "workflow", status: row.status, label: row.status_label };
-  }
-
-  if (row.action_by === "external") {
-    return { kind: "workflow", status: row.status, label: row.status_label };
-  }
-
-  if (row.communication_state === "needs_reply") {
+  // Открытые: только «Нужен ответ» (линия зрителя) или серый «Ждём ответа»
+  if (row.list_highlight === "chat") {
     return {
       kind: "comm",
       state: "needs_reply",
-      label: row.communication_label?.trim() || COMMUNICATION_LABELS.needs_reply,
+      label: COMMUNICATION_LABELS.needs_reply,
     };
   }
 
-  if (row.communication_state === "awaiting_subscriber") {
-    return {
-      kind: "comm",
-      state: "awaiting_subscriber",
-      label: row.communication_label?.trim() || COMMUNICATION_LABELS.awaiting_subscriber,
-    };
-  }
-
-  const src = (row.source || "call_center").toLowerCase();
-  const internalStaffChat = INTERNAL_STAFF_CHAT_SOURCES.has(src);
-
-  if (
-    internalStaffChat &&
-    row.chat_turn === "subscriber" &&
-    row.status === "in_progress" &&
-    row.action_by === "cs"
-  ) {
-    return { kind: "workflow", status: row.status, label: row.status_label };
-  }
-
-  if (internalStaffChat && row.chat_turn === "subscriber") {
-    return { kind: "workflow", status: row.status, label: row.status_label };
-  }
-
-  if (
-    row.chat_turn === "subscriber" &&
-    row.status === "in_progress" &&
-    row.action_by === "cs"
-  ) {
-    return { kind: "workflow", status: row.status, label: row.status_label };
-  }
-
-  if (row.chat_turn === "staff" && STAFF_ACTION.includes(row.action_by)) {
-    const lkStaffPending = src === "lk";
-    if (lkStaffPending || row.list_highlight === "chat") {
-      return {
-        kind: "comm",
-        state: "needs_reply",
-        label: COMMUNICATION_LABELS.needs_reply,
-      };
-    }
-    return { kind: "workflow", status: row.status, label: row.status_label };
-  }
-
-  if (row.chat_turn === "subscriber") {
-    return {
-      kind: "comm",
-      state: "awaiting_subscriber",
-      label: COMMUNICATION_LABELS.awaiting_subscriber,
-    };
-  }
-
-  return { kind: "workflow", status: row.status, label: row.status_label };
+  return {
+    kind: "comm",
+    state: "awaiting_reply",
+    label: COMMUNICATION_LABELS.awaiting_reply,
+  };
 }
 
 /** @deprecated используйте ticketListStatusColumn */
@@ -413,6 +349,10 @@ export type RegisterCallPayload = {
   lead?: ConnectionLeadPayload | null;
   station_id?: number | null;
   hotspot_id?: number | null;
+  /** call_center (default) | old_cs — тикет из старого чата /chat */
+  source?: "call_center" | "old_cs" | null;
+  /** low | middle | high | critical (default middle) */
+  priority?: "low" | "middle" | "high" | "critical" | null;
 };
 
 export type RegisterCallResponse = { id: number };
@@ -431,6 +371,40 @@ export async function registerCall(payload: RegisterCallPayload): Promise<Regist
   }
   if (data.id == null) throw new Error("Некорректный ответ сервера");
   return { id: data.id };
+}
+
+export type OpenSubscriberTicketItem = {
+  id: number;
+  title: string;
+  status: string;
+  status_label: string;
+  date_of_create: string;
+  updated_at?: string | null;
+};
+
+export type OpenSubscriberTicketsResponse = {
+  items: OpenSubscriberTicketItem[];
+};
+
+/** Открытые тикеты абонента с указанным source (модалка создания из /chat). */
+export async function fetchOpenTicketsForSubscriber(params: {
+  user_id: number;
+  source?: string;
+  limit?: number;
+}): Promise<OpenSubscriberTicketsResponse> {
+  const sp = new URLSearchParams();
+  sp.set("user_id", String(params.user_id));
+  if (params.source) sp.set("source", params.source);
+  if (params.limit != null) sp.set("limit", String(params.limit));
+  const res = await fetch(`/api/v1/helpdesk/tracker/open-for-subscriber?${sp}`, {
+    credentials: "include",
+  });
+  const data = (await res.json().catch(() => ({}))) as { detail?: string } & Partial<OpenSubscriberTicketsResponse>;
+  if (!res.ok) {
+    const msg = typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return { items: Array.isArray(data.items) ? data.items : [] };
 }
 
 export function trackerApiRowToTicketRow(row: TrackerTicketListItem): TicketRow {
