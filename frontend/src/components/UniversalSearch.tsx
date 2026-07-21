@@ -12,9 +12,11 @@ type SubscriberRowProps = {
   hit: SubscriberSearchHit;
   query: string;
   onPick: () => void;
+  onOpenTicket: (ticketId: number) => void;
 };
 
-function SubscriberRow({ hit, query, onPick }: SubscriberRowProps) {
+function SubscriberRow({ hit, query, onPick, onOpenTicket }: SubscriberRowProps) {
+  const openTicketIds = hit.open_ticket_ids ?? [];
   return (
     <button type="button" className="si2 sr-hit" onClick={onPick}>
       <span className="sr-badge sr-badge--ab" aria-hidden>
@@ -47,6 +49,27 @@ function SubscriberRow({ hit, query, onPick }: SubscriberRowProps) {
           )}
         </div>
       </div>
+      {openTicketIds.length ? (
+        <div className="sr-open-tickets" onClick={(e) => e.stopPropagation()}>
+          <span className="sr-open-tickets__label">Тикеты</span>
+          <div className="sr-open-tickets__list">
+            {openTicketIds.map((ticketId) => (
+              <button
+                key={ticketId}
+                type="button"
+                className="sr-open-ticket-link"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenTicket(ticketId);
+                }}
+                title={`Открыть тикет #${ticketId}`}
+              >
+                #{ticketId}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </button>
   );
 }
@@ -153,6 +176,12 @@ export default function UniversalSearch() {
     navigate(`/users/${hit.id}`);
   }
 
+  function openSubscriberTicket(ticketId: number) {
+    setOpenDrop(false);
+    setQ("");
+    navigate(`/tickets/${ticketId}`);
+  }
+
   function pickKbArticle(hit: DeskSearchKbHit) {
     setOpenDrop(false);
     setQ("");
@@ -217,7 +246,13 @@ export default function UniversalSearch() {
           <>
             <div className="ssc">Абоненты</div>
             {subs.map((s) => (
-              <SubscriberRow key={s.id} hit={s} query={trimmed} onPick={() => pickSubscriber(s)} />
+              <SubscriberRow
+                key={s.id}
+                hit={s}
+                query={trimmed}
+                onPick={() => pickSubscriber(s)}
+                onOpenTicket={openSubscriberTicket}
+              />
             ))}
           </>
         ) : null}

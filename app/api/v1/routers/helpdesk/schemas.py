@@ -191,6 +191,7 @@ class DeskSearchSubscriberHit(BaseModel):
     is_juridical: int = 0
     station_id: int | None = None
     hotspot_id: int | None = None
+    open_ticket_ids: list[int] = Field(default_factory=list)
 
 
 _RU_PHONE_RE = re.compile(r"^\+7\d{10}$")

@@ -8,6 +8,7 @@ export type SubscriberSearchHit = {
   is_juridical: number;
   station_id?: number | null;
   hotspot_id?: number | null;
+  open_ticket_ids?: number[];
 };
 
 export type DeskSearchKbHit = {

@@ -13,6 +13,7 @@ import {
 } from "@/api/tracker";
 import TicketAssigneePill from "@/components/TicketAssigneePill";
 import CallCenterPhoneIcon from "@/components/CallCenterPhoneIcon";
+import TicketsListHelpDrawer from "@/components/TicketsListHelpDrawer";
 import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import {
   formatRatingAvg,
@@ -119,6 +120,7 @@ export default function ChatsTab() {
   const pollTimerRef = useRef<number | null>(null);
   const listRowIdsRef = useRef<Set<number>>(new Set());
   const [enteringRowIds, setEnteringRowIds] = useState<ReadonlySet<number>>(() => new Set());
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const closedMode = params.get("closed") === "true";
   const dateFrom = params.get("date_from") ?? "";
@@ -553,6 +555,25 @@ export default function ChatsTab() {
               >
                 {closedMode ? "Открытые" : "Закрытые"}
               </button>
+              <button
+                type="button"
+                className={`ch-help-trigger${helpOpen ? " ch-help-trigger--active" : ""}`}
+                onClick={() => setHelpOpen((v) => !v)}
+                aria-label="Справка по списку тикетов"
+                aria-expanded={helpOpen}
+              >
+                <svg className="ch-help-trigger__icon" viewBox="0 0 24 24" aria-hidden>
+                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.75" />
+                  <path
+                    d="M9.2 9.4a2.85 2.85 0 0 1 5.55.95c0 1.7-1.55 2.35-2.55 2.95-.7.42-1.05.8-1.05 1.45"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.85"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="12" cy="17.35" r="1.15" fill="currentColor" stroke="none" />
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -671,6 +692,7 @@ export default function ChatsTab() {
             </button>
           </div>
         </div>
+        <TicketsListHelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} closedMode={closedMode} />
       </div>
     );
   }
