@@ -341,27 +341,13 @@ def list_highlight_for_viewer(
     ):
         return "chat"
 
-    # «Нужен ответ» только если ход на линии зрителя (совпадает с бейджем навигации)
-    if (
-        chat_pending
-        and action == "cs"
-        and line_role == "support"
-        and state["queue_line"] == "cs"
-    ):
+    # «Нужен ответ» — мяч у линии зрителя (action_by), без требования queue_line:
+    # call_center/abs/old_cs остаётся на engineers, но после ответа инженера action_by=cs.
+    if chat_pending and action == "cs" and line_role == "support":
         return "chat"
-    if (
-        chat_pending
-        and action == "engineers"
-        and line_role == "engineer"
-        and state["queue_line"] == "engineers"
-    ):
+    if chat_pending and action == "engineers" and line_role == "engineer":
         return "chat"
-    if (
-        chat_pending
-        and action == "partner"
-        and line_role == "partner"
-        and state["queue_line"] == "partner"
-    ):
+    if chat_pending and action == "partner" and line_role == "partner":
         return "chat"
 
     if (

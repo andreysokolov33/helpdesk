@@ -125,6 +125,7 @@ export default function TicketPage() {
   const [transferLoading, setTransferLoading] = useState(false);
   const [reopenLoading, setReopenLoading] = useState(false);
   const [priorityLoading, setPriorityLoading] = useState(false);
+  const [queueRefreshNonce, setQueueRefreshNonce] = useState(0);
   const [chatPanel, setChatPanel] = useState<TicketChatPanelMode>("subscriber");
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [commentsHasOlder, setCommentsHasOlder] = useState(false);
@@ -393,6 +394,41 @@ export default function TicketPage() {
     detailRef.current = detail;
   }, [detail]);
 
+  const bumpQueueRefresh = useCallback(() => {
+    setQueueRefreshNonce((n) => n + 1);
+  }, []);
+
+  const activeTicketQueueSync = useMemo(() => {
+    if (!detail) return null;
+    return {
+      id: detail.id,
+      status: detail.status,
+      status_label: detail.status_label,
+      queue_line: detail.queue_line,
+      queue_line_label: detail.queue_line_label,
+      action_by: detail.action_by,
+      chat_turn: detail.chat_turn,
+      action_since: detail.action_since_iso ?? null,
+      list_highlight: detail.list_highlight ?? "none",
+      communication_state: detail.communication_state ?? null,
+      communication_label: detail.communication_label ?? null,
+      updated_at: detail.updated_at_iso ?? null,
+    };
+  }, [
+    detail?.id,
+    detail?.status,
+    detail?.status_label,
+    detail?.queue_line,
+    detail?.queue_line_label,
+    detail?.action_by,
+    detail?.chat_turn,
+    detail?.action_since_iso,
+    detail?.list_highlight,
+    detail?.communication_state,
+    detail?.communication_label,
+    detail?.updated_at_iso,
+  ]);
+
   const clearComposerDrafts = useCallback(() => {
     setReplyTo(null);
     setEditingId(null);
@@ -406,13 +442,15 @@ export default function TicketPage() {
   const applyTicketPollSnapshot = useCallback(
     (snap: TicketPollSnapshot) => {
       const prev = detailRef.current;
-      if (!prev || !ticketPollSnapshotChanged(prev, snap)) return;
+      if (!prev || !ticketPollSnapshotChanged(prev, snap)) return false;
       if (prev.is_open && !snap.is_open) {
         clearComposerDrafts();
       }
       setDetail(mergeTicketPollSnapshot(prev, snap));
+      bumpQueueRefresh();
+      return true;
     },
-    [clearComposerDrafts],
+    [clearComposerDrafts, bumpQueueRefresh],
   );
 
   const applyReadReceiptsUpdate = useCallback((raw: TicketReadReceiptsResult) => {
@@ -461,6 +499,7 @@ export default function TicketPage() {
       const readByChanged =
         JSON.stringify(readBy) !== JSON.stringify(readByReceiptsRef.current);
       if (!hasNew && !receiptsChanged && !readByChanged) return;
+      if (hasNew) bumpQueueRefresh();
       readReceiptsRef.current = receipts;
       readByReceiptsRef.current = readBy;
       const inCommentsPanel = chatPanelRef.current === "comments";
@@ -494,7 +533,7 @@ export default function TicketPage() {
     } catch {
       /* поллинг не мешает работе чата */
     }
-  }, [ticketId, applyTicketPollSnapshot]);
+  }, [ticketId, applyTicketPollSnapshot, bumpQueueRefresh]);
 
   const pollComments = useCallback(async () => {
     if (!Number.isFinite(ticketId) || ticketId <= 0) return;
@@ -800,6 +839,7 @@ export default function TicketPage() {
     try {
       const next = await transferTicketToEngineers(detail.id);
       setDetail(next);
+      bumpQueueRefresh();
       setToast({ message: "Тикет передан инженерам", variant: "success" });
     } catch (e: unknown) {
       setToast({
@@ -817,6 +857,7 @@ export default function TicketPage() {
     try {
       const next = await reopenTicket(detail.id);
       setDetail(next);
+      bumpQueueRefresh();
       setChatPanel("subscriber");
       setCommentEditingId(null);
       setCommentDraft("");
@@ -839,6 +880,7 @@ export default function TicketPage() {
     try {
       const next = await takeTicketBackToKs(detail.id);
       setDetail(next);
+      bumpQueueRefresh();
       setToast({ message: "Тикет возвращён на линию КС", variant: "success" });
     } catch (e: unknown) {
       setToast({
@@ -1117,7 +1159,12 @@ export default function TicketPage() {
         if (detail && detail.assigned_to == null && !detail.assignee_is_viewer) {
           setDetail((prev) => (prev ? { ...prev, assignee_is_viewer: true } : prev));
         }
-        void fetchTicketDetail(ticketId).then(setDetail).catch(() => {});
+        void fetchTicketDetail(ticketId)
+          .then((next) => {
+            setDetail(next);
+            bumpQueueRefresh();
+          })
+          .catch(() => {});
         flushSync(() => {
           if (created.length) {
             setMessages((prev) =>
@@ -1354,6 +1401,8 @@ export default function TicketPage() {
           ) : null}
           <TicketQueueSidebar
             activeTicketId={ticketId}
+            activeTicketSync={activeTicketQueueSync}
+            refreshNonce={queueRefreshNonce}
             onTicketSelect={closeMobilePanel}
             onClose={isMobileLayout ? closeMobilePanel : undefined}
           />
@@ -1535,6 +1584,8 @@ export default function TicketPage() {
         <div className="tk-cc-left-rail">
           <TicketQueueSidebar
             activeTicketId={ticketId}
+            activeTicketSync={activeTicketQueueSync}
+            refreshNonce={queueRefreshNonce}
             onTicketSelect={closeMobilePanel}
             onClose={isMobileLayout ? closeMobilePanel : undefined}
           />

@@ -972,13 +972,10 @@ def _tracker_list_viewer_line_needs_reply_sql() -> str:
         q.calc_has_unread
         OR (
             q.chat_turn = 'staff'::users.tracker_chat_turn
-            AND (
-                (q.queue_line = 'cs'::users.tracker_queue_line
-                 AND q.action_by = 'cs'::users.tracker_action_by)
-                OR (q.queue_line = 'engineers'::users.tracker_queue_line
-                    AND q.action_by = 'engineers'::users.tracker_action_by)
-                OR (q.queue_line = 'partner'::users.tracker_queue_line
-                    AND q.action_by = 'partner'::users.tracker_action_by)
+            AND q.action_by IN (
+                'cs'::users.tracker_action_by,
+                'engineers'::users.tracker_action_by,
+                'partner'::users.tracker_action_by
             )
         )
     )"""
@@ -1930,15 +1927,13 @@ def _viewer_tickets_need_attention_sql(viewer_role: str) -> str:
     if role == "engineer":
         return """(
             (q.chat_turn = 'staff'::users.tracker_chat_turn
-             AND q.action_by = 'engineers'::users.tracker_action_by
-             AND q.queue_line = 'engineers'::users.tracker_queue_line)
+             AND q.action_by = 'engineers'::users.tracker_action_by)
             OR (q.calc_has_unread AND q.queue_line = 'engineers'::users.tracker_queue_line)
         )"""
     if role in ("partner", "technician"):
         return """(
             (q.chat_turn = 'staff'::users.tracker_chat_turn
-             AND q.action_by = 'partner'::users.tracker_action_by
-             AND q.queue_line = 'partner'::users.tracker_queue_line)
+             AND q.action_by = 'partner'::users.tracker_action_by)
             OR (q.calc_has_unread AND q.queue_line = 'partner'::users.tracker_queue_line)
         )"""
     return """(
@@ -1951,8 +1946,7 @@ def _viewer_tickets_need_attention_sql(viewer_role: str) -> str:
                  'engineers'::users.tracker_action_by,
                  'partner'::users.tracker_action_by))
             OR (q.chat_turn = 'staff'::users.tracker_chat_turn
-                AND q.action_by = 'cs'::users.tracker_action_by
-                AND q.queue_line = 'cs'::users.tracker_queue_line)
+                AND q.action_by = 'cs'::users.tracker_action_by)
             OR (q.calc_has_unread AND q.queue_line = 'cs'::users.tracker_queue_line)
         )
     )"""

@@ -43,11 +43,58 @@ function queueBadgeMod(row: TrackerTicketListItem): "new" | "work" | "wait" | "c
 
 type Props = {
   activeTicketId: number;
+  /** Мгновенная синхронизация статуса открытого тикета из поллинга чата. */
+  activeTicketSync?: ActiveTicketQueueSync | null;
+  /** Триггер тихого обновления списка (новые сообщения / смена очереди). */
+  refreshNonce?: number;
   onTicketSelect?: () => void;
   onClose?: () => void;
 };
 
-export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onClose }: Props) {
+export type ActiveTicketQueueSync = {
+  id: number;
+  status: string;
+  status_label: string;
+  queue_line: string;
+  queue_line_label?: string;
+  action_by: string;
+  chat_turn: string;
+  action_since?: string | null;
+  list_highlight: string;
+  communication_state?: string | null;
+  communication_label?: string | null;
+  updated_at?: string | null;
+};
+
+function patchRowFromSync(
+  row: TrackerTicketListItem,
+  sync: ActiveTicketQueueSync,
+): TrackerTicketListItem {
+  return {
+    ...row,
+    status: sync.status,
+    status_label: sync.status_label,
+    queue_line: sync.queue_line as TrackerTicketListItem["queue_line"],
+    support_line_label: sync.queue_line_label || row.support_line_label,
+    action_by: sync.action_by as TrackerTicketListItem["action_by"],
+    chat_turn: sync.chat_turn as TrackerTicketListItem["chat_turn"],
+    action_since: sync.action_since ?? row.action_since,
+    list_highlight: sync.list_highlight as TrackerTicketListItem["list_highlight"],
+    communication_state:
+      (sync.communication_state as TrackerTicketListItem["communication_state"]) ??
+      row.communication_state,
+    communication_label: sync.communication_label ?? row.communication_label,
+    updated_at: sync.updated_at ?? row.updated_at,
+  };
+}
+
+export default function TicketQueueSidebar({
+  activeTicketId,
+  activeTicketSync = null,
+  refreshNonce = 0,
+  onTicketSelect,
+  onClose,
+}: Props) {
   const navigate = useNavigate();
   const [rows, setRows] = useState<TrackerTicketListItem[]>([]);
   const [needsReplyCount, setNeedsReplyCount] = useState(0);
@@ -141,6 +188,44 @@ export default function TicketQueueSidebar({ activeTicketId, onTicketSelect, onC
     if (!prefsReady) return;
     void loadList();
   }, [prefsReady, loadList]);
+
+  useEffect(() => {
+    if (!activeTicketSync || activeTicketSync.id !== activeTicketId) return;
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === activeTicketSync.id);
+      if (idx < 0) return prev;
+      const oldRow = prev[idx];
+      const nextRow = patchRowFromSync(oldRow, activeTicketSync);
+      if (
+        oldRow.status === nextRow.status &&
+        oldRow.list_highlight === nextRow.list_highlight &&
+        oldRow.action_by === nextRow.action_by &&
+        oldRow.chat_turn === nextRow.chat_turn &&
+        oldRow.queue_line === nextRow.queue_line &&
+        oldRow.updated_at === nextRow.updated_at
+      ) {
+        return prev;
+      }
+      const wasUrgent = ticketListNeedsAttention(oldRow);
+      const nowUrgent = ticketListNeedsAttention(nextRow);
+      if (wasUrgent !== nowUrgent) {
+        queueMicrotask(() => {
+          setNeedsReplyCount((c) => Math.max(0, c + (nowUrgent ? 1 : -1)));
+        });
+      }
+      const next = prev.slice();
+      next[idx] = nextRow;
+      return next;
+    });
+  }, [activeTicketSync, activeTicketId]);
+
+  useEffect(() => {
+    if (!prefsReady || refreshNonce <= 0) return;
+    const t = window.setTimeout(() => {
+      void loadList({ silent: true });
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [prefsReady, refreshNonce, loadList]);
 
   const pollList = useCallback(async () => {
     if (!prefsReady || document.visibilityState === "hidden") return;

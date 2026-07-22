@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { loginRequest } from "@/api/auth";
 import { brandLogoSrc } from "@/brandLogos";
 import { useTheme } from "@/theme/ThemeContext";
-import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
+import { /* themeComfortIcon, */ themeMoonIcon, themeSunIcon } from "@/themeIcons";
 import { themeToggleHint } from "@/theme/themeMeta";
 import styles from "./LoginPage.module.css";
 
@@ -78,11 +78,16 @@ export default function LoginPage() {
           aria-label={themeToggleHint(theme)}
         >
           <span className={`${styles.themeFade} ${theme === "comfort" ? styles.themeFadeOn : ""}`}>
-            <img className={styles.themeIcon} src={themeComfortIcon} width={22} height={22} alt="" />
+            <img className={styles.themeIcon} src={themeSunIcon} width={22} height={22} alt="" />
           </span>
+          {/* Спрятанная тема «чистое солнце» (light) — не удалять
           <span className={`${styles.themeFade} ${theme === "light" ? styles.themeFadeOn : ""}`}>
             <img className={styles.themeIcon} src={themeSunIcon} width={22} height={22} alt="" />
           </span>
+          <span className={`${styles.themeFade} ${theme === "comfort" ? styles.themeFadeOn : ""}`}>
+            <img className={styles.themeIcon} src={themeComfortIcon} width={22} height={22} alt="" />
+          </span>
+          */}
           <span className={`${styles.themeFade} ${theme === "dark" ? styles.themeFadeOn : ""}`}>
             <img className={styles.themeIcon} src={themeMoonIcon} width={22} height={22} alt="" />
           </span>

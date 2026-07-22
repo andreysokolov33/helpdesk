@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { brandLogoSrc } from "@/brandLogos";
-import { themeComfortIcon, themeMoonIcon, themeSunIcon } from "@/themeIcons";
+import { /* themeComfortIcon, */ themeMoonIcon, themeSunIcon } from "@/themeIcons";
 import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
 import { fetchDailyQuizStatus, type DailyQuizStatus } from "@/api/dailyQuiz";
 import { sendOperatorPresence } from "@/api/operatorsManage";
@@ -404,11 +404,16 @@ export default function DashboardShell() {
             aria-label={themeToggleHint(theme)}
           >
             <span className={`nav-theme-fade ${theme === "comfort" ? "is-on" : ""}`}>
-              <img className="nav-theme-svg" src={themeComfortIcon} width={24} height={24} alt="" />
+              <img className="nav-theme-svg" src={themeSunIcon} width={24} height={24} alt="" />
             </span>
+            {/* Спрятанная тема «чистое солнце» (light) — не удалять
             <span className={`nav-theme-fade ${theme === "light" ? "is-on" : ""}`}>
               <img className="nav-theme-svg" src={themeSunIcon} width={24} height={24} alt="" />
             </span>
+            <span className={`nav-theme-fade ${theme === "comfort" ? "is-on" : ""}`}>
+              <img className="nav-theme-svg" src={themeComfortIcon} width={24} height={24} alt="" />
+            </span>
+            */}
             <span className={`nav-theme-fade ${theme === "dark" ? "is-on" : ""}`}>
               <img className="nav-theme-svg" src={themeMoonIcon} width={24} height={24} alt="" />
             </span>

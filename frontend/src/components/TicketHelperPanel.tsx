@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { TicketDetail, TicketPriority } from "@/api/ticket";
 import type { FastCheckResponse, UserProfileResponse } from "@/api/userProfile";
@@ -79,24 +79,35 @@ export default function TicketHelperPanel({
   const [diagOpen, setDiagOpen] = useState(false);
   const [runNonce, setRunNonce] = useState(0);
   const [checkLoading, setCheckLoading] = useState(false);
-  const prioritySizerRef = useRef<HTMLSpanElement>(null);
-  const [priorityWidth, setPriorityWidth] = useState<number | undefined>(undefined);
+  const [priorityOpen, setPriorityOpen] = useState(false);
+  const priorityWrapRef = useRef<HTMLSpanElement>(null);
   const currentPriority = (detail.priority as TicketPriority) || "middle";
   const currentPriorityLabel = priorityLabel(detail.priority);
   const priorityMod = priorityBadgeClass(detail.priority);
-
-  useLayoutEffect(() => {
-    const el = prioritySizerRef.current;
-    if (!el) return;
-    const w = Math.ceil(el.getBoundingClientRect().width);
-    setPriorityWidth(w > 0 ? w : undefined);
-  }, [currentPriorityLabel, priorityMod]);
 
   useEffect(() => {
     setDiagOpen(false);
     setRunNonce(0);
     setCheckLoading(false);
+    setPriorityOpen(false);
   }, [detail.id]);
+
+  useEffect(() => {
+    if (!priorityOpen) return;
+    function onDocPointerDown(e: MouseEvent) {
+      const root = priorityWrapRef.current;
+      if (root && !root.contains(e.target as Node)) setPriorityOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPriorityOpen(false);
+    }
+    document.addEventListener("mousedown", onDocPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [priorityOpen]);
 
   function handleDiagnosticsClick() {
     if (!detail.user_id) return;
@@ -296,28 +307,46 @@ export default function TicketHelperPanel({
             </div>
             <div className="tk-cc-meta__row">
               <span className="tk-cc-meta__label">Приоритет</span>
-              <span className="tk-cc-meta__priority-wrap">
-                <span
-                  ref={prioritySizerRef}
-                  className={`tk-cc-meta__priority tk-cc-meta__priority--${priorityMod} tk-cc-meta__priority--sizer`}
-                  aria-hidden
-                >
-                  {currentPriorityLabel}
-                </span>
-                <select
-                  className={`tk-cc-meta__priority tk-cc-meta__priority--${priorityMod}`}
-                  value={currentPriority}
+              <span className="tk-cc-meta__priority-wrap" ref={priorityWrapRef}>
+                <button
+                  type="button"
+                  className={`tk-cc-meta__priority tk-cc-meta__priority--${priorityMod}${
+                    priorityOpen ? " tk-cc-meta__priority--open" : ""
+                  }`}
                   disabled={priorityLoading}
                   aria-label="Приоритет тикета"
-                  style={priorityWidth != null ? { width: priorityWidth } : undefined}
-                  onChange={(e) => onChangePriority(e.target.value as TicketPriority)}
+                  aria-haspopup="listbox"
+                  aria-expanded={priorityOpen}
+                  onClick={() => setPriorityOpen((v) => !v)}
                 >
-                  {PRIORITY_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  <span>{currentPriorityLabel}</span>
+                  <span className="tk-cc-meta__priority-caret" aria-hidden />
+                </button>
+                {priorityOpen ? (
+                  <ul className="tk-cc-meta__priority-menu" role="listbox" aria-label="Выбор приоритета">
+                    {PRIORITY_OPTIONS.map((opt) => {
+                      const selected = opt.id === currentPriority;
+                      return (
+                        <li key={opt.id} role="presentation">
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={`tk-cc-meta__priority-option tk-cc-meta__priority-option--${opt.id}${
+                              selected ? " tk-cc-meta__priority-option--selected" : ""
+                            }`}
+                            onClick={() => {
+                              setPriorityOpen(false);
+                              if (!selected) onChangePriority(opt.id);
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
               </span>
             </div>
             {reopenLabel ? (
