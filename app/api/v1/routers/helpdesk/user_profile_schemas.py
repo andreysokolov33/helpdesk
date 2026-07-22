@@ -48,6 +48,19 @@ class ProfileOpenSession(BaseModel):
     traffic_out_label: str
 
 
+class ProfileAutoRenew(BaseModel):
+    """Автопродление тарифа (только ФЛ, service.auto_renew)."""
+
+    enabled: bool
+    service_name: Optional[str] = None
+    tariff_name: Optional[str] = None
+    tariff_type_label: Optional[str] = None
+    days: Optional[int] = None
+    volume_mb: Optional[int] = None
+    price: Optional[float] = None
+    detail_label: Optional[str] = None
+
+
 class ProfileTariffActive(BaseModel):
     state: Literal["active", "inactive", "frozen", "planned_freeze", "ended"]
     tariff_name: str
@@ -167,6 +180,9 @@ class TariffHistoryItem(BaseModel):
     deactivation_at_label: Optional[str] = None
     price: Optional[float] = None
     price_label: str
+    remain_traffic_mb: Optional[int] = None
+    """Остаток пакета (МБ) — только завершённые лимитные; иначе null."""
+    remain_traffic_label: str = "—"
 
 
 class TariffHistoryListResponse(BaseModel):
@@ -183,6 +199,8 @@ class UserProfileResponse(BaseModel):
     open_sessions: list[ProfileOpenSession] = Field(default_factory=list)
     balance: float
     tariff: Optional[ProfileTariffActive] = None
+    auto_renew: Optional[ProfileAutoRenew] = None
+    """Только для ФЛ; для ЮЛ — null (блок не показываем)."""
     netflow_note: Optional[str] = None
     netflow_tariff: Optional[str] = None
     health_check: ProfileHealthCheck = Field(default_factory=ProfileHealthCheck)
@@ -208,6 +226,7 @@ class TariffBlockResponse(BaseModel):
     ok: bool = True
     message: str
     tariff: Optional[ProfileTariffActive] = None
+    auto_renew: Optional[ProfileAutoRenew] = None
     netflow_note: Optional[str] = None
     netflow_tariff: Optional[str] = None
     health_check: ProfileHealthCheck = Field(default_factory=ProfileHealthCheck)

@@ -38,8 +38,19 @@ export type ProfileOnline = {
   last_session_end_label: string | null;
 };
 
+export type ProfileAutoRenew = {
+  enabled: boolean;
+  service_name: string | null;
+  tariff_name: string | null;
+  tariff_type_label: string | null;
+  days: number | null;
+  volume_mb: number | null;
+  price: number | null;
+  detail_label: string | null;
+};
+
 export type ProfileTariff = {
-  state: "active" | "inactive" | "frozen" | "planned_freeze";
+  state: "active" | "inactive" | "frozen" | "planned_freeze" | "ended";
   tariff_name: string;
   real_type: string | null;
   is_active: boolean;
@@ -94,6 +105,7 @@ export type UserProfileResponse = {
   open_sessions: ProfileOpenSession[];
   balance: number;
   tariff: ProfileTariff | null;
+  auto_renew: ProfileAutoRenew | null;
   netflow_note: string | null;
   netflow_tariff: string | null;
   health_check: ProfileHealthCheck;
@@ -107,6 +119,7 @@ export type TariffBlockResponse = {
   ok: boolean;
   message: string;
   tariff: ProfileTariff | null;
+  auto_renew: ProfileAutoRenew | null;
   netflow_note: string | null;
   netflow_tariff: string | null;
   health_check: ProfileHealthCheck;
@@ -264,6 +277,8 @@ export type TariffHistoryItem = {
   deactivation_at_label: string | null;
   price: number | null;
   price_label: string;
+  remain_traffic_mb: number | null;
+  remain_traffic_label: string;
 };
 
 export type TariffHistoryListResponse = {

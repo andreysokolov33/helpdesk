@@ -14,6 +14,7 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
     ActionMessage,
     PaymentHistoryItem,
     PaymentHistoryListResponse,
+    ProfileAutoRenew,
     TariffHistoryItem,
     TariffHistoryListResponse,
     ProfileHealthCheck,
@@ -383,6 +384,99 @@ async def _load_service_by_sname(session: AsyncSession, sname: str) -> Optional[
     return dict(row) if row else None
 
 
+def _auto_renew_type_label(real_type: Optional[str]) -> Optional[str]:
+    rt = (real_type or "").strip()
+    if rt == "unlim_fap":
+        return "Безлимитный"
+    if rt == "default":
+        return "Лимитный"
+    if rt:
+        return rt
+    return None
+
+
+def _format_auto_renew_detail(
+    *,
+    volume_mb: Optional[int],
+    tariff_type_label: Optional[str],
+    days: Optional[int],
+    price: Optional[float],
+    tariff_name: Optional[str],
+) -> str:
+    parts: list[str] = []
+    if tariff_name:
+        parts.append(tariff_name)
+    if volume_mb is not None:
+        vol = f"{int(volume_mb):,}".replace(",", "\u202f")
+        parts.append(f"{vol}\u202fМБ")
+    if tariff_type_label:
+        parts.append(tariff_type_label)
+    if days is not None:
+        parts.append(f"{int(days)}\u202fдн.")
+    if price is not None:
+        parts.append(format_money_ru(price))
+    return " · ".join(parts) if parts else "—"
+
+
+async def _load_auto_renew(
+    session: AsyncSession,
+    *,
+    login: str,
+    is_juridical: int,
+) -> Optional[ProfileAutoRenew]:
+    """Автопродление только для ФЛ: запись в service.auto_renew по lower(login)."""
+    if int(is_juridical or 0) != 0:
+        return None
+    login_s = (login or "").strip()
+    if not login_s:
+        return ProfileAutoRenew(enabled=False)
+
+    r = await session.execute(
+        text(
+            """
+            SELECT
+                ar.service_name,
+                ar.days,
+                ar.volume,
+                ar.price,
+                s.name AS tariff_name,
+                s.real_type::text AS real_type
+            FROM service.auto_renew ar
+            LEFT JOIN service.service s ON s.sname = ar.service_name
+            WHERE lower(ar.login) = lower(:login)
+            LIMIT 1
+            """
+        ),
+        {"login": login_s},
+    )
+    row = r.mappings().one_or_none()
+    if not row:
+        return ProfileAutoRenew(enabled=False)
+
+    volume_mb = int(row["volume"]) if row.get("volume") is not None else None
+    days = int(row["days"]) if row.get("days") is not None else None
+    price = float(row["price"]) if row.get("price") is not None else None
+    service_name = (row.get("service_name") or "").strip() or None
+    tariff_name = (row.get("tariff_name") or "").strip() or None
+    tariff_type_label = _auto_renew_type_label(row.get("real_type"))
+    return ProfileAutoRenew(
+        enabled=True,
+        service_name=service_name,
+        tariff_name=tariff_name,
+        tariff_type_label=tariff_type_label,
+        days=days,
+        volume_mb=volume_mb,
+        price=price,
+        detail_label=_format_auto_renew_detail(
+            volume_mb=volume_mb,
+            tariff_type_label=tariff_type_label,
+            days=days,
+            price=price,
+            tariff_name=tariff_name,
+        ),
+    )
+
+
 async def _load_jur_normal_traffic(session: AsyncSession, sname: str) -> Optional[int]:
     r = await session.execute(
         text("SELECT normal_traffic FROM service.service_jur WHERE service = :sn LIMIT 1"),
@@ -686,6 +780,7 @@ _TARIFF_HISTORY_FILTERED = """
             t.activation_timestamp,
             t.deactivation_date,
             t.packet_size,
+            t.traffic_consumption,
             t.days,
             t.price,
             t.sname,
@@ -709,6 +804,7 @@ _TARIFF_HISTORY_FILTERED = """
             real_type,
             deactivation_date,
             packet_size,
+            traffic_consumption,
             days,
             price,
             NULL::text AS dop_name,
@@ -722,6 +818,7 @@ _TARIFF_HISTORY_FILTERED = """
             NULL::text AS real_type,
             NULL::timestamptz AS deactivation_date,
             NULL::bigint AS packet_size,
+            NULL::numeric AS traffic_consumption,
             NULL::int AS days,
             ad.price,
             ad.dop_name,
@@ -895,6 +992,29 @@ def _tariff_type_label(real_type: Optional[str]) -> str:
     return "Безлимитный"
 
 
+def _tariff_remain_mb_label(
+    *,
+    row_kind: str,
+    real_type: Optional[str],
+    deactivation_date: Any,
+    packet_size: Any,
+    traffic_consumption: Any,
+) -> tuple[Optional[int], str]:
+    """Остаток пакета (МБ) только для завершённых лимитных тарифов."""
+    if row_kind != "tariff" or deactivation_date is None:
+        return None, "—"
+    rt = (real_type or "").strip()
+    if rt and rt != "default":
+        return None, "—"
+    if packet_size is None or traffic_consumption is None:
+        return None, "—"
+    remain = int(round(float(packet_size) - float(traffic_consumption)))
+    if remain < 0:
+        remain = 0
+    label = f"{remain:,}".replace(",", "\u202f") + "\u202fМБ"
+    return remain, label
+
+
 def _row_to_tariff_history_item(row: Any) -> TariffHistoryItem:
     activated = row["activated_at"]
     if activated is not None and activated.tzinfo is None:
@@ -919,6 +1039,14 @@ def _row_to_tariff_history_item(row: Any) -> TariffHistoryItem:
             else (format_dt_msk(deact, time_sep=" ", short_year=True) or "—")
         )
 
+    remain_mb, remain_label = _tariff_remain_mb_label(
+        row_kind=kind,
+        real_type=row.get("real_type"),
+        deactivation_date=deact,
+        packet_size=row.get("packet_size"),
+        traffic_consumption=row.get("traffic_consumption"),
+    )
+
     return TariffHistoryItem(
         activated_at=activated,
         activated_at_label=format_dt_msk(activated, time_sep=" ", short_year=True) or "—",
@@ -929,6 +1057,8 @@ def _row_to_tariff_history_item(row: Any) -> TariffHistoryItem:
         deactivation_at_label=deact_label,
         price=price,
         price_label=format_money_ru(price),
+        remain_traffic_mb=remain_mb,
+        remain_traffic_label=remain_label,
     )
 
 
@@ -962,11 +1092,21 @@ async def _load_tariff_bundle(
     session: AsyncSession,
     user_id: int,
     personal: ProfilePersonal,
-) -> tuple[Optional[ProfileTariffActive], Optional[str], Optional[str]]:
-    trow, freeze, netflow_pair = await asyncio.gather(
+) -> tuple[
+    Optional[ProfileTariffActive],
+    Optional[str],
+    Optional[str],
+    Optional[ProfileAutoRenew],
+]:
+    trow, freeze, netflow_pair, auto_renew = await asyncio.gather(
         _load_tariff_row(session, user_id, personal.login),
         _load_freeze(session, user_id),
         _load_netflow(session, user_id),
+        _load_auto_renew(
+            session,
+            login=personal.login,
+            is_juridical=personal.is_juridical,
+        ),
     )
     netflow_note, netflow_tariff = netflow_pair
     freeze_sname = (freeze or {}).get("tariff") if freeze else None
@@ -989,7 +1129,7 @@ async def _load_tariff_bundle(
         jur_normal=jur_normal,
         last_script_reset_at=last_script_reset_at,
     )
-    return tariff, netflow_note, netflow_tariff
+    return tariff, netflow_note, netflow_tariff, auto_renew
 
 
 def _profile_tariff_to_ticket_summary(
@@ -1049,7 +1189,7 @@ async def load_subscriber_account_summary(
     """Баланс и краткая информация о тарифе для сайдбара тикета."""
     await reconcile_user_status_cache(session, user_id)
     personal, balance = await _load_personal_with_balance(session, user_id)
-    tariff, _, _ = await _load_tariff_bundle(session, user_id, personal)
+    tariff, _, _, _ = await _load_tariff_bundle(session, user_id, personal)
     return TicketSubscriberAccountSummary(
         balance=float(balance),
         tariff=_profile_tariff_to_ticket_summary(tariff),
@@ -1067,6 +1207,7 @@ async def _assemble_tariff_block(
     Optional[ProfileTariffActive],
     Optional[str],
     Optional[str],
+    Optional[ProfileAutoRenew],
     ProfileHealthCheck,
     ProfilePersonal,
     float,
@@ -1078,9 +1219,11 @@ async def _assemble_tariff_block(
         balance = balance_loaded
     is_online, open_count, last_end = await RadacctDAO.get_session_summary(session, personal.login)
     online = online or _online_from_radacct_summary(is_online, last_end)
-    tariff, netflow_note, netflow_tariff = await _load_tariff_bundle(session, user_id, personal)
+    tariff, netflow_note, netflow_tariff, auto_renew = await _load_tariff_bundle(
+        session, user_id, personal
+    )
     health = _build_health_check(personal, online, tariff, balance)
-    return tariff, netflow_note, netflow_tariff, health, personal, balance, online
+    return tariff, netflow_note, netflow_tariff, auto_renew, health, personal, balance, online
 
 
 async def get_user_profile(
@@ -1109,7 +1252,7 @@ async def get_user_profile(
         tickets = ProfileTicketListResponse(total=0, page=1, per_page=1, items=[])
 
     online = _online_from_radacct_summary(is_online, last_end)
-    tariff, netflow_note, netflow_tariff = tariff_res
+    tariff, netflow_note, netflow_tariff, auto_renew = tariff_res
     health = _build_health_check(personal, online, tariff, balance)
     _, disconnect_remaining = await get_disconnect_sessions_remaining(user_id)
     if tariff is not None and disconnect_remaining <= 0:
@@ -1122,6 +1265,7 @@ async def get_user_profile(
         open_sessions=open_session_items,
         balance=balance,
         tariff=tariff,
+        auto_renew=auto_renew,
         netflow_note=netflow_note,
         netflow_tariff=netflow_tariff,
         health_check=health,
@@ -1177,12 +1321,13 @@ async def remove_ended_tariff(
     await session.commit()
     await on_tariff_freeze_changed(session, user_id)
 
-    tariff, netflow_note, netflow_tariff, health, _, _, _ = await _assemble_tariff_block(
+    tariff, netflow_note, netflow_tariff, auto_renew, health, _, _, _ = await _assemble_tariff_block(
         session, user_id
     )
     return TariffBlockResponse(
         message="Тариф отключён",
         tariff=tariff,
+        auto_renew=auto_renew,
         netflow_note=netflow_note,
         netflow_tariff=netflow_tariff,
         health_check=health,

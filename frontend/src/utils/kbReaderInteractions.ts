@@ -151,14 +151,167 @@ export function bindKbReaderGlossary(root: HTMLElement): () => void {
   };
 }
 
+/** Просмотр картинок статьи: клик → лайтбокс на всю страницу. */
+export function bindKbReaderImageLightbox(root: HTMLElement): () => void {
+  const images = Array.from(root.querySelectorAll<HTMLImageElement>("img[src]")).filter(
+    (img) => Boolean(img.getAttribute("src")?.trim()),
+  );
+  if (!images.length) return () => {};
+
+  images.forEach((img) => {
+    img.classList.add("kb-reader__img");
+    img.setAttribute("role", "button");
+    img.tabIndex = 0;
+    if (!img.getAttribute("title")) {
+      img.setAttribute("title", "Нажмите, чтобы увеличить");
+    }
+  });
+
+  let overlay: HTMLDivElement | null = null;
+  let currentIndex = 0;
+
+  const close = () => {
+    if (!overlay) return;
+    overlay.remove();
+    overlay = null;
+    document.body.style.removeProperty("overflow");
+    window.removeEventListener("keydown", onKeyDown, true);
+  };
+
+  const showAt = (index: number) => {
+    if (!overlay || !images.length) return;
+    currentIndex = ((index % images.length) + images.length) % images.length;
+    const src = images[currentIndex]?.currentSrc || images[currentIndex]?.src || "";
+    const alt = images[currentIndex]?.alt?.trim() || "Просмотр";
+    const imgEl = overlay.querySelector<HTMLImageElement>(".kb-imgv__img");
+    const counter = overlay.querySelector<HTMLElement>(".kb-imgv__counter");
+    if (imgEl) {
+      imgEl.src = src;
+      imgEl.alt = alt;
+    }
+    if (counter) {
+      counter.hidden = images.length < 2;
+      counter.textContent = `${currentIndex + 1} / ${images.length}`;
+    }
+  };
+
+  const open = (index: number) => {
+    close();
+    currentIndex = index;
+
+    overlay = document.createElement("div");
+    overlay.className = "kb-imgv";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Просмотр изображения");
+
+    overlay.innerHTML = `
+      <button type="button" class="kb-imgv__close" aria-label="Закрыть">×</button>
+      <button type="button" class="kb-imgv__nav kb-imgv__nav--prev" aria-label="Предыдущее">‹</button>
+      <div class="kb-imgv__box">
+        <img class="kb-imgv__img" alt="" />
+        <div class="kb-imgv__counter" aria-live="polite"></div>
+      </div>
+      <button type="button" class="kb-imgv__nav kb-imgv__nav--next" aria-label="Следующее">›</button>
+    `;
+
+    const prevBtn = overlay.querySelector<HTMLButtonElement>(".kb-imgv__nav--prev");
+    const nextBtn = overlay.querySelector<HTMLButtonElement>(".kb-imgv__nav--next");
+    if (images.length < 2) {
+      prevBtn?.remove();
+      nextBtn?.remove();
+    }
+
+    overlay.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target || !overlay) return;
+      if (target.closest(".kb-imgv__close")) {
+        close();
+        return;
+      }
+      if (target.closest(".kb-imgv__nav--prev")) {
+        showAt(currentIndex - 1);
+        return;
+      }
+      if (target.closest(".kb-imgv__nav--next")) {
+        showAt(currentIndex + 1);
+        return;
+      }
+      if (target === overlay || target.classList.contains("kb-imgv__box")) {
+        close();
+      }
+    });
+
+    document.body.appendChild(overlay);
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown, true);
+    showAt(currentIndex);
+  };
+
+  function onKeyDown(event: KeyboardEvent): void {
+    if (!overlay) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      close();
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      showAt(currentIndex - 1);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      showAt(currentIndex + 1);
+    }
+  }
+
+  const onRootClick = (event: MouseEvent) => {
+    const target = event.target as HTMLElement | null;
+    const img = target?.closest("img");
+    if (!img || !root.contains(img) || !images.includes(img as HTMLImageElement)) return;
+    event.preventDefault();
+    open(images.indexOf(img as HTMLImageElement));
+  };
+
+  const onRootKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target as HTMLElement | null;
+    const img = target?.closest("img");
+    if (!img || !root.contains(img) || !images.includes(img as HTMLImageElement)) return;
+    event.preventDefault();
+    open(images.indexOf(img as HTMLImageElement));
+  };
+
+  root.addEventListener("click", onRootClick);
+  root.addEventListener("keydown", onRootKeyDown);
+
+  return () => {
+    close();
+    root.removeEventListener("click", onRootClick);
+    root.removeEventListener("keydown", onRootKeyDown);
+    images.forEach((img) => {
+      img.classList.remove("kb-reader__img");
+      img.removeAttribute("role");
+      img.removeAttribute("tabindex");
+      if (img.getAttribute("title") === "Нажмите, чтобы увеличить") {
+        img.removeAttribute("title");
+      }
+    });
+  };
+}
+
 /** Вся интерактивность контента статьи. */
 export function bindKbReaderInteractions(root: HTMLElement): () => void {
   const disposeTabs = bindKbReaderTabs(root);
   const disposeDiag = bindKbReaderDiagWidgets(root);
   const disposeGlossary = bindKbReaderGlossary(root);
+  const disposeLightbox = bindKbReaderImageLightbox(root);
   return () => {
     disposeTabs();
     disposeDiag();
     disposeGlossary();
+    disposeLightbox();
   };
 }

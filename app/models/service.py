@@ -49,6 +49,7 @@ class ActivatedServices(Base):
     id_grp = mapped_column(Integer)
     bort = mapped_column(Integer)
     deactivation_date = mapped_column(DateTime(timezone=True))
+    traffic_consumption = mapped_column(Numeric(10, 2))
 
 
 class AutoRenew(Base):

@@ -8,6 +8,7 @@ import {
   postRemoveEndedTariff,
   postUnarchive,
   postUnfreeze,
+  type ProfileAutoRenew,
   type ProfilePersonal,
   type TariffBlockResponse,
   type ProfileTariff,
@@ -382,8 +383,25 @@ function ProfileMetricStrip({
   );
 }
 
+function AutoRenewBlock({ autoRenew }: { autoRenew: ProfileAutoRenew }) {
+  return (
+    <div className={`up-auto-renew${autoRenew.enabled ? " up-auto-renew--on" : ""}`}>
+      <div className="up-kv up-auto-renew__row">
+        <span className="up-k">Автопродление</span>
+        <span className={`up-v ${autoRenew.enabled ? "ok" : "bad"}`}>
+          {autoRenew.enabled ? "Включено" : "Выключено"}
+        </span>
+      </div>
+      {autoRenew.enabled && autoRenew.detail_label ? (
+        <div className="up-auto-renew__detail">{autoRenew.detail_label}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function TariffCard({
   tariff,
+  autoRenew,
   netflowNote,
   netflowTariff,
   isJuridical,
@@ -400,6 +418,7 @@ function TariffCard({
   onDisconnect,
 }: {
   tariff: ProfileTariff | null;
+  autoRenew: ProfileAutoRenew | null;
   netflowNote: string | null;
   netflowTariff: string | null;
   isJuridical: number;
@@ -441,6 +460,7 @@ function TariffCard({
             <strong>«Тариф»</strong>. Без подключенного тарифа доступ в интернет недоступен.
           </p>
         </div>
+        {autoRenew ? <AutoRenewBlock autoRenew={autoRenew} /> : null}
       </div>
     );
   }
@@ -717,6 +737,8 @@ function TariffCard({
           ) : null}
         </>
       ) : null}
+
+      {autoRenew ? <AutoRenewBlock autoRenew={autoRenew} /> : null}
     </div>
   );
 }
@@ -797,6 +819,7 @@ export default function UserProfilePage() {
           ? {
               ...prev,
               tariff: r.tariff,
+              auto_renew: r.auto_renew,
               netflow_note: r.netflow_note,
               netflow_tariff: r.netflow_tariff,
               health_check: r.health_check,
@@ -958,6 +981,7 @@ export default function UserProfilePage() {
               </div>
               <TariffCard
                 tariff={data.tariff}
+                autoRenew={data.auto_renew}
                 netflowNote={data.netflow_note}
                 netflowTariff={data.netflow_tariff}
                 isJuridical={p.is_juridical}

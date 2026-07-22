@@ -1653,6 +1653,14 @@ a.up-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .up-pwd-used-success{font-size:13px;font-weight:600;line-height:1.55;margin-bottom:14px}
 .up-tariff-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
 .up-tariff-head .up-tariff-title{margin-bottom:0}
+.up-auto-renew{margin-top:0;padding-top:0}
+.up-auto-renew__row{margin-bottom:0}
+.up-auto-renew__detail{
+  margin-top:4px;
+  font-size:11.5px;
+  line-height:1.35;
+  color:var(--i3);
+}
 .up-tariff-actions-btn{
   height:32px;
   padding:0 12px;
@@ -1888,15 +1896,21 @@ a.up-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .up-tariffs-table tr:last-child td{border-bottom:none}
 .up-tariffs-th-date,.up-tariffs-date,.up-tariffs-until{text-align:left}
 .up-tariffs-th-type,.up-tariffs-type{text-align:left}
+.up-tariffs-th-remain,.up-tariffs-remain{text-align:right}
 .up-tariffs-th-amt,.up-tariffs-amt{text-align:right}
-.up-tariffs-table th:nth-child(1),.up-tariffs-table td:nth-child(1){width:28%}
-.up-tariffs-table th:nth-child(2),.up-tariffs-table td:nth-child(2){width:30%}
-.up-tariffs-table th:nth-child(3),.up-tariffs-table td:nth-child(3){width:26%}
-.up-tariffs-table th:nth-child(4),.up-tariffs-table td:nth-child(4){width:16%}
+.up-tariffs-table th:nth-child(1),.up-tariffs-table td:nth-child(1){width:24%}
+.up-tariffs-table th:nth-child(2),.up-tariffs-table td:nth-child(2){width:22%}
+.up-tariffs-table th:nth-child(3),.up-tariffs-table td:nth-child(3){width:24%}
+.up-tariffs-table th:nth-child(4),.up-tariffs-table td:nth-child(4){width:14%}
+.up-tariffs-table th:nth-child(5),.up-tariffs-table td:nth-child(5){width:16%}
 .up-tariffs-date,.up-tariffs-until{
   white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--ink);font-size:12px
 }
 .up-tariffs-type .up-tariff-badge{vertical-align:middle;max-width:100%}
+.up-tariffs-remain{
+  font-size:11px;font-variant-numeric:tabular-nums;color:var(--i2);
+  white-space:nowrap;padding-right:4px
+}
 .up-tariffs-amt{
   font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink);
   white-space:nowrap;padding-right:1px

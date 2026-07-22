@@ -68,6 +68,7 @@ export default function TariffsHistoryPanel({ userId }: Props) {
             <th className="up-tariffs-th-date">Подключение (МСК)</th>
             <th className="up-tariffs-th-type">Тип</th>
             <th className="up-tariffs-th-date">Отключение (МСК)</th>
+            <th className="up-tariffs-th-remain" title="Остаток пакета">Ост.</th>
             <th className="up-tariffs-th-amt">Цена</th>
           </tr>
         </thead>
@@ -90,6 +91,7 @@ export default function TariffsHistoryPanel({ userId }: Props) {
                   row.deactivation_at_label ?? "—"
                 )}
               </td>
+              <td className="up-tariffs-remain">{row.remain_traffic_label ?? "—"}</td>
               <td className="up-tariffs-amt">{row.price_label}</td>
             </tr>
           ))}

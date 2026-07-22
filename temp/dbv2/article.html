@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KB preview — article.html</title>
+
+  <!-- Шрифт (file:// не ходит на /static/... из manrope.css) -->
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Стили проекта: палитра тем + контент статей БЗ -->
+  <link rel="stylesheet" href="../../frontend/src/styles/helpdesk-prototype.css" />
+  <link rel="stylesheet" href="../../frontend/src/styles/kb-content.css" />
+
+  <style>
+    /* Алиасы переменных из старых прототипов (inline style в content_html) */
+    [data-theme] {
+      --line: var(--ln);
+      --text-primary: var(--i2);
+      --text-headers: var(--ink);
+      --status-ok: var(--ok);
+      --status-ok-bg: var(--obg);
+      --muted: var(--i3);
+      --kb-gap: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--f);
+      background: var(--bg);
+      color: var(--i2);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .kb-preview-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--p);
+      border-bottom: 1px solid var(--ln);
+      font-size: 13px;
+    }
+    .kb-preview-bar__hint { color: var(--i3); }
+    .kb-preview-bar__hint code {
+      font-size: 12px;
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: var(--ink);
+    }
+    .kb-preview-themes { display: flex; gap: 6px; }
+    .kb-preview-themes button {
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--ln);
+      background: var(--bg);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .kb-preview-themes button.is-active {
+      border-color: var(--red);
+      background: var(--rbg);
+      color: var(--red);
+    }
+
+    .kb-preview-shell {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 24px 16px 64px;
+    }
+
+    .kb-preview-title {
+      margin: 0 0 4px;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--ink);
+    }
+    .kb-preview-sub {
+      margin: 0 0 20px;
+      font-size: 13px;
+      color: var(--i3);
+    }
+
+    /* В превью кнопку квиза можно видеть (в проде она скрыта) */
+    .kb-preview-shell .kb-reader .btn-main {
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+      margin-top: 8px;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 10px;
+      background: var(--red);
+      color: #fff;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* Лайтбокс (упрощённая копия прод-поведения) */
+    .kb-imgv {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.78);
+    }
+    .kb-imgv__img {
+      max-width: min(1100px, calc(100vw - 40px));
+      max-height: 92vh;
+      object-fit: contain;
+      border-radius: 14px;
+    }
+    .kb-imgv__close {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(0, 0, 0, 0.35);
+      color: #fff;
+      cursor: pointer;
+      font-size: 22px;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="kb-preview-bar">
+    <div class="kb-preview-bar__hint">
+      Превью статьи БЗ · править только блок
+      <code>content_html</code>
+      ниже (между маркерами START / END)
+    </div>
+    <div class="kb-preview-themes" role="group" aria-label="Тема">
+      <button type="button" data-theme-set="light" class="is-active">Light</button>
+      <button type="button" data-theme-set="dark">Dark</button>
+      <button type="button" data-theme-set="comfort">Comfort</button>
+    </div>
+  </div>
+
+  <div class="kb-preview-shell kb-article-page">
+    <h1 class="kb-preview-title">Списания и баланс</h1>
+    <p class="kb-preview-sub">Локальный preview · стили как в /kb</p>
+
+    <!--
+      ============================================================
+      СЮДА ВСТАВЛЯТЬ content_html из БД (целиком, без обёртки).
+      Обёртка .kb-reader уже снаружи — её в content_html НЕ класть.
+      Картинки в content_html для БД: src="/static/images/kb/имя.webp"
+      В превью file:// пути /static/... подменяются автоматически.
+      ============================================================
+    -->
+    <article class="kb-reader" id="kb-content-html">
+<!-- ===== content_html: START ===== -->
+
+<!-- ВВЕДЕНИЕ -->
+<div class="section-card" id="sec-intro">
+    <p>Абонент пытается пополнить баланс или оплатить тариф, но платёж не проходит: ошибка в ЛК, проблема с банком, технический сбой. Абоненты также обращаются, когда оплата прошла, но интернет не появился.</p>
+</div>
+
+<!-- СИТУАЦИЯ «ОШИБКА ПРИ ОПЛАТЕ — ПЛАТЁЖ НЕ ПРОХОДИТ» -->
+<div class="section-card" id="sec-whatis">
+    <div class="section-lbl">Раздел 1</div>
+    <h2>Ситуация «Ошибка при оплате — платёж не проходит»</h2>
+    <p>Абонент заходит в личный кабинет, пытается оплатить — и получает ошибку.</p>
+
+    <h3>Что говорят абоненты:</h3>
+    <ul>
+        <li>«Здравствуйте, почему банки не работают для оплаты?».</li>
+        <li>«Здравствуйте, не могу оплатить».</li>
+        <li>«Здравствуйте, почему система платежей не работает?».</li>
+        <li>«Когда я пытаюсь оплатить, пишет «сбой, повторите попытку». Почему?».</li>
+        <li>«Добрый день, не могу внести оплату, автоматически сбрасывает».</li>
+        <li>«Не могу завершить оплату — удалённый сервер не отвечает».</li>
+    </ul>
+</div>
+
+<!-- ЧТО ДЕЛАТЬ ОПЕРАТОРУ -->
+<div class="section-card" id="sec-operator">
+    <div class="section-lbl">Инструкция</div>
+    <h2>Что делать оператору</h2>
+    <ol>
+        <li>Уточнить, на каком этапе возникает ошибка и какой платёжной системой пользуется абонент.</li>
+        <li>Предложить:
+            <ul>
+                <li>Оплатить через альтернативные системы: ЮMoney, Газпромбанк (принимают карты любых банков), Альфа-Банк, СБП.</li>
+                <li>Лучше проводить оплату, будучи авторизованным в сети. Если нет тарифа — не страшно: все платёжные системы должны работать и без интернета, но менее стабильно.</li>
+            </ul>
+        </li>
+        <li>Если проблема остаётся — создать заявку инженерам.</li>
+    </ol>
+</div>
+
+<!-- ПРИМЕР ДИАЛОГА -->
+<div class="section-card" id="sec-dialog">
+    <div class="section-lbl">Диалог</div>
+    <h2>Пример диалога</h2>
+    <div class="dlg">
+        <div class="bbl sub"><div class="bbl-lbl">Абонент</div>— Здравствуйте, не могу оплатить. Пишет «сбой, повторите попытку».</div>
+        <div class="bbl agt"><div class="bbl-lbl">Оператор контакт-центра</div>— Добрый день! На каком этапе ошибка? Какой платёжной системой пользуетесь?</div>
+    </div>
+</div>
+
+<!-- БЛОК 6: SLA -->
+<div class="section-card" id="sec-sla">
+    <div class="section-lbl">Регламент</div>
+    <h2>Когда ждать ответа от инженеров</h2>
+    <p>Предупредите абонента о сроках заранее.</p>
+
+    <div class="dl-box-card">
+        <div class="dl-header-bar">Правило</div>
+        <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+            <tbody>
+                <tr style="border-bottom: 1.5px solid var(--line);">
+                    <td class="dl-cell-left" style="width: 65%; padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">С 8:00 до 16:00 в будни по московскому времени</td>
+                    <td class="dl-cell-right" style="width: 35%; padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">15 минут.</td>
+                </tr>
+                <tr>
+                    <td class="dl-cell-left" style="padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">Остальное время, выходные и праздники</td>
+                    <td class="dl-cell-right" style="padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">до следующего рабочего дня.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ИТОГ -->
+<div class="section-card" id="scrollTargetSummary">
+    <div class="section-lbl">Справочник</div>
+    <h2>Итог</h2>
+
+    <h3>Как разговаривать с абонентом</h3>
+    <div class="check-card-list">
+        <div class="check-card-item">
+            <div class="check-card-icon">1</div>
+            <div class="check-card-text">
+                <strong>Узнайте детали платежа</strong>
+                Узнайте этап и способ оплаты — карта, СБП, приложение банка, платёжная система.
+            </div>
+        </div>
+        <div class="check-card-item">
+            <div class="check-card-icon">2</div>
+            <div class="check-card-text">
+                <strong>Предложите обходные пути</strong>
+                Предлагайте альтернативы — ЮMoney, Газпромбанк, Альфа-Банк, СБП.
+            </div>
+        </div>
+    </div>
+
+    <div style="text-align: center; border-top: 1.5px solid var(--line); padding-top: 24px;">
+        <button class="btn-main" type="button">Пройти тестирование по теме</button>
+    </div>
+</div>
+
+<!-- ===== content_html: END ===== -->
+    </article>
+  </div>
+
+  <script>
+    // file://: /static/... → относительный путь к app/static
+    if (location.protocol === "file:") {
+      document.querySelectorAll('#kb-content-html img[src^="/static/"]').forEach((img) => {
+        const src = img.getAttribute("src") || "";
+        img.setAttribute("src", "../../app" + src);
+      });
+    }
+
+    // Переключение тем как в helpdesk
+    document.querySelectorAll("[data-theme-set]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const theme = btn.getAttribute("data-theme-set");
+        document.documentElement.setAttribute("data-theme", theme);
+        document.querySelectorAll("[data-theme-set]").forEach((b) => {
+          b.classList.toggle("is-active", b === btn);
+        });
+      });
+    });
+
+    // Клик по картинкам → лайтбокс (как в /kb)
+    const reader = document.getElementById("kb-content-html");
+    reader?.addEventListener("click", (event) => {
+      const img = event.target.closest("img");
+      if (!img || !reader.contains(img) || !img.src) return;
+      event.preventDefault();
+
+      const overlay = document.createElement("div");
+      overlay.className = "kb-imgv";
+      overlay.setAttribute("role", "dialog");
+      overlay.innerHTML = `
+        <button type="button" class="kb-imgv__close" aria-label="Закрыть">×</button>
+        <img class="kb-imgv__img" src="${img.currentSrc || img.src}" alt="${img.alt || "Просмотр"}" />
+      `;
+      const close = () => {
+        overlay.remove();
+        window.removeEventListener("keydown", onKey);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") close();
+      };
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay || e.target.closest(".kb-imgv__close")) close();
+      });
+      window.addEventListener("keydown", onKey);
+      document.body.appendChild(overlay);
+    });
+  </script>
+</body>
+</html>
