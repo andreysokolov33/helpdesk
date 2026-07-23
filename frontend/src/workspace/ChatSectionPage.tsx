@@ -246,7 +246,18 @@ export default function ChatSectionPage() {
       return;
     }
     setInput("");
-    setFile(next);
+    // Копия, чтобы File не обнулился после сброса input
+    void next
+      .arrayBuffer()
+      .then((buf) => {
+        setFile(
+          new File([buf], next.name || "image", {
+            type: next.type || "application/octet-stream",
+            lastModified: next.lastModified || Date.now(),
+          }),
+        );
+      })
+      .catch(() => setFile(next));
   }
 
   // ── Список чатов: первичная загрузка ───────────────────────────────────────
@@ -971,9 +982,10 @@ export default function ChatSectionPage() {
                         hidden
                         accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,image/*"
                         onChange={(e) => {
-                          const f = e.target.files?.[0];
+                          const input = e.currentTarget;
+                          const f = input.files?.[0];
+                          input.value = "";
                           if (f) attachImage(f);
-                          e.currentTarget.value = "";
                         }}
                       />
                     </label>

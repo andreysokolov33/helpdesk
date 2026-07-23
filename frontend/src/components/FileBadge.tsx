@@ -16,16 +16,17 @@ export function resolveFileExt(filename?: string | null, ext?: string | null): s
   return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : "";
 }
 
-export function truncateFilename(name: string, maxLen = 28): string {
-  if (name.length <= maxLen) return name;
-  const dot = name.lastIndexOf(".");
-  if (dot > 0 && name.length - dot <= 6) {
-    const ext = name.slice(dot);
-    const stem = name.slice(0, dot);
+export function truncateFilename(name: string | null | undefined, maxLen = 28): string {
+  const raw = (name ?? "").trim() || "файл";
+  if (raw.length <= maxLen) return raw;
+  const dot = raw.lastIndexOf(".");
+  if (dot > 0 && raw.length - dot <= 6) {
+    const ext = raw.slice(dot);
+    const stem = raw.slice(0, dot);
     const keep = maxLen - ext.length - 1;
     return `${stem.slice(0, Math.max(keep, 4))}…${ext}`;
   }
-  return `${name.slice(0, maxLen - 1)}…`;
+  return `${raw.slice(0, maxLen - 1)}…`;
 }
 
 export default function FileBadge({ filename, ext }: Props) {

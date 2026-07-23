@@ -59,7 +59,7 @@ import {
 import { compressImageToWebp } from "@/utils/imageCompress";
 import { formatBytes } from "@/utils/formatBytes";
 import TicketMessageAttachments, { collectMessageImageUrls } from "@/components/TicketMessageAttachments";
-import FileBadge from "@/components/FileBadge";
+import FileBadge, { truncateFilename } from "@/components/FileBadge";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 import TicketMacroBar, { type TicketChatPanelMode } from "@/components/TicketMacroBar";
 import {
@@ -85,6 +85,18 @@ import { useMediaQuery } from "@/utils/useMediaQuery";
 
 const MSG_POLL_MS = 5000;
 const READ_RECEIPTS_POLL_MS = 3000;
+
+/** Безопасный id вложения (randomUUID недоступен в insecure HTTP). */
+function newUploadId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* insecure context */
+  }
+  return `up-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export default function TicketPage() {
   const { ticketId: ticketIdParam } = useParams();
@@ -1215,26 +1227,53 @@ export default function TicketPage() {
   async function enqueueFiles(list: FileList | File[]) {
     const arr = Array.from(list || []);
     if (!arr.length) return;
-    const normalized: File[] = [];
-    for (const f of arr) {
-      if (f.type.startsWith("image/")) {
-        normalized.push(await compressImageToWebp(f));
-      } else {
-        normalized.push(f);
+    try {
+      // Снимок байтов до сброса input — иначе File может стать пустым в части браузеров
+      const snapshots = await Promise.all(
+        arr.map(async (f) => {
+          try {
+            const buf = await f.arrayBuffer();
+            return new File([buf], f.name || "file", {
+              type: f.type || "application/octet-stream",
+              lastModified: f.lastModified || Date.now(),
+            });
+          } catch {
+            return f;
+          }
+        }),
+      );
+      const normalized: File[] = [];
+      for (const f of snapshots) {
+        if (f.type.startsWith("image/")) {
+          normalized.push(await compressImageToWebp(f));
+        } else {
+          normalized.push(f);
+        }
       }
+      const items = normalized.map((file) => {
+        let previewUrl: string | undefined;
+        if (file.type.startsWith("image/")) {
+          try {
+            previewUrl = URL.createObjectURL(file);
+          } catch {
+            previewUrl = undefined;
+          }
+        }
+        return {
+          id: newUploadId(),
+          file,
+          previewUrl,
+          status: "pending" as const,
+          uploaded: 0,
+          total: file.size || 0,
+          isImage: file.type.startsWith("image/"),
+        };
+      });
+      setUploads((prev) => [...prev, ...items]);
+    } catch (e) {
+      console.error("enqueueFiles failed", e);
+      window.alert(e instanceof Error ? e.message : "Не удалось добавить файлы");
     }
-    setUploads((prev) => [
-      ...prev,
-      ...normalized.map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
-        status: "pending" as const,
-        uploaded: 0,
-        total: file.size,
-        isImage: file.type.startsWith("image/"),
-      })),
-    ]);
   }
 
   useEffect(() => {
@@ -1307,7 +1346,15 @@ export default function TicketPage() {
     };
     const fd = new FormData();
     fd.set("file", next.file);
-    xhr.send(fd);
+    try {
+      xhr.send(fd);
+    } catch {
+      setUploads((prev) =>
+        prev.map((u) => (u.id === next.id ? { ...u, status: "error", err: "Не удалось начать загрузку" } : u)),
+      );
+      if (uploadingXhrRef.current === xhr) uploadingXhrRef.current = null;
+      if (uploadingIdRef.current === next.id) uploadingIdRef.current = null;
+    }
   }, [uploads, ticketId]);
 
   useEffect(() => {
@@ -1902,8 +1949,10 @@ export default function TicketPage() {
                                 multiple
                                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
                                 onChange={(e) => {
-                                  void enqueueFiles(e.target.files || []);
-                                  e.currentTarget.value = "";
+                                  const input = e.currentTarget;
+                                  const files = Array.from(input.files || []);
+                                  input.value = "";
+                                  if (files.length) void enqueueFiles(files);
                                 }}
                               />
                             </label>
@@ -2070,87 +2119,6 @@ export default function TicketPage() {
             </div>
           </div>
 
-          {previewOpen && previewUrl ? (
-            <div
-              className="tk-imgv"
-              role="dialog"
-              aria-modal="true"
-              onClick={() => {
-                setPreviewOpen(false);
-                setPreviewUrl(null);
-              }}
-            >
-              <div
-                className="tk-imgv__box"
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-              >
-                <button
-                  type="button"
-                  className="tk-imgv__close"
-                  aria-label="Закрыть"
-                  onClick={() => {
-                    setPreviewOpen(false);
-                    setPreviewUrl(null);
-                  }}
-                >
-                  ×
-                </button>
-                <img className="tk-imgv__img" src={previewUrl} alt="Просмотр" />
-              </div>
-            </div>
-          ) : null}
-
-          {imgViewerOpen && allImageUrls.length ? (
-            <div
-              className="tk-imgv"
-              role="dialog"
-              aria-modal="true"
-              onClick={() => setImgViewerOpen(false)}
-            >
-              <button type="button" className="tk-imgv__close" aria-label="Закрыть" onClick={() => setImgViewerOpen(false)}>
-                ×
-              </button>
-              <button
-                type="button"
-                className="tk-imgv__nav tk-imgv__nav--prev"
-                aria-label="Предыдущее"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setImgViewerIndex((i) => {
-                    const newIdx = allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0;
-                    imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
-                    return newIdx;
-                  });
-                }}
-              >
-                ‹
-              </button>
-              <div className="tk-imgv__box" onClick={(e) => e.stopPropagation()}>
-                <img className="tk-imgv__img" src={allImageUrls[Math.min(imgViewerIndex, allImageUrls.length - 1)]} alt="Просмотр" />
-                <div className="tk-imgv__counter" aria-live="polite">
-                  {imgViewerIndex + 1} / {allImageUrls.length}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="tk-imgv__nav tk-imgv__nav--next"
-                aria-label="Следующее"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setImgViewerIndex((i) => {
-                    const newIdx = allImageUrls.length ? (i + 1) % allImageUrls.length : 0;
-                    imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
-                    return newIdx;
-                  });
-                }}
-              >
-                ›
-              </button>
-            </div>
-          ) : null}
-
           {contextMenu ? (
             <TicketMessageContextMenu
               x={contextMenu.x}
@@ -2178,6 +2146,87 @@ export default function TicketPage() {
 
         </div>
       </div>
+
+      {previewOpen && previewUrl ? (
+        <div
+          className="tk-imgv"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            setPreviewOpen(false);
+            setPreviewUrl(null);
+          }}
+        >
+          <div
+            className="tk-imgv__box"
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+          >
+            <button
+              type="button"
+              className="tk-imgv__close"
+              aria-label="Закрыть"
+              onClick={() => {
+                setPreviewOpen(false);
+                setPreviewUrl(null);
+              }}
+            >
+              ×
+            </button>
+            <img className="tk-imgv__img" src={previewUrl} alt="Просмотр" />
+          </div>
+        </div>
+      ) : null}
+
+      {imgViewerOpen && allImageUrls.length ? (
+        <div
+          className="tk-imgv"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setImgViewerOpen(false)}
+        >
+          <button type="button" className="tk-imgv__close" aria-label="Закрыть" onClick={() => setImgViewerOpen(false)}>
+            ×
+          </button>
+          <button
+            type="button"
+            className="tk-imgv__nav tk-imgv__nav--prev"
+            aria-label="Предыдущее"
+            onClick={(e) => {
+              e.stopPropagation();
+              setImgViewerIndex((i) => {
+                const newIdx = allImageUrls.length ? (i - 1 + allImageUrls.length) % allImageUrls.length : 0;
+                imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+                return newIdx;
+              });
+            }}
+          >
+            ‹
+          </button>
+          <div className="tk-imgv__box" onClick={(e) => e.stopPropagation()}>
+            <img className="tk-imgv__img" src={allImageUrls[Math.min(imgViewerIndex, allImageUrls.length - 1)]} alt="Просмотр" />
+            <div className="tk-imgv__counter" aria-live="polite">
+              {imgViewerIndex + 1} / {allImageUrls.length}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="tk-imgv__nav tk-imgv__nav--next"
+            aria-label="Следующее"
+            onClick={(e) => {
+              e.stopPropagation();
+              setImgViewerIndex((i) => {
+                const newIdx = allImageUrls.length ? (i + 1) % allImageUrls.length : 0;
+                imgViewerUrlRef.current = allImageUrls[newIdx] ?? imgViewerUrlRef.current;
+                return newIdx;
+              });
+            }}
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
 
       <TicketLinkSubscriberModal
         open={linkSubscriberOpen}

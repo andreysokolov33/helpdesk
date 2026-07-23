@@ -80,27 +80,35 @@ function htmlToMarkdownSource(html: string): string {
 
 /** Преобразует Markdown в HTML для отображения в чате. */
 export function messageMarkdownToHtml(text: string): string {
-  const parsed = marked.parse(text, { async: false });
-  return typeof parsed === "string" ? parsed : "";
+  try {
+    const parsed = marked.parse(text, { async: false });
+    return typeof parsed === "string" ? parsed : "";
+  } catch {
+    return "";
+  }
 }
 
 /** HTML для тела сообщения: готовый HTML или Markdown → HTML. */
 export function messageContentToHtml(text: string): string {
-  const normalized = normalizeMessageContent(text);
-  if (!normalized) return "";
+  try {
+    const normalized = normalizeMessageContent(text);
+    if (!normalized) return "";
 
-  if (!messageLooksLikeHtml(normalized)) {
-    return messageMarkdownToHtml(normalized);
+    if (!messageLooksLikeHtml(normalized)) {
+      return messageMarkdownToHtml(normalized) || normalized;
+    }
+
+    // TipTap часто хранит сырой Markdown внутри <p>…</p> без rich-тегов.
+    const hasRich = RICH_HTML_RE.test(normalized);
+    const mdSource = htmlToMarkdownSource(normalized);
+    if (!hasRich && looksLikeMarkdown(mdSource)) {
+      return messageMarkdownToHtml(mdSource) || normalized;
+    }
+
+    return normalized;
+  } catch {
+    return (text ?? "").trim();
   }
-
-  // TipTap часто хранит сырой Markdown внутри <p>…</p> без rich-тегов.
-  const hasRich = RICH_HTML_RE.test(normalized);
-  const mdSource = htmlToMarkdownSource(normalized);
-  if (!hasRich && looksLikeMarkdown(mdSource)) {
-    return messageMarkdownToHtml(mdSource);
-  }
-
-  return normalized;
 }
 
 /** Безопасный HTML для тела сообщения в чате. */

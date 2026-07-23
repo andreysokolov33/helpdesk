@@ -5107,7 +5107,8 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.72);
-  z-index: 1000;
+  /* Выше панели абонента (.tk-cc-helper-wrap z-index: 2…30) и чата (z-index: 1) */
+  z-index: 11000;
   display: grid;
   place-items: center;
   padding: 20px 72px;
