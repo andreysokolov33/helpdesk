@@ -5854,6 +5854,24 @@
   text-overflow: ellipsis;
 }
 
+#tp-ticket .tk-cc-queue__item-preview :is(p, div, br) {
+  display: contents;
+}
+
+#tp-ticket .tk-cc-queue__item-preview :is(strong, b) {
+  font-weight: 700;
+  color: inherit;
+}
+
+#tp-ticket .tk-cc-queue__item-preview :is(em, i) {
+  font-style: italic;
+}
+
+#tp-ticket .tk-cc-queue__item-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.95em;
+}
+
 #tp-ticket .tk-cc-queue__badge {
   flex-shrink: 0;
   font-size: 9px;

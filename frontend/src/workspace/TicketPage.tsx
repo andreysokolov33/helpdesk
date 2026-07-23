@@ -44,7 +44,6 @@ import {
   isEngineerTicketMessage,
   ticketAuthorLabel,
 } from "@/utils/ticketMessages";
-import { htmlToPlainText } from "@/utils/ticketMessageValidation";
 import {
   CHAT_PAGE_SIZE,
   CHAT_SCROLL_EDGE_PX,
@@ -405,8 +404,8 @@ export default function TicketPage() {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
       if (m.is_initial) continue;
-      const plain = htmlToPlainText(m.text || "").trim();
-      lastPreview = plain || null;
+      const raw = (m.text || "").trim();
+      lastPreview = raw || null;
       break;
     }
     return {

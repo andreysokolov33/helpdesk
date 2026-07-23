@@ -1,21 +1,11 @@
-import DOMPurify from "dompurify";
 import type { TicketMessageReplyPreview } from "@/api/ticket";
 import { formatStaffNameShort } from "@/utils/personName";
+import { messageContentToInlinePreviewHtml } from "@/utils/messageHtml";
 
 type Props = {
   preview: TicketMessageReplyPreview;
   onJump?: (preview: TicketMessageReplyPreview) => void;
 };
-
-const PREVIEW_TAGS = ["b", "strong", "i", "em", "u", "s", "strike", "br", "span"];
-
-function sanitizePreview(html: string): string {
-  const clean = DOMPurify.sanitize(html.trim() || "…", {
-    ALLOWED_TAGS: PREVIEW_TAGS,
-    ALLOWED_ATTR: [],
-  });
-  return clean.replace(/<br\s*\/?>/gi, " ").trim() || "…";
-}
 
 export default function TicketMessageReplyQuote({ preview, onJump }: Props) {
   if (preview.is_deleted) {
@@ -31,7 +21,7 @@ export default function TicketMessageReplyQuote({ preview, onJump }: Props) {
     raw === "Сообщение" || raw === "Вы" || raw === "Абонент" || raw === "КЦ" || raw === "Инженер" || raw === "Партнёр"
       ? raw
       : formatStaffNameShort(raw);
-  const snippetHtml = sanitizePreview(preview.text ?? "");
+  const snippetHtml = messageContentToInlinePreviewHtml(preview.text ?? "");
 
   return (
     <button

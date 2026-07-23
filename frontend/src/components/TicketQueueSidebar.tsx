@@ -14,6 +14,7 @@ import CallCenterPhoneIcon from "@/components/CallCenterPhoneIcon";
 import TopSubscriberBadge from "@/components/TopSubscriberBadge";
 import { isCallCenterTicketSource } from "@/utils/ticketLabels";
 import { loadTicketsPerPage, type TicketsListPerPage } from "@/utils/ticketsListPrefs";
+import { messageContentToInlinePreviewHtml } from "@/utils/messageHtml";
 
 const POLL_MS = 12_000;
 const POLL_JITTER_MS = 6_000;
@@ -31,7 +32,7 @@ function formatQueueRelativeTime(iso: string | null | undefined): string {
   return `${diffD} д`;
 }
 
-function queuePreviewText(row: TrackerTicketListItem): string {
+function queuePreviewSource(row: TrackerTicketListItem): string {
   const last = row.last_message_text?.trim();
   if (last) return last;
   return row.title?.trim() || "Без темы";
@@ -333,7 +334,7 @@ export default function TicketQueueSidebar({
           const needsAttention = ticketListNeedsAttention(row);
           /** «Нужен ответ» — только бейдж, без красного фона всей строки. */
           const rowHighlight = needsAttention && badgeMod !== "comm";
-          const preview = queuePreviewText(row);
+          const previewHtml = messageContentToInlinePreviewHtml(queuePreviewSource(row), "Без темы");
           const timeIso = row.updated_at || row.date_of_create;
           const badgeLabel =
             badgeMod === "comm" || badgeMod === "awaiting"
@@ -369,7 +370,11 @@ export default function TicketQueueSidebar({
                 <span className="tk-cc-queue__item-time">{formatQueueRelativeTime(timeIso)}</span>
               </div>
               <div className="tk-cc-queue__item-bottom">
-                <div className="tk-cc-queue__item-preview">{preview}</div>
+                <div
+                  className="tk-cc-queue__item-preview"
+                  // eslint-disable-next-line react/no-danger
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
                 <span className={`tk-cc-queue__badge tk-cc-queue__badge--${badgeMod}`}>
                   {badgeLabel}
                 </span>
