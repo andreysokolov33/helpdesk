@@ -31,6 +31,12 @@ function formatQueueRelativeTime(iso: string | null | undefined): string {
   return `${diffD} д`;
 }
 
+function queuePreviewText(row: TrackerTicketListItem): string {
+  const last = row.last_message_text?.trim();
+  if (last) return last;
+  return row.title?.trim() || "Без темы";
+}
+
 function queueBadgeMod(row: TrackerTicketListItem): "new" | "work" | "wait" | "comm" | "awaiting" {
   const statusCol = ticketListStatusColumn(row);
   if (statusCol.kind === "comm") {
@@ -64,6 +70,8 @@ export type ActiveTicketQueueSync = {
   communication_state?: string | null;
   communication_label?: string | null;
   updated_at?: string | null;
+  /** Последнее сообщение открытого тикета (мгновенное обновление превью). */
+  last_message_text?: string | null;
 };
 
 function patchRowFromSync(
@@ -85,6 +93,8 @@ function patchRowFromSync(
       row.communication_state,
     communication_label: sync.communication_label ?? row.communication_label,
     updated_at: sync.updated_at ?? row.updated_at,
+    last_message_text:
+      sync.last_message_text !== undefined ? sync.last_message_text : row.last_message_text,
   };
 }
 
@@ -202,7 +212,8 @@ export default function TicketQueueSidebar({
         oldRow.action_by === nextRow.action_by &&
         oldRow.chat_turn === nextRow.chat_turn &&
         oldRow.queue_line === nextRow.queue_line &&
-        oldRow.updated_at === nextRow.updated_at
+        oldRow.updated_at === nextRow.updated_at &&
+        oldRow.last_message_text === nextRow.last_message_text
       ) {
         return prev;
       }
@@ -322,7 +333,7 @@ export default function TicketQueueSidebar({
           const needsAttention = ticketListNeedsAttention(row);
           /** «Нужен ответ» — только бейдж, без красного фона всей строки. */
           const rowHighlight = needsAttention && badgeMod !== "comm";
-          const preview = row.title?.trim() || "Без темы";
+          const preview = queuePreviewText(row);
           const timeIso = row.updated_at || row.date_of_create;
           const badgeLabel =
             badgeMod === "comm" || badgeMod === "awaiting"

@@ -127,26 +127,44 @@ export default function ChatsTab() {
   const assignedToParam = params.get("assigned_to") ?? "";
   const assignedTo = assignedToParam && /^\d+$/.test(assignedToParam) ? Number(assignedToParam) : undefined;
   const periodFilterActive = Boolean(dateFrom && dateTo);
-  const [subscriberInput, setSubscriberInput] = useState(() => params.get("subscriber_q") ?? "");
-  const subscriberQ = params.get("subscriber_q") ?? "";
+  const searchQ = (
+    params.get("q") ||
+    params.get("subscriber_q") ||
+    params.get("message_q") ||
+    ""
+  ).trim();
+  const [searchInput, setSearchInput] = useState(() => searchQ);
 
   useEffect(() => {
-    setSubscriberInput(subscriberQ);
-  }, [subscriberQ]);
+    setSearchInput(searchQ);
+  }, [searchQ]);
+
+  useEffect(() => {
+    if (params.get("q")) return;
+    const legacy = (params.get("subscriber_q") || params.get("message_q") || "").trim();
+    if (!legacy) return;
+    const next = new URLSearchParams(params);
+    next.set("q", legacy);
+    next.delete("subscriber_q");
+    next.delete("message_q");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      const trimmed = subscriberInput.trim();
-      if (trimmed === subscriberQ) return;
+      const trimmed = searchInput.trim();
+      if (trimmed === searchQ) return;
       const next = new URLSearchParams(params);
-      if (trimmed) next.set("subscriber_q", trimmed);
-      else next.delete("subscriber_q");
+      if (trimmed) next.set("q", trimmed);
+      else next.delete("q");
+      next.delete("subscriber_q");
+      next.delete("message_q");
       next.delete("page");
       setParams(next, { replace: true });
       setListPage(1);
     }, 350);
     return () => window.clearTimeout(t);
-  }, [subscriberInput, subscriberQ, params, setParams]);
+  }, [searchInput, searchQ, params, setParams]);
 
   useEffect(() => {
     if (!listMode) return;
@@ -188,7 +206,7 @@ export default function ChatsTab() {
           page: listPage,
           per_page: perPage,
           closed: closedMode,
-          subscriber_q: subscriberQ || undefined,
+          q: searchQ || undefined,
           date_from: useDateFilter && dateFrom ? dateFrom : undefined,
           date_to: useDateFilter && dateTo ? dateTo : undefined,
           assigned_to: assignedTo,
@@ -224,7 +242,7 @@ export default function ChatsTab() {
             page: listPage,
             per_page: perPage,
             closed: closedMode,
-            subscriber_q: subscriberQ || undefined,
+            q: searchQ || undefined,
             date_from: useDateFilter && dateFrom ? dateFrom : undefined,
             date_to: useDateFilter && dateTo ? dateTo : undefined,
             assigned_to: assignedTo,
@@ -246,12 +264,12 @@ export default function ChatsTab() {
         else setListPolling(false);
       }
     },
-    [listPrefsReady, listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo, assignedTo, periodFilterActive],
+    [listPrefsReady, listPage, perPage, closedMode, searchQ, dateFrom, dateTo, assignedTo, periodFilterActive],
   );
 
   useEffect(() => {
     listDigestRef.current = null;
-  }, [listPage, perPage, closedMode, subscriberQ, dateFrom, dateTo, assignedTo]);
+  }, [listPage, perPage, closedMode, searchQ, dateFrom, dateTo, assignedTo]);
 
   useEffect(() => {
     if (!listMode || !listPrefsReady) return;
@@ -267,7 +285,7 @@ export default function ChatsTab() {
         page: listPage,
         per_page: perPage,
         closed: closedMode,
-        subscriber_q: subscriberQ || undefined,
+        q: searchQ || undefined,
         date_from: useDateFilter && dateFrom ? dateFrom : undefined,
         date_to: useDateFilter && dateTo ? dateTo : undefined,
         assigned_to: assignedTo,
@@ -289,7 +307,7 @@ export default function ChatsTab() {
     listPage,
     perPage,
     closedMode,
-    subscriberQ,
+    searchQ,
     dateFrom,
     dateTo,
     assignedTo,
@@ -594,13 +612,13 @@ export default function ChatsTab() {
 
           <div className="ch-filters">
             <label className="ch-filter-field ch-filter-field--grow">
-              <span className="ch-filter-label">Абонент</span>
+              <span className="ch-filter-label">Поиск</span>
               <input
                 type="search"
                 className="ch-filter-input"
-                placeholder="ФИО, id или логин"
-                value={subscriberInput}
-                onChange={(e) => setSubscriberInput(e.target.value)}
+                placeholder="Абонент, логин или текст сообщения"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
               />
             </label>
             {closedMode ? (

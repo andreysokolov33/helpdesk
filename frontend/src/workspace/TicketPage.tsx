@@ -44,6 +44,7 @@ import {
   isEngineerTicketMessage,
   ticketAuthorLabel,
 } from "@/utils/ticketMessages";
+import { htmlToPlainText } from "@/utils/ticketMessageValidation";
 import {
   CHAT_PAGE_SIZE,
   CHAT_SCROLL_EDGE_PX,
@@ -400,6 +401,14 @@ export default function TicketPage() {
 
   const activeTicketQueueSync = useMemo(() => {
     if (!detail) return null;
+    let lastPreview: string | null | undefined;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m.is_initial) continue;
+      const plain = htmlToPlainText(m.text || "").trim();
+      lastPreview = plain || null;
+      break;
+    }
     return {
       id: detail.id,
       status: detail.status,
@@ -413,6 +422,7 @@ export default function TicketPage() {
       communication_state: detail.communication_state ?? null,
       communication_label: detail.communication_label ?? null,
       updated_at: detail.updated_at_iso ?? null,
+      last_message_text: lastPreview,
     };
   }, [
     detail?.id,
@@ -427,6 +437,7 @@ export default function TicketPage() {
     detail?.communication_state,
     detail?.communication_label,
     detail?.updated_at_iso,
+    messages,
   ]);
 
   const clearComposerDrafts = useCallback(() => {

@@ -50,6 +50,8 @@ export type TrackerTicketListItem = {
   date_of_close: string | null;
   rating: number | null;
   rating_comment: string | null;
+  /** Превью последнего сообщения чата по тикету. */
+  last_message_text?: string | null;
 };
 
 export type TrackerTicketListStats = {
@@ -115,6 +117,7 @@ const _LIST_ROW_MERGE_KEYS: (keyof TrackerTicketListItem)[] = [
   "title",
   "category_label",
   "subscriber_name",
+  "last_message_text",
 ];
 
 function trackerListRowEqual(a: TrackerTicketListItem, b: TrackerTicketListItem): boolean {
@@ -260,7 +263,9 @@ export async function fetchTrackerListDigest(params: {
   page: number;
   per_page: number;
   closed?: boolean;
+  q?: string;
   subscriber_q?: string;
+  message_q?: string;
   date_from?: string;
   date_to?: string;
   assigned_to?: number;
@@ -271,8 +276,12 @@ export async function fetchTrackerListDigest(params: {
     per_page: String(params.per_page),
   });
   if (params.closed) sp.set("closed", "true");
-  const q = params.subscriber_q?.trim();
-  if (q) sp.set("subscriber_q", q);
+  const search = params.q?.trim();
+  if (search) sp.set("q", search);
+  const sub = params.subscriber_q?.trim();
+  if (sub) sp.set("subscriber_q", sub);
+  const mq = params.message_q?.trim();
+  if (mq && mq.length >= 2) sp.set("message_q", mq);
   if (params.date_from) sp.set("date_from", params.date_from);
   if (params.date_to) sp.set("date_to", params.date_to);
   if (params.assigned_to != null) sp.set("assigned_to", String(params.assigned_to));
@@ -293,7 +302,9 @@ export async function fetchOpenTrackerTickets(params: {
   page: number;
   per_page: number;
   closed?: boolean;
+  q?: string;
   subscriber_q?: string;
+  message_q?: string;
   date_from?: string;
   date_to?: string;
   assigned_to?: number;
@@ -303,8 +314,12 @@ export async function fetchOpenTrackerTickets(params: {
     per_page: String(params.per_page),
   });
   if (params.closed) sp.set("closed", "true");
-  const q = params.subscriber_q?.trim();
-  if (q) sp.set("subscriber_q", q);
+  const search = params.q?.trim();
+  if (search) sp.set("q", search);
+  const sub = params.subscriber_q?.trim();
+  if (sub) sp.set("subscriber_q", sub);
+  const mq = params.message_q?.trim();
+  if (mq && mq.length >= 2) sp.set("message_q", mq);
   if (params.date_from) sp.set("date_from", params.date_from);
   if (params.date_to) sp.set("date_to", params.date_to);
   if (params.assigned_to != null) sp.set("assigned_to", String(params.assigned_to));

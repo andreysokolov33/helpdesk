@@ -169,103 +169,134 @@
     <article class="kb-reader" id="kb-content-html">
 <!-- ===== content_html: START ===== -->
 
-<!-- ВВЕДЕНИЕ -->
-<div class="section-card" id="sec-intro">
-    <p>Абонент пытается пополнить баланс или оплатить тариф, но платёж не проходит: ошибка в ЛК, проблема с банком, технический сбой. Абоненты также обращаются, когда оплата прошла, но интернет не появился.</p>
+<!-- ДИАГНОСТИКА ПОКАЗАЛА -> ДЕЙСТВИЕ -->
+<div class="section-card" id="sec-diagnostic-tool">
+  <div class="section-lbl">Регламент</div>
+  <h2>Диагностика показала -> Действие</h2>
+  <p>Нажмите на финансовый запрос или статус абонента, чтобы увидеть регламентированные действия оператора:</p>
+  
+  <div class="diag-widget">
+      <div class="diag-header">Выберите обращение абонента:</div>
+      <div class="diag-grid">
+          <button class="diag-btn" onclick="showDiagResult('Обращение ЮЛ или партнера по вопросам документов', 'Направить клиента к менеджеру по работе с клиентами и партнерами (cm@wifitochka.ru, тел. 89588616731, будни 8:00–16:00 МСК) (ID + краткий комментарий)')">ЮЛ или партнеры</button>
+          <button class="diag-btn" onclick="showDiagResult('Запрос документов (счета, договора) от физлица', 'Зафиксировать обращение в системе и передать на исполнение инженерам')">Запрос документов физлицом</button>
+          <button class="diag-btn" onclick="showDiagResult('Абонент просит компенсацию за время отключения связи', 'Оформить заявку на компенсацию инженерам, указав ID, период отсутствия связи и причину')">Компенсация за отключение связи</button>
+          <button class="diag-btn" onclick="showDiagResult('Абонент случайно отключил тариф в ЛК и просит возврат', 'Проверить историю операций в биллинге. Создать техническую заявку на возврат средств')">Случайное отключение тарифа</button>
+          <button class="diag-btn" onclick="showDiagResult('Абонент хочет вывести остаток средств на банковскую карту', 'Объяснить, что вывод на карту возможен по решению инженеров, оформить заявку')">Вывод средств на карту</button>
+      </div>
+      <div class="diag-result-box" id="diagResultBox"></div>
+  </div>
 </div>
 
-<!-- СИТУАЦИЯ «ОШИБКА ПРИ ОПЛАТЕ — ПЛАТЁЖ НЕ ПРОХОДИТ» -->
-<div class="section-card" id="sec-whatis">
-    <div class="section-lbl">Раздел 1</div>
-    <h2>Ситуация «Ошибка при оплате — платёж не проходит»</h2>
-    <p>Абонент заходит в личный кабинет, пытается оплатить — и получает ошибку.</p>
+<!-- МЕТОДИЧЕСКИЙ МАТЕРИАЛ -->
+<div class="section-card" id="sec-article">
+  <div class="section-lbl">Инструкция</div>
+  <h2>Методический материал</h2>
+  
+  <p style="font-size: 15px; margin-bottom: 24px;">При разборе финансовых обращений важно строго следовать разграничению прав доступа в биллинге и регламенту взаимодействия с партнерами компании.</p>
 
-    <h3>Что говорят абоненты:</h3>
-    <ul>
-        <li>«Здравствуйте, почему банки не работают для оплаты?».</li>
-        <li>«Здравствуйте, не могу оплатить».</li>
-        <li>«Здравствуйте, почему система платежей не работает?».</li>
-        <li>«Когда я пытаюсь оплатить, пишет «сбой, повторите попытку». Почему?».</li>
-        <li>«Добрый день, не могу внести оплату, автоматически сбрасывает».</li>
-        <li>«Не могу завершить оплату — удалённый сервер не отвечает».</li>
-    </ul>
+  <!-- Главное правило -->
+  <div class="rule" style="margin-bottom: 28px;">
+      <div class="rule-title">Главное правило</div>
+      Оператор контакт-центра самостоятельно не принимает никаких финансовых решений. При запросе документов (счетов, договоров) задача оператора — зафиксировать детали обращения и передать их на исполнение.
+  </div>
+
+  <!-- ЮЛ и Партнеры (Visual Cards) -->
+  <h3 style="margin-bottom: 12px;">Работа с юридическими лицами и партнёрами</h3>
+
+  <div class="rule" style="margin-bottom: 20px;">
+      <div class="rule-title">Важно</div>
+      Сообщать контактные данные менеджера по работе с ЮЛ можно <strong>только</strong> юридическим лицам, организациям или потенциальным партнёрам компании. Физическим лицам эти контакты не передавать.
+  </div>
+
+  <div class="comp-grid">
+      <div class="comp-card">
+          <h3>Менеджер по работе с ЮЛ</h3>
+          <p style="font-size: 13px; margin: 0 0 12px 0;">Обслуживание корпоративных клиентов</p>
+          <ul class="comp-list">
+              <li>Вопросы предоставления документов, договоров или сверки расчетов для ЮЛ оператором не решаются.</li>
+              <li>Все обращения корпоративных клиентов перенаправляются персональному менеджеру.</li>
+          </ul>
+      </div>
+      <div class="comp-card">
+          <h3>Контакты и график работы</h3>
+          <p style="font-size: 13px; margin: 0 0 12px 0;">Регламент связи</p>
+          <ul class="comp-list">
+              <li><strong>Рабочие часы менеджера:</strong> с 8:00 до 16:00 по московскому времени в будние дни.</li>
+              <li><strong>Электронная почта для ЮЛ:</strong> cm@wifitochka.ru</li>
+              <li><strong>Телефон:</strong> 89588616731</li>
+          </ul>
+      </div>
+  </div>
+
+  <!-- Алгоритм (Step-by-Step Track) -->
+  <h3 style="margin-bottom: 12px; margin-top: 28px;">Алгоритм обработки финансового запроса</h3>
+  <div class="step-list">
+      <div class="step-card">
+          <span class="step-marker">Шаг 1</span>
+          <div class="step-text"><strong>Определить статус клиента:</strong> Выяснить, обращается физическое лицо, юридическое лицо или партнёр компании.</div>
+      </div>
+      <div class="step-card">
+          <span class="step-marker">Шаг 2</span>
+          <div class="step-text"><strong>Маршрутизация ЮЛ:</strong> При обращении ЮЛ или партнера перенаправить запрос менеджеру на почту cm@wifitochka.ru или телефон 89588616731 (график: 8:00–16:00 МСК) с указанием ID и краткого комментария с описанием проблемы.</div>
+      </div>
+      <div class="step-card">
+          <span class="step-marker">Шаг 3</span>
+          <div class="step-text"><strong>Проверка истории операций:</strong> При запросах физических лиц (случайное отключение тарифа) обязательно проверить лог операций в биллинге.</div>
+      </div>
+      <div class="step-card">
+          <span class="step-marker">Шаг 4</span>
+          <div class="step-text"><strong>Передача тикета:</strong> Зафиксировать обращение в системе. Передать инженерам заявку на компенсацию (при отсутствии связи) или на возврат/вывод средств на карту.</div>
+      </div>
+  </div>
 </div>
 
-<!-- ЧТО ДЕЛАТЬ ОПЕРАТОРУ -->
-<div class="section-card" id="sec-operator">
-    <div class="section-lbl">Инструкция</div>
-    <h2>Что делать оператору</h2>
-    <ol>
-        <li>Уточнить, на каком этапе возникает ошибка и какой платёжной системой пользуется абонент.</li>
-        <li>Предложить:
-            <ul>
-                <li>Оплатить через альтернативные системы: ЮMoney, Газпромбанк (принимают карты любых банков), Альфа-Банк, СБП.</li>
-                <li>Лучше проводить оплату, будучи авторизованным в сети. Если нет тарифа — не страшно: все платёжные системы должны работать и без интернета, но менее стабильно.</li>
-            </ul>
-        </li>
-        <li>Если проблема остаётся — создать заявку инженерам.</li>
-    </ol>
-</div>
-
-<!-- ПРИМЕР ДИАЛОГА -->
-<div class="section-card" id="sec-dialog">
-    <div class="section-lbl">Диалог</div>
-    <h2>Пример диалога</h2>
-    <div class="dlg">
-        <div class="bbl sub"><div class="bbl-lbl">Абонент</div>— Здравствуйте, не могу оплатить. Пишет «сбой, повторите попытку».</div>
-        <div class="bbl agt"><div class="bbl-lbl">Оператор контакт-центра</div>— Добрый день! На каком этапе ошибка? Какой платёжной системой пользуетесь?</div>
-    </div>
-</div>
-
-<!-- БЛОК 6: SLA -->
+<!-- SLA И СРОКИ -->
 <div class="section-card" id="sec-sla">
-    <div class="section-lbl">Регламент</div>
-    <h2>Когда ждать ответа от инженеров</h2>
-    <p>Предупредите абонента о сроках заранее.</p>
-
-    <div class="dl-box-card">
-        <div class="dl-header-bar">Правило</div>
-        <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
-            <tbody>
-                <tr style="border-bottom: 1.5px solid var(--line);">
-                    <td class="dl-cell-left" style="width: 65%; padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">С 8:00 до 16:00 в будни по московскому времени</td>
-                    <td class="dl-cell-right" style="width: 35%; padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">15 минут.</td>
-                </tr>
-                <tr>
-                    <td class="dl-cell-left" style="padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">Остальное время, выходные и праздники</td>
-                    <td class="dl-cell-right" style="padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">до следующего рабочего дня.</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
+  <div class="section-lbl">Сроки обработки</div>
+  <h2>Когда ждать ответа от инженеров</h2>
+  <p>Предупредите абонента о сроках заранее.</p>
+  
+  <div class="dl-box-card">
+      <div class="dl-header-bar">Правило</div>
+      <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+          <tbody>
+              <tr style="border-bottom: 1.5px solid var(--line);">
+                  <td class="dl-cell-left" style="width: 65%; padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">С 8:00 до 16:00 в будни по московскому времени</td>
+                  <td class="dl-cell-right" style="width: 35%; padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">15 минут.</td>
+              </tr>
+              <tr>
+                  <td class="dl-cell-left" style="padding: 16px 20px; font-size: 14px; color: var(--text-primary); line-height: 1.5;">Остальное время, выходные и праздники</td>
+                  <td class="dl-cell-right" style="padding: 16px 20px; font-size: 14px; font-weight: 800; color: var(--status-ok); border-left: 1.5px solid var(--line); line-height: 1.5;">до следующего рабочего дня.</td>
+              </tr>
+          </tbody>
+      </table>
+  </div>
 </div>
 
-<!-- ИТОГ -->
+<!-- ОГРАНИЧЕНИЯ -->
+<div class="section-card" id="sec-warnings">
+  <div class="section-lbl">Запреты</div>
+  <h2>Что нельзя делать</h2>
+  
+  <div class="rule">
+      <div class="rule-title">Критически важно</div>
+      <ul>
+          <li>Не производить финансовых расчетов, возвратов или выводов средств на карту своими силами в системе</li>
+          <li>Не отказывать абоненту в приеме запроса на документы (договор, акты, счета), всегда фиксировать детали в тикет</li>
+          <li>Не обещать точные суммы или факт одобрения возврата — окончательное решение принимается только инженерами</li>
+      </ul>
+  </div>
+</div>
+
+<!-- ИТОГОВЫЙ БЛОК ДЛЯ OBSERVER -->
 <div class="section-card" id="scrollTargetSummary">
-    <div class="section-lbl">Справочник</div>
-    <h2>Итог</h2>
+  <p>Убедитесь, что вы проверили лог операций в карточке абонента перед оформлением заявки на возврат средств.</p>
+  <div style="text-align: center; border-top: 1.5px solid var(--line); padding-top: 24px;">
+      <button class="btn-main" onclick="switchView('quiz'); return false;">Пройти тестирование</button>
+  </div>
+</div>
 
-    <h3>Как разговаривать с абонентом</h3>
-    <div class="check-card-list">
-        <div class="check-card-item">
-            <div class="check-card-icon">1</div>
-            <div class="check-card-text">
-                <strong>Узнайте детали платежа</strong>
-                Узнайте этап и способ оплаты — карта, СБП, приложение банка, платёжная система.
-            </div>
-        </div>
-        <div class="check-card-item">
-            <div class="check-card-icon">2</div>
-            <div class="check-card-text">
-                <strong>Предложите обходные пути</strong>
-                Предлагайте альтернативы — ЮMoney, Газпромбанк, Альфа-Банк, СБП.
-            </div>
-        </div>
-    </div>
-
-    <div style="text-align: center; border-top: 1.5px solid var(--line); padding-top: 24px;">
-        <button class="btn-main" type="button">Пройти тестирование по теме</button>
-    </div>
 </div>
 
 <!-- ===== content_html: END ===== -->

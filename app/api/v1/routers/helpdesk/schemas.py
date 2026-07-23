@@ -62,6 +62,8 @@ class TrackerTicketListItem(BaseModel):
     date_of_close: Optional[datetime] = None
     rating: Optional[int] = None
     rating_comment: Optional[str] = None
+    last_message_text: Optional[str] = None
+    """Превью последнего сообщения чата, привязанного к тикету."""
 
 
 class UnreadTicketsResponse(BaseModel):

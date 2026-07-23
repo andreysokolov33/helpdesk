@@ -877,6 +877,41 @@ def _tracker_subscriber_filter_sql(subscriber_q: str | None) -> tuple[str, dict[
     return f"AND ({' OR '.join(parts)})", params
 
 
+def _escape_ilike_pattern(raw: str) -> str:
+    """Экранирование % _ \\ для ILIKE … ESCAPE '\\'."""
+    return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _tracker_message_filter_sql(message_q: str | None) -> tuple[str, dict[str, Any]]:
+    """Фильтр тикетов по подстроке в переписке (user_mail / tracker_messages)."""
+    q = (message_q or "").strip()
+    if len(q) < 2:
+        return "", {}
+    pattern = f"%{_escape_ilike_pattern(q)}%"
+    sql = """AND (
+        EXISTS (
+            SELECT 1 FROM users.user_mail um
+            WHERE um.ticket_id = tt.id
+              AND um."text" ILIKE :msg_q_pattern ESCAPE '\\'
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM users.tracker_ticket_mail_links l
+            JOIN users.user_mail um ON um.id = l.user_mail_id
+            WHERE l.ticket_id = tt.id
+              AND um."text" ILIKE :msg_q_pattern ESCAPE '\\'
+        )
+        OR EXISTS (
+            SELECT 1 FROM users.tracker_messages tm
+            WHERE tm.ticket_id = tt.id
+              AND tm.body ILIKE :msg_q_pattern ESCAPE '\\'
+        )
+        OR COALESCE(tt.title, '') ILIKE :msg_q_pattern ESCAPE '\\'
+        OR COALESCE(tt.body, '') ILIKE :msg_q_pattern ESCAPE '\\'
+    )"""
+    return sql, {"msg_q_pattern": pattern}
+
+
 def _tracker_date_filter_sql(
     *,
     closed: bool,
@@ -932,16 +967,44 @@ def _tracker_list_filter_sql(
     date_to: date | None,
     hide_manager_line: bool = False,
     assigned_to: int | None = None,
+    message_q: str | None = None,
+    search_q: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     base = _tracker_list_status_sources_sql(closed=closed)
-    sub_sql, sub_params = _tracker_subscriber_filter_sql(subscriber_q)
+    unified = (search_q or "").strip()
+    if unified:
+        sub_sql, sub_params = _tracker_subscriber_filter_sql(unified)
+        msg_sql, msg_params = _tracker_message_filter_sql(unified)
+
+        def _without_and(clause: str) -> str:
+            s = clause.strip()
+            return s[3:].strip() if s.upper().startswith("AND") else s
+
+        parts = [_without_and(c) for c in (sub_sql, msg_sql) if c]
+        search_sql = f"AND ({' OR '.join(parts)})" if parts else ""
+        search_params = {**sub_params, **msg_params}
+        sub_sql, sub_params = "", {}
+        msg_sql, msg_params = "", {}
+    else:
+        search_sql, search_params = "", {}
+        sub_sql, sub_params = _tracker_subscriber_filter_sql(subscriber_q)
+        msg_sql, msg_params = _tracker_message_filter_sql(message_q)
     date_sql, date_params = _tracker_date_filter_sql(
         closed=closed, date_from=date_from, date_to=date_to
     )
     assignee_sql, assignee_params = _tracker_assignee_filter_sql(assigned_to)
     manager_sql = "AND tt.support_line <> 4" if hide_manager_line else ""
-    sql = f"{base}\n          {sub_sql}\n          {date_sql}\n          {manager_sql}\n          {assignee_sql}"
-    params = {**sub_params, **date_params, **assignee_params}
+    sql = (
+        f"{base}\n          {search_sql}\n          {sub_sql}\n          {msg_sql}\n"
+        f"          {date_sql}\n          {manager_sql}\n          {assignee_sql}"
+    )
+    params = {
+        **search_params,
+        **sub_params,
+        **msg_params,
+        **date_params,
+        **assignee_params,
+    }
     return sql, params
 
 
@@ -1202,6 +1265,8 @@ def _tracker_list_digest_cache_key(
     date_from: date | None,
     date_to: date | None,
     assigned_to: int | None = None,
+    message_q: str | None = None,
+    search_q: str | None = None,
 ) -> str:
     payload = json.dumps(
         {
@@ -1210,6 +1275,8 @@ def _tracker_list_digest_cache_key(
             "p": page,
             "n": per_page,
             "q": (subscriber_q or "").strip(),
+            "mq": (message_q or "").strip(),
+            "sq": (search_q or "").strip(),
             "df": date_from.isoformat() if date_from else "",
             "dt": date_to.isoformat() if date_to else "",
             "a": assigned_to,
@@ -1310,7 +1377,8 @@ def _build_tracker_list_page_sql(
         tc.name AS category_name,
         tcp.name AS category_parent_name,
         cs_op.full_name AS assignee_name,
-        cs_op.role AS assignee_role
+        cs_op.role AS assignee_role,
+        last_msg.last_message_text
     FROM queue q
     LEFT JOIN users."user" u ON q.user_id = u.id AND q.object_type = 'user'
     LEFT JOIN LATERAL (
@@ -1325,6 +1393,35 @@ def _build_tracker_list_page_sql(
     LEFT JOIN users.ticket_categories tcp ON tc.parent_id = tcp.id
     LEFT JOIN users.skystream_users cs_op ON q.assigned_to = cs_op.id
     LEFT JOIN users.tracker_tickets_ratings ttr ON ttr.ticket_id = q.id
+    LEFT JOIN LATERAL (
+        SELECT m.txt AS last_message_text
+        FROM (
+            SELECT um.text AS txt,
+                   COALESCE(um.date_tz, to_timestamp(um.date)) AS ts,
+                   um.id AS mid
+            FROM users.user_mail um
+            WHERE COALESCE(q.source, 'call_center') = 'lk'
+              AND um.ticket_id = q.id
+            UNION ALL
+            SELECT um.text,
+                   COALESCE(um.date_tz, to_timestamp(um.date)),
+                   um.id
+            FROM users.tracker_ticket_mail_links l
+            JOIN users.user_mail um ON um.id = l.user_mail_id
+            WHERE COALESCE(q.source, 'call_center') = 'lk'
+              AND l.ticket_id = q.id
+            UNION ALL
+            SELECT tm.body,
+                   tm.created_at,
+                   tm.id
+            FROM users.tracker_messages tm
+            WHERE COALESCE(q.source, 'call_center') <> 'lk'
+              AND tm.ticket_id = q.id
+        ) m
+        WHERE m.ts IS NOT NULL
+        ORDER BY m.ts DESC, m.mid DESC
+        LIMIT 1
+    ) last_msg ON TRUE
     ORDER BY
         {order_by}
     LIMIT :per_page OFFSET :offset
@@ -1388,6 +1485,8 @@ async def fetch_tracker_list_page(
     page: int,
     per_page: int,
     subscriber_q: str | None = None,
+    message_q: str | None = None,
+    search_q: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     assigned_to: int | None = None,
@@ -1398,6 +1497,8 @@ async def fetch_tracker_list_page(
     filter_sql, filter_params = _tracker_list_filter_sql(
         closed=closed,
         subscriber_q=subscriber_q,
+        message_q=message_q,
+        search_q=search_q,
         date_from=date_from,
         date_to=date_to,
         hide_manager_line=hide_manager,
@@ -1736,6 +1837,8 @@ async def fetch_tracker_list_digest(
     page: int,
     per_page: int,
     subscriber_q: str | None = None,
+    message_q: str | None = None,
+    search_q: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     assigned_to: int | None = None,
@@ -1752,6 +1855,8 @@ async def fetch_tracker_list_digest(
         page=page,
         per_page=per_page,
         subscriber_q=subscriber_q,
+        message_q=message_q,
+        search_q=search_q,
         date_from=date_from,
         date_to=date_to,
         assigned_to=assigned_to,
@@ -1773,6 +1878,8 @@ async def fetch_tracker_list_digest(
     filter_sql, filter_params = _tracker_list_filter_sql(
         closed=closed,
         subscriber_q=subscriber_q,
+        message_q=message_q,
+        search_q=search_q,
         date_from=date_from,
         date_to=date_to,
         hide_manager_line=hide_manager,
@@ -2021,6 +2128,13 @@ def _text_snippet(text: str | None, limit: int = 100) -> str:
     if len(raw) <= limit:
         return raw
     return raw[: limit - 1] + "…"
+
+
+def _plain_message_preview(text: str | None, limit: int = 120) -> str:
+    """Превью последнего сообщения для списка/очереди: без HTML, одна строка."""
+    from app.core.ticket_message_validation import html_to_plain_text
+
+    return _text_snippet(html_to_plain_text(text or ""), limit)
 
 
 def _parse_reply_to_id(raw: str | int | None) -> int | None:

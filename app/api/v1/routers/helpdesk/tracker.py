@@ -255,6 +255,7 @@ def map_tracker_list_rows_to_items(
                 date_of_close=m.get("date_of_close"),
                 rating=int(m["rating"]) if m.get("rating") is not None else None,
                 rating_comment=m.get("rating_comment"),
+                last_message_text=ticket_svc._plain_message_preview(m.get("last_message_text")) or None,
             )
         )
     return items
@@ -273,6 +274,16 @@ async def list_tracker_tickets(
     subscriber_q: Optional[str] = Query(
         None,
         description="Поиск по абоненту: ФИО, id, логин",
+    ),
+    message_q: Optional[str] = Query(
+        None,
+        description="Поиск по тексту сообщений в тикете (подстрока, мин. 2 символа)",
+        max_length=200,
+    ),
+    q: Optional[str] = Query(
+        None,
+        description="Единый поиск: абонент ИЛИ текст сообщений",
+        max_length=200,
     ),
     date_from: Optional[date] = Query(
         None,
@@ -319,6 +330,8 @@ async def list_tracker_tickets(
                 page=page,
                 per_page=per_page,
                 subscriber_q=subscriber_q,
+                message_q=message_q,
+                search_q=q,
                 date_from=date_from,
                 date_to=date_to,
                 assigned_to=eff_assigned_to,
@@ -333,6 +346,8 @@ async def list_tracker_tickets(
                     page=page,
                     per_page=per_page,
                     subscriber_q=subscriber_q,
+                    message_q=message_q,
+                    search_q=q,
                     date_from=date_from,
                     date_to=date_to,
                     assigned_to=eff_assigned_to,
@@ -371,6 +386,8 @@ async def list_tracker_tickets_digest(
     per_page: int = Query(20, ge=1, le=100),
     closed: bool = Query(False),
     subscriber_q: Optional[str] = Query(None),
+    message_q: Optional[str] = Query(None, max_length=200),
+    q: Optional[str] = Query(None, max_length=200),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     assigned_to: Optional[int] = Query(None),
@@ -398,6 +415,8 @@ async def list_tracker_tickets_digest(
         page=page,
         per_page=per_page,
         subscriber_q=subscriber_q,
+        message_q=message_q,
+        search_q=q,
         date_from=date_from,
         date_to=date_to,
         assigned_to=eff_assigned_to,
