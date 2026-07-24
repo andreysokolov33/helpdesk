@@ -530,7 +530,7 @@ async def register_call(
         status=status,
         title=title,
         body=None,
-        priority=(payload.priority or "middle").strip() or "middle",
+        priority="middle",
         source=ticket_source,
         complexity="L1",
         person_type=person_type,

@@ -117,7 +117,6 @@ export default function ChatSectionPage() {
   const [pendingNewCount, setPendingNewCount] = useState(0);
   const [createTicketOpen, setCreateTicketOpen] = useState(false);
   const [createTicketBody, setCreateTicketBody] = useState("");
-  const [createTicketPriority, setCreateTicketPriority] = useState<"low" | "middle" | "high" | "critical">("middle");
   const [createTicketSubmitting, setCreateTicketSubmitting] = useState(false);
   const [createTicketError, setCreateTicketError] = useState("");
   const [existingOpenTickets, setExistingOpenTickets] = useState<OpenSubscriberTicketItem[]>([]);
@@ -197,7 +196,6 @@ export default function ChatSectionPage() {
 
   function openCreateTicket() {
     setCreateTicketBody("");
-    setCreateTicketPriority("middle");
     setCreateTicketError("");
     setExistingOpenTickets([]);
     setCreateTicketOpen(true);
@@ -207,7 +205,6 @@ export default function ChatSectionPage() {
     if (createTicketSubmitting) return;
     setCreateTicketOpen(false);
     setCreateTicketBody("");
-    setCreateTicketPriority("middle");
     setCreateTicketError("");
     setExistingOpenTickets([]);
   }
@@ -227,11 +224,9 @@ export default function ChatSectionPage() {
         body,
         user_id: activeId,
         source: "old_cs",
-        priority: createTicketPriority,
       });
       setCreateTicketOpen(false);
       setCreateTicketBody("");
-      setCreateTicketPriority("middle");
       navigate(`/tickets/${result.id}`);
     } catch (err: unknown) {
       setCreateTicketError(err instanceof Error ? err.message : "Не удалось создать тикет");
@@ -1132,33 +1127,6 @@ export default function ChatSectionPage() {
                 <div className="cs-ticket-modal__existing-or">или создайте новый</div>
               </div>
             ) : null}
-            <div className="cs-ticket-modal__field">
-              <span className="cs-ticket-modal__lbl">Приоритет</span>
-              <div className="cs-ticket-modal__priority" role="radiogroup" aria-label="Приоритет">
-                {(
-                  [
-                    ["low", "Низкий"],
-                    ["middle", "Средний"],
-                    ["high", "Высокий"],
-                    ["critical", "Критический"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="radio"
-                    aria-checked={createTicketPriority === id}
-                    className={`cs-ticket-modal__prio cs-ticket-modal__prio--${id}${
-                      createTicketPriority === id ? " cs-ticket-modal__prio--on" : ""
-                    }`}
-                    disabled={createTicketSubmitting}
-                    onClick={() => setCreateTicketPriority(id)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
             <label className="cs-ticket-modal__field">
               <span className="cs-ticket-modal__lbl">
                 Суть обращения <span className="cs-ticket-modal__req">*</span>

@@ -258,10 +258,6 @@ class RegisterCallRequest(BaseModel):
         None,
         description="Источник тикета: call_center (по умолчанию) | old_cs (из старого чата, только existing)",
     )
-    priority: str | None = Field(
-        "middle",
-        description="Приоритет: low | middle | high | critical (по умолчанию middle)",
-    )
 
     @model_validator(mode="after")
     def validate_connection_kind(self) -> "RegisterCallRequest":
@@ -276,11 +272,6 @@ class RegisterCallRequest(BaseModel):
         if src == "old_cs" and kind != "existing":
             raise ValueError("Источник old_cs доступен только для существующего абонента")
         self.source = src
-
-        pr = (self.priority or "middle").strip() or "middle"
-        if pr not in ("low", "middle", "high", "critical"):
-            raise ValueError("Некорректный приоритет")
-        self.priority = pr
 
         if kind == "existing":
             if self.user_id is None:

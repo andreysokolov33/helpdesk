@@ -366,8 +366,6 @@ export type RegisterCallPayload = {
   hotspot_id?: number | null;
   /** call_center (default) | old_cs — тикет из старого чата /chat */
   source?: "call_center" | "old_cs" | null;
-  /** low | middle | high | critical (default middle) */
-  priority?: "low" | "middle" | "high" | "critical" | null;
 };
 
 export type RegisterCallResponse = { id: number };
