@@ -14,6 +14,7 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
     ActionMessage,
     FreezeRequest,
     PaymentHistoryListResponse,
+    SessionHistoryListResponse,
     TariffBlockResponse,
     TariffHistoryListResponse,
     ProfileTicketListResponse,
@@ -52,6 +53,17 @@ async def list_user_tariff_history(
     db: AsyncSession = Depends(get_db),
 ) -> TariffHistoryListResponse:
     return await svc.load_user_tariff_history_page(db, user_id, page=page, per_page=per_page)
+
+
+@router.get("/{user_id}/sessions", response_model=SessionHistoryListResponse)
+async def list_user_sessions(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=50),
+    _user: dict = Depends(require_tracker_user),
+    db: AsyncSession = Depends(get_db),
+) -> SessionHistoryListResponse:
+    return await svc.load_user_sessions_page(db, user_id, page=page, per_page=per_page)
 
 
 @router.get("/{user_id}/profile/tickets", response_model=ProfileTicketListResponse)

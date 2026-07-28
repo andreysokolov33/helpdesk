@@ -21,17 +21,19 @@ import { ProfileHelpTip } from "@/components/ProfileHelpTip";
 import FastCheckPanel from "@/components/FastCheckPanel";
 import PaymentsHistoryPanel from "@/components/PaymentsHistoryPanel";
 import TariffsHistoryPanel from "@/components/TariffsHistoryPanel";
+import SessionsHistoryPanel from "@/components/SessionsHistoryPanel";
 import TicketsHistoryPanel from "@/components/TicketsHistoryPanel";
 import OpenSessionsCard from "@/components/OpenSessionsCard";
 import DatePickerField, { addDaysYmd, dateYmdToIso, todayYmd } from "@/components/DatePickerField";
 import { PasswordResetModal } from "@/components/PasswordResetModal";
 import ToastNotice, { type ToastVariant } from "@/components/ToastNotice";
 
-type StatsTab = "payments" | "tariffs" | "appeals";
+type StatsTab = "payments" | "tariffs" | "sessions" | "appeals";
 
 const STATS_TABS: { id: StatsTab; label: string }[] = [
   { id: "payments", label: "История платежей" },
   { id: "tariffs", label: "История тарифов" },
+  { id: "sessions", label: "Сессии" },
   { id: "appeals", label: "Обращения" },
 ];
 
@@ -1059,6 +1061,8 @@ export default function UserProfilePage() {
                     <PaymentsHistoryPanel userId={p.user_id} />
                   ) : statsTab === "tariffs" ? (
                     <TariffsHistoryPanel userId={p.user_id} />
+                  ) : statsTab === "sessions" ? (
+                    <SessionsHistoryPanel userId={p.user_id} />
                   ) : (
                     <TicketsHistoryPanel userId={p.user_id} />
                   )}

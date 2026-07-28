@@ -69,6 +69,19 @@ def format_session_duration(seconds: int | None) -> str:
     return " ".join(parts)
 
 
+def format_session_span(seconds: int | None) -> str:
+    """Длительность сессии: «N дн HH:MM» или «HH:MM»."""
+    if seconds is None or seconds < 0:
+        return "—"
+    total = int(seconds)
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins = rem // 60
+    if days:
+        return f"{days} дн {hours:02d}:{mins:02d}"
+    return f"{hours:02d}:{mins:02d}"
+
+
 def format_traffic_mb(mb: float | None) -> str:
     if mb is None:
         return "—"

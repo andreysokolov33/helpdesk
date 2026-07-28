@@ -15,6 +15,8 @@ from app.api.v1.routers.helpdesk.user_profile_schemas import (
     PaymentHistoryItem,
     PaymentHistoryListResponse,
     ProfileAutoRenew,
+    SessionHistoryItem,
+    SessionHistoryListResponse,
     TariffHistoryItem,
     TariffHistoryListResponse,
     ProfileHealthCheck,
@@ -46,6 +48,7 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     format_residence_address,
     format_local_time_label,
     format_session_duration,
+    format_session_span,
     format_traffic_mb,
     is_msk_gmt,
     jur_frozen_traffic_mb,
@@ -979,6 +982,111 @@ async def load_user_tariff_history_page(
     )
     items = [_row_to_tariff_history_item(row) for row in r.mappings().all()]
     return TariffHistoryListResponse(
+        total=total,
+        page=page,
+        per_page=per_page,
+        items=items,
+    )
+
+
+_SESSIONS_COUNT_SQL = """
+    SELECT count(*)::int
+    FROM radius.radacct r
+    WHERE lower(r.username) = lower(:login)
+"""
+
+_SESSIONS_PAGE_SQL = """
+    SELECT
+        r.acctstarttime,
+        r.acctstoptime,
+        round(coalesce(r.acctinputoctets, 0)::numeric / 1024 / 1024, 2) AS traffic_in_mb,
+        round(coalesce(r.acctoutputoctets, 0)::numeric / 1024 / 1024, 2) AS traffic_out_mb,
+        host(r.framedipaddress)::text AS ip_address,
+        coalesce(sf.station_name, ig.name) AS station_name
+    FROM radius.radacct r
+    LEFT JOIN wifitochka.ip_group ig ON ig.id = r.station_id
+    LEFT JOIN stations.station_forms sf ON sf.station_id = ig.id
+    WHERE lower(r.username) = lower(:login)
+    ORDER BY r.acctstarttime DESC NULLS LAST
+    LIMIT :limit OFFSET :offset
+"""
+
+
+def _row_to_session_history_item(row: Any, *, now: datetime) -> SessionHistoryItem:
+    started = row["acctstarttime"]
+    if started is not None and getattr(started, "tzinfo", None) is None:
+        started = started.replace(tzinfo=timezone.utc)
+    stopped = row["acctstoptime"]
+    is_open = stopped is None
+    if stopped is not None and getattr(stopped, "tzinfo", None) is None:
+        stopped = stopped.replace(tzinfo=timezone.utc)
+
+    end = now if is_open else stopped
+    duration_sec = 0
+    if started is not None and end is not None:
+        duration_sec = max(
+            0, int((end.astimezone(timezone.utc) - started.astimezone(timezone.utc)).total_seconds())
+        )
+
+    traffic_in = float(row["traffic_in_mb"] or 0)
+    traffic_out = float(row["traffic_out_mb"] or 0)
+    traffic_total = round(traffic_in + traffic_out, 2)
+    station = (row["station_name"] or "").strip() or None
+    ip = (row["ip_address"] or "").strip() or "—"
+
+    return SessionHistoryItem(
+        started_at=started,
+        started_at_label=format_dt_msk(started, time_sep=" ", short_year=True) or "—",
+        stopped_at=stopped,
+        stopped_at_label=(
+            "Открытая сессия"
+            if is_open
+            else (format_dt_msk(stopped, time_sep=" ", short_year=True) or "—")
+        ),
+        is_open=is_open,
+        duration_seconds=duration_sec,
+        duration_label=format_session_span(duration_sec),
+        traffic_in_mb=traffic_in,
+        traffic_out_mb=traffic_out,
+        traffic_total_mb=traffic_total,
+        traffic_in_label=format_traffic_mb(traffic_in),
+        traffic_out_label=format_traffic_mb(traffic_out),
+        traffic_total_label=format_traffic_mb(traffic_total),
+        ip_address=ip,
+        station_name=station,
+    )
+
+
+async def load_user_sessions_page(
+    session: AsyncSession,
+    user_id: int,
+    page: int = 1,
+    per_page: int = 10,
+) -> SessionHistoryListResponse:
+    login = (
+        await session.execute(
+            text('SELECT login FROM users."user" WHERE id = :uid'),
+            {"uid": user_id},
+        )
+    ).scalar_one_or_none()
+    if login is None:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
+
+    login = (login or "").strip()
+    if not login:
+        return SessionHistoryListResponse(total=0, page=page, per_page=per_page, items=[])
+
+    total = int(
+        (await session.execute(text(_SESSIONS_COUNT_SQL), {"login": login})).scalar_one() or 0
+    )
+    offset = (page - 1) * per_page
+    r = await session.execute(
+        text(_SESSIONS_PAGE_SQL),
+        {"login": login, "limit": per_page, "offset": offset},
+    )
+    now = datetime.now(timezone.utc)
+    items = [_row_to_session_history_item(row, now=now) for row in r.mappings().all()]
+    return SessionHistoryListResponse(
         total=total,
         page=page,
         per_page=per_page,

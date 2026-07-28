@@ -302,6 +302,45 @@ export function fetchUserTariffHistory(
   );
 }
 
+export type SessionHistoryItem = {
+  started_at: string | null;
+  started_at_label: string;
+  stopped_at: string | null;
+  stopped_at_label: string;
+  is_open: boolean;
+  duration_seconds: number;
+  duration_label: string;
+  traffic_in_mb: number;
+  traffic_out_mb: number;
+  traffic_total_mb: number;
+  traffic_in_label: string;
+  traffic_out_label: string;
+  traffic_total_label: string;
+  ip_address: string;
+  station_name: string | null;
+};
+
+export type SessionHistoryListResponse = {
+  total: number;
+  page: number;
+  per_page: number;
+  items: SessionHistoryItem[];
+};
+
+export function fetchUserSessions(
+  userId: number,
+  page = 1,
+  perPage = 10,
+): Promise<SessionHistoryListResponse> {
+  const q = new URLSearchParams({
+    page: String(page),
+    per_page: String(perPage),
+  });
+  return api<SessionHistoryListResponse>(
+    `/api/v1/helpdesk/users/${userId}/sessions?${q}`,
+  );
+}
+
 export type PasswordResetState = {
   has_ppp_sessions: boolean;
   active_code: string | null;

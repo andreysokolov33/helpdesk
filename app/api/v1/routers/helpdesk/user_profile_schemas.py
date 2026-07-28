@@ -192,6 +192,32 @@ class TariffHistoryListResponse(BaseModel):
     items: list[TariffHistoryItem] = Field(default_factory=list)
 
 
+class SessionHistoryItem(BaseModel):
+    started_at: Optional[datetime] = None
+    started_at_label: str
+    stopped_at: Optional[datetime] = None
+    stopped_at_label: str
+    """«Открытая сессия» если acctstoptime IS NULL."""
+    is_open: bool = False
+    duration_seconds: int = 0
+    duration_label: str = "—"
+    traffic_in_mb: float = 0
+    traffic_out_mb: float = 0
+    traffic_total_mb: float = 0
+    traffic_in_label: str
+    traffic_out_label: str
+    traffic_total_label: str
+    ip_address: str = "—"
+    station_name: Optional[str] = None
+
+
+class SessionHistoryListResponse(BaseModel):
+    total: int = 0
+    page: int = Field(default=1, ge=1)
+    per_page: int = Field(default=10, ge=1, le=50)
+    items: list[SessionHistoryItem] = Field(default_factory=list)
+
+
 class UserProfileResponse(BaseModel):
     personal: ProfilePersonal
     online: ProfileOnline
