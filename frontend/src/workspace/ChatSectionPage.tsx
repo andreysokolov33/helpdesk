@@ -729,8 +729,13 @@ export default function ChatSectionPage() {
     const side = m.answer ? "me" : "cl";
     const kind = m.author_kind || (side === "me" ? "support" : "subscriber");
     const kindCls = side === "me" ? ` k-${kind}` : "";
-    const images = m.attachments.filter((a) => a.is_image);
-    const files = m.attachments.filter((a) => !a.is_image);
+    const isImageAtt = (a: (typeof m.attachments)[number]) =>
+      Boolean(a.is_image) ||
+      /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.file_path || "") ||
+      /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.original_filename || "") ||
+      /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.file_ext || "");
+    const images = m.attachments.filter(isImageAtt);
+    const files = m.attachments.filter((a) => !isImageAtt(a));
     return (
       <div
         key={m.msg_id}

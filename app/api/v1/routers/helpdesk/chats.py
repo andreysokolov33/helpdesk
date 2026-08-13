@@ -104,8 +104,30 @@ def _check_image_magic(contents: bytes, ext: str) -> bool:
     return False
 
 
+def _normalize_ext(ext: Optional[str]) -> str:
+    """'.webp' / 'webp' / 'WEBP' → '.webp'."""
+    e = (ext or "").strip().lower()
+    if not e:
+        return ""
+    return e if e.startswith(".") else f".{e}"
+
+
 def _is_image_ext(ext: Optional[str]) -> bool:
-    return bool(ext) and ext.lower() in ALLOWED_IMAGE_EXTENSIONS
+    return _normalize_ext(ext) in ALLOWED_IMAGE_EXTENSIONS
+
+
+def _is_image_attachment(
+    *,
+    file_ext: Optional[str] = None,
+    file_path: Optional[str] = None,
+    original_filename: Optional[str] = None,
+) -> bool:
+    if _is_image_ext(file_ext):
+        return True
+    for name in (original_filename, file_path):
+        if name and _is_image_ext(Path(str(name)).suffix):
+            return True
+    return False
 
 
 _SCRIPT_RE = re.compile(r"<\s*(script|style|iframe|object|embed)[^>]*>.*?<\s*/\s*\1\s*>", re.I | re.S)
@@ -177,7 +199,7 @@ def _merge_legacy_file_attachment(msg: dict) -> None:
         "original_filename": Path(fp).name,
         "file_ext": ext or None,
         "file_size_bytes": None,
-        "is_image": _is_image_ext(ext),
+        "is_image": _is_image_attachment(file_ext=ext, file_path=fp),
     })
 
 
@@ -462,7 +484,11 @@ async def _attachments_for(db: AsyncSession, msg_ids: List[int]) -> Dict[int, li
             "original_filename": r.original_filename,
             "file_ext": r.file_ext,
             "file_size_bytes": r.file_size_bytes,
-            "is_image": _is_image_ext(r.file_ext or Path(r.original_filename or "").suffix),
+            "is_image": _is_image_attachment(
+                file_ext=r.file_ext,
+                file_path=r.file_path,
+                original_filename=r.original_filename,
+            ),
         })
     return out
 
