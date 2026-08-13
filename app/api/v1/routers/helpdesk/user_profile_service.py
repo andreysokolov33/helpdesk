@@ -59,6 +59,10 @@ from app.api.v1.routers.helpdesk.user_profile_utils import (
     traffic_reset_labels,
 )
 from app.api.v1.routers.helpdesk.operator_log_service import write_operator_log
+from app.api.v1.routers.helpdesk.skystream_users_log_service import (
+    schedule_skystream_user_log,
+    user_profile_page,
+)
 from app.api.v1.routers.users.dao import (
     RadacctDAO,
     ResetTrafficActionDAO,
@@ -1442,7 +1446,13 @@ async def remove_ended_tariff(
     )
 
 
-async def unarchive_user(session: AsyncSession, user_id: int) -> ActionMessage:
+async def unarchive_user(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    operator: Optional[dict[str, Any]] = None,
+    request: Optional[Request] = None,
+) -> ActionMessage:
     row = await _require_physical_subscriber(session, user_id)
     if int(row.get("user_status") or 0) != 3 and int(row.get("archive") or 0) != 1:
         raise HTTPException(status_code=400, detail="Учётная запись не в архиве")
@@ -1459,6 +1469,16 @@ async def unarchive_user(session: AsyncSession, user_id: int) -> ActionMessage:
     await UserArchiveDAO.delete(session, auto_commit=False, user_id=user_id)
     await session.commit()
     await on_unarchive(session, user_id)
+    if operator:
+        schedule_skystream_user_log(
+            user_id=int(operator["user_id"]),
+            action="UPDATE",
+            page=user_profile_page(user_id),
+            request=request,
+            entity_type="user",
+            entity_id=user_id,
+            description="Восстановление учётной записи из архива",
+        )
     return ActionMessage(message="Учётная запись восстановлена")
 
 
@@ -1538,6 +1558,14 @@ def _dt_iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.isoformat() if dt else None
 
 
+_TARIFF_SKYSTREAM_LOG: dict[str, tuple[str, str]] = {
+    "tariff.unfreeze": ("UPDATE", "Разморозка тарифа"),
+    "tariff.freeze": ("UPDATE", "Заморозка тарифа"),
+    "tariff.freeze_plan.cancel": ("DELETE", "Отмена запланированной заморозки"),
+    "tariff.remove_ended": ("DELETE", "Отключение завершённого тарифа"),
+}
+
+
 async def _log_tariff_action(
     session: AsyncSession,
     *,
@@ -1559,9 +1587,29 @@ async def _log_tariff_action(
         details=details,
         auto_commit=False,
     )
+    mapped = _TARIFF_SKYSTREAM_LOG.get(action)
+    if mapped:
+        sk_action, description = mapped
+        schedule_skystream_user_log(
+            user_id=int(operator["user_id"]),
+            action=sk_action,
+            page=user_profile_page(user_id),
+            request=request,
+            entity_type="tariff",
+            entity_id=user_id,
+            description=description,
+            details={"legacy_action": action, **(details or {})},
+        )
 
 
-async def force_disconnect(session: AsyncSession, user_id: int, login: str) -> ActionMessage:
+async def force_disconnect(
+    session: AsyncSession,
+    user_id: int,
+    login: str,
+    *,
+    operator: Optional[dict[str, Any]] = None,
+    request: Optional[Request] = None,
+) -> ActionMessage:
     allowed, limit_msg = await check_disconnect_sessions_allowed(user_id)
     if not allowed:
         raise HTTPException(status_code=429, detail=limit_msg)
@@ -1574,6 +1622,17 @@ async def force_disconnect(session: AsyncSession, user_id: int, login: str) -> A
     )
     await session.commit()
     await record_disconnect_sessions_success(user_id)
+    if operator:
+        schedule_skystream_user_log(
+            user_id=int(operator["user_id"]),
+            action="UPDATE",
+            page=user_profile_page(user_id),
+            request=request,
+            entity_type="session",
+            entity_id=user_id,
+            description="Принудительное отключение сессий",
+            details={"login": login},
+        )
     return ActionMessage(message="Сессии будут закрыты в течение минуты")
 
 

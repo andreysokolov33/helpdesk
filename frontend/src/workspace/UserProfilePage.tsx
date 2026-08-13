@@ -8,6 +8,7 @@ import {
   postRemoveEndedTariff,
   postUnarchive,
   postUnfreeze,
+  postPassportView,
   type ProfileAutoRenew,
   type ProfilePersonal,
   type TariffBlockResponse,
@@ -153,10 +154,12 @@ function formatPassportNumber(value: string): string {
 }
 
 function PassportSpoiler({
+  userId,
   series,
   number,
   fallback,
 }: {
+  userId: number;
   series: string | null;
   number: string | null;
   fallback: string | null;
@@ -164,9 +167,19 @@ function PassportSpoiler({
   const [open, setOpen] = useState(false);
   const hasParts = Boolean(series || number);
 
+  const toggle = () => {
+    setOpen((v) => {
+      const next = !v;
+      if (next) {
+        void postPassportView(userId).catch(() => undefined);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="up-pass-spoiler">
-      <button type="button" className="up-pass-btn" onClick={() => setOpen((v) => !v)}>
+      <button type="button" className="up-pass-btn" onClick={toggle}>
         {open ? "Скрыть" : "Показать паспортные данные"}
       </button>
       {open ? (
@@ -951,6 +964,7 @@ export default function UserProfilePage() {
                     </div>
                   ) : (
                     <PassportSpoiler
+                      userId={uid}
                       series={p.passport_series}
                       number={p.passport_number}
                       fallback={p.id_doc}

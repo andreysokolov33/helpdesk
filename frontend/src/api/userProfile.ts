@@ -232,8 +232,10 @@ export type FastCheckResponse = {
   manager_contacts: ManagerContact[];
 };
 
-export function postFastCheck(userId: number): Promise<FastCheckResponse> {
-  return api<FastCheckResponse>(`/api/v1/helpdesk/users/${userId}/fast-check`, { method: "POST" });
+export function postPassportView(userId: number): Promise<void> {
+  return api(`/api/v1/helpdesk/users/${userId}/passport-view`, { method: "POST" }).then(
+    () => undefined,
+  );
 }
 
 export type PaymentHistoryItem = {

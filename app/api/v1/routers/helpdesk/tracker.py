@@ -435,6 +435,7 @@ _CALL_PARTNER_CATEGORY_ID = 59
 @router.post("/register-call", response_model=RegisterCallResponse)
 async def register_call(
     payload: RegisterCallRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(require_tracker_user),
 ) -> RegisterCallResponse:
@@ -585,6 +586,33 @@ async def register_call(
     if assigned_to is not None:
         await ticket_svc.register_ticket_co_executor(db, int(ticket.id), author_id)
     await db.commit()
+
+    from app.api.v1.routers.helpdesk.skystream_users_log_service import (
+        HELPDESK_PAGE_CALL,
+        schedule_skystream_user_log,
+        user_profile_page,
+    )
+
+    page = (
+        user_profile_page(int(ticket_user_id))
+        if ticket_user_id is not None
+        else HELPDESK_PAGE_CALL
+    )
+    schedule_skystream_user_log(
+        user_id=author_id,
+        action="CREATE",
+        page=page,
+        request=request,
+        entity_type="ticket",
+        entity_id=int(ticket.id),
+        description="Регистрация звонка",
+        details={
+            "connection_kind": kind,
+            "subscriber_id": ticket_user_id,
+            "source": ticket_source,
+            "support_line": support_line,
+        },
+    )
 
     return RegisterCallResponse(id=int(ticket.id))
 

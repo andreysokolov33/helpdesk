@@ -83,7 +83,7 @@ async def get_profile(
     tickets_page: int = Query(1, ge=1),
     tickets_per_page: int = Query(10, ge=0, le=50),
     include_tickets: bool = Query(False),
-    _user: dict = Depends(require_tracker_user),
+    _operator: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserProfileResponse:
     return await svc.get_user_profile(
@@ -95,13 +95,43 @@ async def get_profile(
     )
 
 
+@router.post("/{user_id}/passport-view", status_code=204)
+async def passport_view(
+    user_id: int,
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Аудит просмотра паспортных данных (спойлер в карточке абонента)."""
+    from app.api.v1.routers.helpdesk.skystream_users_log_service import (
+        schedule_skystream_user_log,
+        user_profile_page,
+    )
+    from app.api.v1.routers.users.dao import UsersDAO
+    from fastapi import HTTPException
+
+    u = await UsersDAO.find_one_or_none(db, id=user_id)
+    if not u:
+        raise HTTPException(status_code=404, detail="Абонент не найден")
+    schedule_skystream_user_log(
+        user_id=int(operator["user_id"]),
+        action="SELECT",
+        page=user_profile_page(user_id),
+        request=request,
+        entity_type="passport",
+        entity_id=user_id,
+        description="Просмотр паспортных данных абонента",
+    )
+
+
 @router.post("/{user_id}/unarchive", response_model=ActionMessage)
 async def unarchive(
     user_id: int,
-    _user: dict = Depends(require_tracker_user),
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActionMessage:
-    return await svc.unarchive_user(db, user_id)
+    return await svc.unarchive_user(db, user_id, operator=operator, request=request)
 
 
 @router.post("/{user_id}/unfreeze", response_model=ActionMessage)
@@ -180,10 +210,30 @@ async def password_reset_poll(
 @router.post("/{user_id}/fast-check", response_model=FastCheckResponse)
 async def fast_check(
     user_id: int,
-    _user: dict = Depends(require_tracker_user),
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> FastCheckResponse:
-    return await fc_svc.run_fast_check(db, user_id)
+    from app.api.v1.routers.helpdesk.skystream_users_log_service import (
+        schedule_skystream_user_log,
+        user_profile_page,
+    )
+
+    result = await fc_svc.run_fast_check(db, user_id)
+    schedule_skystream_user_log(
+        user_id=int(operator["user_id"]),
+        action="SELECT",
+        page=user_profile_page(user_id),
+        request=request,
+        entity_type="diagnostics",
+        entity_id=user_id,
+        description="Запуск диагностики (быстрая проверка)",
+        details={
+            "steps_count": len(result.steps),
+            "stopped_at": result.stopped_at,
+        },
+    )
+    return result
 
 
 @router.post("/{user_id}/traffic-detail/send", response_model=TrafficDetailSendResponse)
@@ -200,7 +250,8 @@ async def send_traffic_detail(
 @router.post("/{user_id}/disconnect-sessions", response_model=ActionMessage)
 async def disconnect_sessions(
     user_id: int,
-    _user: dict = Depends(require_tracker_user),
+    request: Request,
+    operator: dict = Depends(require_tracker_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActionMessage:
     from app.api.v1.routers.users.dao import UsersDAO
@@ -211,4 +262,6 @@ async def disconnect_sessions(
 
         raise HTTPException(status_code=404, detail="Абонент не найден")
     login = (u.get("login") or "").strip()
-    return await svc.force_disconnect(db, user_id, login)
+    return await svc.force_disconnect(
+        db, user_id, login, operator=operator, request=request
+    )

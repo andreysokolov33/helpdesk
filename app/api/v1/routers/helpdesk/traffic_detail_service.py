@@ -16,6 +16,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.helpdesk.operator_log_service import write_operator_log
+from app.api.v1.routers.helpdesk.skystream_users_log_service import (
+    schedule_skystream_user_log,
+    user_profile_page,
+)
 from app.api.v1.routers.helpdesk.traffic_detail_schemas import (
     TrafficDetailSendRequest,
     TrafficDetailSendResponse,
@@ -405,6 +409,22 @@ async def send_traffic_detail(
             auto_commit=False,
         )
         await session.commit()
+        schedule_skystream_user_log(
+            user_id=int(operator["user_id"]),
+            action="CREATE",
+            page=user_profile_page(user_id),
+            request=request,
+            success=False,
+            entity_type="traffic",
+            entity_id=user_id,
+            description="Отправка детализации трафика",
+            details={
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "email": recipient,
+            },
+            error_message=str(exc),
+        )
         raise HTTPException(
             status_code=502,
             detail=f"Не удалось отправить письмо: {exc}",
@@ -428,6 +448,23 @@ async def send_traffic_detail(
         auto_commit=False,
     )
     await session.commit()
+    schedule_skystream_user_log(
+        user_id=int(operator["user_id"]),
+        action="CREATE",
+        page=user_profile_page(user_id),
+        request=request,
+        entity_type="traffic",
+        entity_id=user_id,
+        description="Отправка детализации трафика",
+        details={
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "email": recipient,
+            "sessions_count": len(sessions),
+            "daily_count": len(daily),
+            "hourly_count": len(hourly),
+        },
+    )
 
     return TrafficDetailSendResponse(
         message="Детализация отправлена на e-mail абонента",

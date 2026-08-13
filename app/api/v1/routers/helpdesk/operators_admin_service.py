@@ -215,6 +215,7 @@ async def _has_other_active_operators(db: AsyncSession, excluded_user_id: int) -
                     WHERE role = 'support'
                       AND level = 1
                       AND is_active = TRUE
+                      AND COALESCE(is_test, FALSE) = FALSE
                       AND id <> :excluded
                 )
                 """
@@ -244,6 +245,7 @@ async def _pick_replacement_assignee(
                   AND u.role = 'support'
                   AND u.level = 1
                   AND u.is_active = TRUE
+                  AND COALESCE(u.is_test, FALSE) = FALSE
                 ORDER BY RANDOM()
                 LIMIT 1
                 """
@@ -263,6 +265,7 @@ async def _pick_replacement_assignee(
                 WHERE role = 'support'
                   AND level = 1
                   AND is_active = TRUE
+                  AND COALESCE(is_test, FALSE) = FALSE
                   AND id <> :excluded
                 ORDER BY RANDOM()
                 LIMIT 1
@@ -407,7 +410,9 @@ async def _fetch_operator_level_stats(db: AsyncSession) -> dict[str, int]:
                 """
                 SELECT id, is_active
                 FROM users.skystream_users
-                WHERE role = 'support' AND level = 1
+                WHERE role = 'support'
+                  AND level = 1
+                  AND COALESCE(is_test, FALSE) = FALSE
                 """
             )
         )
@@ -442,7 +447,9 @@ async def fetch_operators_manage(
                 """
                 SELECT id, login, email, full_name, is_active, level, last_activity
                 FROM users.skystream_users
-                WHERE role = 'support' AND level = 2
+                WHERE role = 'support'
+                  AND level = 2
+                  AND COALESCE(is_test, FALSE) = FALSE
                 ORDER BY COALESCE(NULLIF(TRIM(full_name), ''), login)
                 """
             )
@@ -456,7 +463,9 @@ async def fetch_operators_manage(
                     """
                     SELECT COUNT(*)::int
                     FROM users.skystream_users
-                    WHERE role = 'support' AND COALESCE(level, 1) <> 2
+                    WHERE role = 'support'
+                      AND COALESCE(level, 1) <> 2
+                      AND COALESCE(is_test, FALSE) = FALSE
                     """
                 )
             )
@@ -473,7 +482,9 @@ async def fetch_operators_manage(
                 """
                 SELECT id, login, email, full_name, is_active, level, last_activity
                 FROM users.skystream_users
-                WHERE role = 'support' AND COALESCE(level, 1) <> 2
+                WHERE role = 'support'
+                  AND COALESCE(level, 1) <> 2
+                  AND COALESCE(is_test, FALSE) = FALSE
                 ORDER BY is_active DESC, COALESCE(NULLIF(TRIM(full_name), ''), login)
                 LIMIT :per_page OFFSET :offset
                 """
@@ -512,7 +523,11 @@ async def fetch_operators_manage(
 
 async def _get_support_operator(db: AsyncSession, operator_id: int) -> dict[str, Any]:
     row = await SkystreamUsersDAO.find_one_or_none(db, id=operator_id)
-    if not row or row.get("role") != "support":
+    if (
+        not row
+        or row.get("role") != "support"
+        or bool(row.get("is_test"))
+    ):
         raise HTTPException(status_code=404, detail="Оператор не найден")
     return row
 

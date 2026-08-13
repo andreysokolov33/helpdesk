@@ -35,7 +35,15 @@ class SkystreamUsers(Base):
         DateTime(True), nullable=False, server_default=text('now()'))
     last_login_at = mapped_column(DateTime(True))
     level = mapped_column(Integer)
-    last_activity = mapped_column(DateTime(True))
+    last_activity = mapped_column(
+        DateTime(True),
+        comment='Последняя активность на сайте',
+    )
+    is_test = mapped_column(
+        Boolean,
+        server_default=text('false'),
+        comment='Является ли УЗ тестовой',
+    )
     authored_reset_actions: Mapped[List['ResetTrafficAction']] = relationship(
         'ResetTrafficAction',
         back_populates='author'

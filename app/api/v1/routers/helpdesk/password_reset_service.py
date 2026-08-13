@@ -10,6 +10,10 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.routers.helpdesk.operator_log_service import write_operator_log
+from app.api.v1.routers.helpdesk.skystream_users_log_service import (
+    schedule_skystream_user_log,
+    user_profile_page,
+)
 from app.api.v1.routers.helpdesk.password_reset_schemas import (
     PasswordResetGenerateResponse,
     PasswordResetPollResponse,
@@ -225,6 +229,20 @@ async def generate_password_reset_code(
             "ttl_minutes": CODE_TTL_MINUTES,
         },
         auto_commit=False,
+    )
+    schedule_skystream_user_log(
+        user_id=int(operator["user_id"]),
+        action="CREATE",
+        page=user_profile_page(user_id),
+        request=request,
+        entity_type="password_reset",
+        entity_id=int(row.id),
+        description="Выдача кода сброса пароля абонента",
+        details={
+            "subscriber_id": user_id,
+            "expires_at": expires_at.isoformat(),
+            "ttl_minutes": CODE_TTL_MINUTES,
+        },
     )
 
     await session.commit()
