@@ -169,18 +169,35 @@ def _iso(value: Any) -> Optional[str]:
         return None
 
 
-def _persist_chat_image(contents: bytes, original_filename: str) -> tuple[str, str, int]:
-    """Сохранить изображение в {MEDIA_DIR}/{hex16}.{ext} → (media_url, ext, size)."""
+def _persist_chat_image(
+    contents: bytes,
+    original_filename: str,
+    *,
+    subscriber_id: int,
+) -> tuple[str, str, int]:
+    """Сохранить в /media/chat/{subscriber_id}/cs/… (общий том skystream_chat_media)."""
     ext = (Path(original_filename).suffix or "").lower()
     if ext not in ALLOWED_IMAGE_EXTENSIONS:
         ext = ".jpg"
-    safe_name = f"{uuid.uuid4().hex[:16]}{ext}"
-    abs_dir = Path(settings.MEDIA_DIR)
+    stamp = int(datetime.now(timezone.utc).timestamp())
+    uniq = uuid.uuid4().hex[:10]
+    base = Path(original_filename).stem.strip() or "image"
+    keep: list[str] = []
+    for ch in base:
+        if ch.isalnum() or ch in ("-", "_", "."):
+            keep.append(ch)
+        else:
+            keep.append("_")
+    safe_base = "".join(keep).strip("._") or "image"
+    safe_name = f"{safe_base}_{stamp}_{uniq}{ext}"
+    # MEDIA_DIR=/app/uploads + volume …:/app/uploads/chat → общий диск чата
+    rel_dir = Path("chat") / str(int(subscriber_id)) / "cs"
+    abs_dir = Path(settings.MEDIA_DIR) / rel_dir
     abs_dir.mkdir(parents=True, exist_ok=True)
     abs_path = abs_dir / safe_name
     with open(abs_path, "wb") as f:
         f.write(contents)
-    media_url = f"/media/{safe_name}"
+    media_url = f"/media/{rel_dir.as_posix()}/{safe_name}"
     return media_url, ext, len(contents)
 
 
@@ -772,7 +789,9 @@ async def create_message(
             raise HTTPException(status_code=400, detail="Разрешены только изображения (JPG, PNG, GIF, WebP, BMP)")
         if not _check_image_magic(file_bytes, ext):
             raise HTTPException(status_code=400, detail="Содержимое файла не соответствует типу изображения")
-        file_new_path, _, _ = _persist_chat_image(file_bytes, file_orig)
+        file_new_path, _, _ = _persist_chat_image(
+            file_bytes, file_orig, subscriber_id=chat_id
+        )
         real_file = file_orig
 
     msg = UserMail(

@@ -1,0 +1,10 @@
+# Локальный override (не для сервера). Compose подхватывает автоматически.
+# Чат-медиа: на сервере /opt/www/skystream_chat_media, здесь — ./uploads/chat.
+
+services:
+  app:
+    volumes:
+      - helpdesk_logs:/app/logs
+      - ./app/static/helpdesk:/app/app/static/helpdesk
+      - ./uploads:/app/uploads
+      - ./uploads/chat:/app/uploads/chat

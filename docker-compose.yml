@@ -1,7 +1,26 @@
 services:
+  # Прокидывает собранную SPA на хост: nginx отдаёт /static/ с диска проекта.
+  # Кеш слоёв frontend общий с app (тот же Dockerfile target).
+  static-export:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    image: ${HELPDESK_IMAGE:-helpdesk:latest}-frontend
+    volumes:
+      - ./app/static/helpdesk:/export
+    entrypoint:
+      - sh
+      - -c
+      - rm -rf /export/assets /export/index.html && cp -a /build/app/static/helpdesk/. /export/
+    restart: "no"
+
   app:
     build: .
     image: ${HELPDESK_IMAGE:-helpdesk:latest}
+    depends_on:
+      static-export:
+        condition: service_completed_successfully
     ports:
       - "${APP_PORT:-8000}:8000"
     env_file:
@@ -11,10 +30,8 @@ services:
       PORT: 8000
     volumes:
       - helpdesk_logs:/app/logs
-      # Legacy: /media/{hash}.webp → ./uploads/
+      - ./app/static/helpdesk:/app/app/static/helpdesk
       - ./uploads:/app/uploads
-      # Чат ЛК + helpdesk: /media/chat/{user_id}/{ticket_id}/…
-      # Должен совпадать с nginx: location /media/chat/ → /opt/www/skystream_chat_media/
       - /opt/www/skystream_chat_media:/app/uploads/chat
     restart: unless-stopped
 
