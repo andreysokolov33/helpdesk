@@ -201,11 +201,27 @@ def _persist_chat_image(
     return media_url, ext, len(contents)
 
 
+def _normalize_media_url(file_path: Optional[str]) -> Optional[str]:
+    """Привести путь вложения к /media/... (ЛК/инженер/helpdesk)."""
+    if not file_path or file_path in ("0", ""):
+        return None
+    p = str(file_path).strip()
+    if p.startswith("http://") or p.startswith("https://"):
+        return p
+    if p.startswith("/media/"):
+        return p
+    if p.startswith("media/"):
+        return "/" + p
+    # Только имя файла или chat/... без префикса
+    return f"/media/{p.lstrip('/')}"
+
+
 def _merge_legacy_file_attachment(msg: dict) -> None:
     """Добавить legacy-путь из file_new в attachments для отображения."""
-    fp = msg.get("file_path")
+    fp = _normalize_media_url(msg.get("file_path"))
     if not fp:
         return
+    msg["file_path"] = fp
     attachments = msg.setdefault("attachments", [])
     if any(a.get("file_path") == fp for a in attachments):
         return
@@ -221,9 +237,10 @@ def _merge_legacy_file_attachment(msg: dict) -> None:
 
 
 def _disk_path_from_media_url(media_url: str) -> Optional[str]:
-    if not media_url or not media_url.startswith("/media/"):
+    normalized = _normalize_media_url(media_url)
+    if not normalized or not normalized.startswith("/media/"):
         return None
-    rel = media_url[len("/media/"):]
+    rel = normalized[len("/media/"):]
     return str(Path(settings.MEDIA_DIR) / rel)
 
 
@@ -495,15 +512,16 @@ async def _attachments_for(db: AsyncSession, msg_ids: List[int]) -> Dict[int, li
     )
     out: Dict[int, list] = {mid: [] for mid in msg_ids}
     for r in result.scalars().all():
+        fp = _normalize_media_url(r.file_path) or r.file_path
         out.setdefault(r.msg_id, []).append({
             "id": r.id,
-            "file_path": r.file_path,
+            "file_path": fp,
             "original_filename": r.original_filename,
             "file_ext": r.file_ext,
             "file_size_bytes": r.file_size_bytes,
             "is_image": _is_image_attachment(
                 file_ext=r.file_ext,
-                file_path=r.file_path,
+                file_path=fp,
                 original_filename=r.original_filename,
             ),
         })

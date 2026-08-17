@@ -25,10 +25,18 @@ def _react_shell(title: str) -> HTMLResponse:
                 "</body></html>"
             ),
             status_code=503,
+            headers={"Cache-Control": "no-store"},
         )
     html = _REACT_INDEX.read_text(encoding="utf-8")
     html = re.sub(r"<title>[^<]*</title>", f"<title>{title}</title>", html, count=1)
-    return HTMLResponse(content=html)
+    # HTML без хеша в URL — иначе браузер держит старую оболочку со старым JS (поллинг /chats/…).
+    return HTMLResponse(
+        content=html,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 async def get_current_user(request: Request) -> dict:

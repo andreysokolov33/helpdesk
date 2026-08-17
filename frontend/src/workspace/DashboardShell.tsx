@@ -6,7 +6,7 @@ import { fetchAuthMe, logoutRequest, type AuthMe } from "@/api/auth";
 import { fetchDailyQuizStatus, type DailyQuizStatus } from "@/api/dailyQuiz";
 import { sendOperatorPresence } from "@/api/operatorsManage";
 import { fetchUnreadTicketsCount } from "@/api/ticketsNav";
-import { fetchChatUnread } from "@/api/chat";
+// import { fetchChatUnread } from "@/api/chat"; // скрыт раздел «Чат» — см. temp/restore-old-chat-version.txt
 import { fetchOperatorNewsBell, fetchOperatorNewsBellDigest, fetchOperatorNewsDetail, formatNewsRelativeTime, isOperatorNewsUrgent, markOperatorNewsRead, operatorNewsKindLabel, type OperatorNewsBellItem, type OperatorNewsDetail } from "@/api/news";
 import { ticketsListPollDelayMs } from "@/utils/ticketsListPoll";
 import { useTheme } from "@/theme/ThemeContext";
@@ -40,7 +40,7 @@ const tabs: TabDef[] = [
   { to: "/", label: "Главная", end: true },
   { to: "/call", label: "Регистрация звонка", highlight: true },
   { to: "/tickets", label: "Тикеты" },
-  { to: "/chat", label: "Чат" },
+  // { to: "/chat", label: "Чат" }, // скрыт — см. temp/restore-old-chat-version.txt
   { to: "/stats", label: "Статистика" },
   { to: "/kb", label: "База знаний" },
 ];
@@ -61,7 +61,7 @@ export default function DashboardShell() {
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [authMe, setAuthMe] = useState<AuthMe | null>(null);
   const [ticketsUnread, setTicketsUnread] = useState(0);
-  const [chatUnread, setChatUnread] = useState(0);
+  // const [chatUnread, setChatUnread] = useState(0); // скрыт раздел «Чат»
   const [bellUnread, setBellUnread] = useState(0);
   const [bellItems, setBellItems] = useState<OperatorNewsBellItem[]>([]);
   const [newsModalOpen, setNewsModalOpen] = useState(false);
@@ -222,34 +222,32 @@ export default function DashboardShell() {
     };
   }, [location.pathname]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadChatUnread() {
-      try {
-        const stats = await fetchChatUnread();
-        if (!cancelled) setChatUnread(stats.opened_chats ?? 0);
-      } catch {
-        if (!cancelled) setChatUnread(0);
-      }
-    }
-
-    void loadChatUnread();
-    const timer = window.setInterval(loadChatUnread, 10_000);
-
-    function onVisible() {
-      if (document.visibilityState === "visible") void loadChatUnread();
-    }
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", loadChatUnread);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", loadChatUnread);
-    };
-  }, [location.pathname]);
+  // Поллинг непрочитанных чатов (/api/v1/helpdesk/chats/unread_chats) отключён вместе с разделом «Чат».
+  // Восстановление: temp/restore-old-chat-version.txt
+  // useEffect(() => {
+  //   let cancelled = false;
+  //   async function loadChatUnread() {
+  //     try {
+  //       const stats = await fetchChatUnread();
+  //       if (!cancelled) setChatUnread(stats.opened_chats ?? 0);
+  //     } catch {
+  //       if (!cancelled) setChatUnread(0);
+  //     }
+  //   }
+  //   void loadChatUnread();
+  //   const timer = window.setInterval(loadChatUnread, 10_000);
+  //   function onVisible() {
+  //     if (document.visibilityState === "visible") void loadChatUnread();
+  //   }
+  //   document.addEventListener("visibilitychange", onVisible);
+  //   window.addEventListener("focus", loadChatUnread);
+  //   return () => {
+  //     cancelled = true;
+  //     window.clearInterval(timer);
+  //     document.removeEventListener("visibilitychange", onVisible);
+  //     window.removeEventListener("focus", loadChatUnread);
+  //   };
+  // }, [location.pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -474,7 +472,7 @@ export default function DashboardShell() {
                 <span className="tab-label">{t.label}</span>
                 {(() => {
                   const badge =
-                    t.to === "/tickets" ? ticketsUnread : t.to === "/chat" ? chatUnread : t.badge;
+                    t.to === "/tickets" ? ticketsUnread : /* t.to === "/chat" ? chatUnread : */ t.badge;
                   return typeof badge === "number" && badge > 0 ? (
                     <span
                       className="tab-badge tab-badge--alert"

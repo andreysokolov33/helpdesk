@@ -169,32 +169,36 @@ async def get_chat_updates(
 # ───────────────────────────────────────────────
 
 
-@router.get("/chats/unread_chats")
-async def get_chats_unread(
-    user: Dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    operator: Dict = Depends(allow_support),
-):
-    """Список непрочитанных чатов"""
-    user_id = user.get('user_id')
-    role = user.get('role')
-
-    # 1. Формируем ключ кэша
-    cache_key = f"unread_stats:{user_id}"
-
-    # 2. Пробуем достать из Redis
-    cached_data = await redis_client.get(cache_key)
-    if cached_data:
-        return json.loads(cached_data)
-
-    # 3. Если нет в кэше — идем в БД
-    result = await get_number_unread_chats(db, role)
-
-    # 4. Сохраняем в Redis на 5 секунд (TTL)
-    # Это снизит нагрузку на БД в разы и позволит "сгладить" поллинг
-    await redis_client.setex(cache_key, 10, json.dumps(result))
-
-    return result
+# GET /chats/unread_chats — непрочитанные
+# Скрыто вместе с разделом «Чат» (helpdesk): поллинг только у тикетов.
+# Раскомментировать при restore — см. temp/restore-old-chat-version.txt
+#
+# @router.get("/chats/unread_chats")
+# async def get_chats_unread(
+#     user: Dict = Depends(get_current_user),
+#     db: AsyncSession = Depends(get_db),
+#     operator: Dict = Depends(allow_support),
+# ):
+#     """Список непрочитанных чатов"""
+#     user_id = user.get('user_id')
+#     role = user.get('role')
+#
+#     # 1. Формируем ключ кэша
+#     cache_key = f"unread_stats:{user_id}"
+#
+#     # 2. Пробуем достать из Redis
+#     cached_data = await redis_client.get(cache_key)
+#     if cached_data:
+#         return json.loads(cached_data)
+#
+#     # 3. Если нет в кэше — идем в БД
+#     result = await get_number_unread_chats(db, role)
+#
+#     # 4. Сохраняем в Redis на 5 секунд (TTL)
+#     # Это снизит нагрузку на БД в разы и позволит "сгладить" поллинг
+#     await redis_client.setex(cache_key, 10, json.dumps(result))
+#
+#     return result
 
 
 # ───────────────────────────────────────────────

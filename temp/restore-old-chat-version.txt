@@ -1,0 +1,99 @@
+==============================================================================
+Восстановление раздела «Чат» (старая переписка поддержки ↔ абонент)
+Дата отключения: 2026-08-17
+==============================================================================
+
+Контекст
+--------
+Раздел /chat (ChatSectionPage) временно скрыт. Код страницы, API-клиента и
+бэкенд-роутера НЕ удалён — только закомментированы точки подключения и UI.
+
+Эндпоинты /api/v1/helpdesk/chats/* использовались ТОЛЬКО:
+  • страницей /chat (ChatSectionPage)
+  • бейджем непрочитанных в навигации (DashboardShell → fetchChatUnread)
+Другие страницы (Тикеты /tickets, TicketPage) ходят в tracker API, не в chats —
+их логика не затронута.
+
+
+1. Навигация — показать вкладку «Чат»
+------------------------------------------------------------------------------
+Файл: frontend/src/workspace/DashboardShell.tsx
+
+  • Раскомментировать импорт:
+      import { fetchChatUnread } from "@/api/chat";
+
+  • В массиве tabs раскомментировать:
+      { to: "/chat", label: "Чат" },
+
+  • Раскомментировать state:
+      const [chatUnread, setChatUnread] = useState(0);
+
+  • Раскомментировать useEffect с loadChatUnread (поллинг каждые 10 с).
+
+  • В расчёте badge вернуть ветку:
+      t.to === "/tickets" ? ticketsUnread : t.to === "/chat" ? chatUnread : t.badge;
+
+
+2. Маршрутизация — вернуть путь /chat
+------------------------------------------------------------------------------
+Файл: frontend/src/App.tsx
+
+  • Раскомментировать:
+      import ChatSectionPage from "@/workspace/ChatSectionPage";
+
+  • Раскомментировать роут:
+      <Route path="chat" element={<ChatSectionPage />} />
+
+
+3. Профиль абонента — кнопка «Чат»
+------------------------------------------------------------------------------
+Файл: frontend/src/workspace/UserProfilePage.tsx
+
+  • В блоке .up-top-actions раскомментировать Link:
+      <Link to={`/chat?id=${uid}`} className="up-btn sec up-call-register">
+        Чат
+      </Link>
+
+
+4. Бэкенд — снова подключить эндпоинты чата
+------------------------------------------------------------------------------
+Файл: app/fastapi_app.py
+
+  • Раскомментировать импорт:
+      from app.api.v1.routers.helpdesk.chats import router as helpdesk_chats_router
+
+  • Раскомментировать регистрацию:
+      app.include_router(helpdesk_chats_router, prefix="/api")
+
+  • Убрать stub, если он снова появится (сейчас удалён chats_stub.py):
+      — не должно быть include_router(helpdesk_chats_stub_router)
+
+Роутер целиком: app/api/v1/routers/helpdesk/chats.py (не трогали).
+Клиент API: frontend/src/api/chat.ts (не трогали).
+Страница: frontend/src/workspace/ChatSectionPage.tsx + styles/chat-section.css
+  (не трогали; снова станут доступны после п.2).
+
+
+5. Поллинг сообщений (что осталось / что убрали)
+------------------------------------------------------------------------------
+УБРАНО (глобально в оболочке):
+  • DashboardShell: setInterval → GET /api/v1/helpdesk/chats/unread_chats (каждые 10 с)
+  • Вместе с уходом /chat не монтируется ChatSectionPage → нет её поллинга
+    списка чатов / обновлений сообщений / read receipts.
+
+ОСТАЛОСЬ (раздел «Тикеты» и связанное — не трогать при restore чата):
+  • DashboardShell: бейдж «Тикеты» → fetchUnreadTicketsCount (ticketsListPollDelayMs)
+  • ChatsTab (/tickets): pollTicketsList
+  • TicketPage (/tickets/:id): pollMessages / pollComments / pollReadReceipts
+  • TicketQueueSidebar: pollList
+  • Колокольчик новостей и presence — не относятся к чату
+
+
+Чеклист отката (кратко)
+-----------------------
+  [ ] DashboardShell: вкладка + unread-поллинг + badge
+  [ ] App.tsx: import + Route path="chat"
+  [ ] UserProfilePage: кнопка «Чат»
+  [ ] fastapi_app.py: import + include_router helpdesk_chats_router
+  [ ] Перезапуск бэкенда + пересборка фронта (vite build / dev)
+==============================================================================

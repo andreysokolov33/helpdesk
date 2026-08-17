@@ -891,9 +891,11 @@ export default function UserProfilePage() {
           <div className="up-top-head">
             <h1 className="up-title">{p.name}</h1>
             <div className="up-top-actions">
+              {/* Скрыто вместе с разделом «Чат» — см. temp/restore-old-chat-version.txt
               <Link to={`/chat?id=${uid}`} className="up-btn sec up-call-register">
                 Чат
               </Link>
+              */}
               <button
                 type="button"
                 className="up-btn sec up-call-register"
