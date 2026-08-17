@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
@@ -4104,6 +4105,10 @@ _MAIL_CHAT_SCOPE_WHERE = """
 """
 
 ORPHAN_MAIL_CONTEXT_HALF = 5
+_TICKET_MENTION_RE = re.compile(
+    r"(?:обращен\w*|тикет|ticket)\s*(?:№|#)?\s*(\d{1,9})",
+    re.IGNORECASE,
+)
 
 
 def _infer_mail_chat_id(row: dict[str, Any]) -> int | None:
@@ -4212,11 +4217,137 @@ async def _mail_exists_in_chat_beyond(
     return bool(row)
 
 
+def _pick_closest_ticket_id(hits: list[tuple[int, int]], focus_id: int) -> int | None:
+    """hits: (msg_id, ticket_id). Берём ticket_id ближайшего к фокусу сообщения."""
+    if not hits:
+        return None
+    unique = {tid for _mid, tid in hits}
+    if len(unique) == 1:
+        return next(iter(unique))
+    _mid, tid = min(hits, key=lambda h: (abs(h[0] - focus_id), h[0]))
+    return tid
+
+
+def _ticket_ids_mentioned_in_messages(
+    messages: list[dict[str, Any]],
+    *,
+    focus_id: int,
+) -> int | None:
+    """Номер тикета из текста бота («Обращение №562 …»)."""
+    from app.core.ticket_message_validation import html_to_plain_text
+
+    hits: list[tuple[int, int]] = []
+    bot_ids = {int(m["id"]) for m in messages if str(m.get("side") or "") == "bot"}
+    for m in messages:
+        plain = html_to_plain_text(m.get("text") or "")
+        mid = int(m.get("id") or 0)
+        for match in _TICKET_MENTION_RE.finditer(plain):
+            tid = int(match.group(1))
+            if tid > 0:
+                hits.append((mid, tid))
+    if not hits:
+        return None
+    bot_hits = [h for h in hits if h[0] in bot_ids]
+    return _pick_closest_ticket_id(bot_hits or hits, focus_id)
+
+
+async def _ticket_ids_linked_to_mail(
+    db: AsyncSession,
+    msg_ids: list[int],
+    *,
+    focus_id: int,
+) -> int | None:
+    if not msg_ids:
+        return None
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT um.id AS msg_id,
+                       COALESCE(NULLIF(um.ticket_id, 0), l.ticket_id) AS ticket_id
+                FROM users.user_mail um
+                LEFT JOIN users.tracker_ticket_mail_links l ON l.user_mail_id = um.id
+                WHERE um.id = ANY(:ids)
+                  AND COALESCE(NULLIF(um.ticket_id, 0), l.ticket_id) IS NOT NULL
+                """
+            ),
+            {"ids": msg_ids},
+        )
+    ).mappings().all()
+    hits = [(int(r["msg_id"]), int(r["ticket_id"])) for r in rows if r.get("ticket_id")]
+    return _pick_closest_ticket_id(hits, focus_id)
+
+
+async def _context_ticket_meta(
+    db: AsyncSession,
+    ticket_id: int,
+    viewer_id: int,
+    *,
+    subscriber_id: int | None = None,
+) -> tuple[int, str, bool] | None:
+    """Мета тикета для кнопки перехода. None, если нет доступа / не тот абонент."""
+    try:
+        detail = await load_ticket_detail(db, ticket_id, viewer_id)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return None
+        raise
+    uid = detail.get("user_id")
+    if subscriber_id and uid is not None and int(uid) != int(subscriber_id):
+        return None
+    return (
+        int(detail["id"]) if detail.get("id") else ticket_id,
+        (detail.get("title") or "").strip(),
+        bool(detail.get("is_open")),
+    )
+
+
+async def _infer_orphan_ticket_meta(
+    db: AsyncSession,
+    *,
+    chat_id: int,
+    message_id: int,
+    messages: list[dict[str, Any]],
+    viewer_id: int,
+    hint_ticket_id: int | None = None,
+) -> tuple[int | None, str, bool]:
+    """Определить тикет для orphan-контекста: hint → связи mail → текст бота."""
+    candidates: list[int] = []
+    if hint_ticket_id and hint_ticket_id > 0:
+        candidates.append(hint_ticket_id)
+    linked = await _ticket_ids_linked_to_mail(
+        db, [int(m["id"]) for m in messages], focus_id=message_id
+    )
+    if linked:
+        candidates.append(linked)
+    mentioned = _ticket_ids_mentioned_in_messages(messages, focus_id=message_id)
+    if mentioned:
+        candidates.append(mentioned)
+
+    seen: set[int] = set()
+    for tid in candidates:
+        if tid in seen:
+            continue
+        seen.add(tid)
+        require_sub = tid != hint_ticket_id
+        meta = await _context_ticket_meta(
+            db,
+            tid,
+            viewer_id,
+            subscriber_id=chat_id if require_sub else None,
+        )
+        if meta:
+            return meta
+    return None, "", False
+
+
 async def _get_orphan_mail_message_context(
     db: AsyncSession,
     message_id: int,
     viewer_id: int,
     viewer_role: str,
+    *,
+    hint_ticket_id: int | None = None,
 ) -> dict[str, Any]:
     """Контекст legacy-сообщения user_mail без привязки к тикету (±5 в переписке абонента)."""
     del viewer_role
@@ -4306,10 +4437,19 @@ async def _get_orphan_mail_message_context(
     has_older = await _mail_exists_in_chat_beyond(db, chat_id, min(ids), older=True) if ids else False
     has_newer = await _mail_exists_in_chat_beyond(db, chat_id, max(ids), older=False) if ids else False
 
+    ticket_id, ticket_title, ticket_is_open = await _infer_orphan_ticket_meta(
+        db,
+        chat_id=chat_id,
+        message_id=message_id,
+        messages=messages,
+        viewer_id=viewer_id,
+        hint_ticket_id=hint_ticket_id,
+    )
+
     return {
-        "ticket_id": None,
-        "ticket_title": "",
-        "ticket_is_open": False,
+        "ticket_id": ticket_id,
+        "ticket_title": ticket_title,
+        "ticket_is_open": ticket_is_open,
         "focus_message_id": message_id,
         "messages": messages,
         "has_older": has_older,
@@ -4571,6 +4711,7 @@ async def get_message_context(
     from app.api.v1.routers.helpdesk import ticket_chat_pages as chat_pages
 
     resolved = await _resolve_message_ticket_id(db, message_id)
+    hint_ticket_id: int | None = None
     if resolved:
         ticket_id, _storage = resolved
         ticket_exists = (
@@ -4630,8 +4771,11 @@ async def get_message_context(
                         "has_older": has_older,
                         "has_newer": has_newer,
                     }
+                hint_ticket_id = ticket_id
 
-    return await _get_orphan_mail_message_context(db, message_id, viewer_id, viewer_role)
+    return await _get_orphan_mail_message_context(
+        db, message_id, viewer_id, viewer_role, hint_ticket_id=hint_ticket_id
+    )
 
 
 async def get_ticket_read_receipts(

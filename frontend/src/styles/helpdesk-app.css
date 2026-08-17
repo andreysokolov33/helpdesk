@@ -5482,15 +5482,19 @@
 
 .tk-att-grid--n1 .tk-att-img {
   height: auto;
-  max-height: 220px;
+  max-height: 280px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tk-att-grid--n1 .tk-att-img img {
   width: 100%;
   height: auto;
-  max-height: 220px;
-  object-fit: contain;
-  background: color-mix(in srgb, var(--ink, #000) 4%, transparent);
+  max-height: none;
+  object-fit: cover;
+  background: transparent;
 }
 
 .tk-att-img__nophoto {
