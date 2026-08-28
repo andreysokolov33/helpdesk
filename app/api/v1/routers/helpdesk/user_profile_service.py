@@ -1104,6 +1104,21 @@ def _tariff_type_label(real_type: Optional[str]) -> str:
     return "Безлимитный"
 
 
+def _tariff_packet_size_mb_label(packet_size: Any) -> tuple[Optional[int], str]:
+    if packet_size is None:
+        return None, "—"
+    mb = int(round(float(packet_size)))
+    label = f"{mb:,}".replace(",", "\u202f") + "\u202fМБ"
+    return mb, label
+
+
+def _tariff_days_label(days: Any) -> tuple[Optional[int], str]:
+    if days is None:
+        return None, "—"
+    val = int(days)
+    return val, f"{val}\u202fдн."
+
+
 def _tariff_remain_mb_label(
     *,
     row_kind: str,
@@ -1151,6 +1166,8 @@ def _row_to_tariff_history_item(row: Any) -> TariffHistoryItem:
             else (format_dt_msk(deact, time_sep=" ", short_year=True) or "—")
         )
 
+    packet_mb, packet_label = _tariff_packet_size_mb_label(row.get("packet_size"))
+    days_val, days_label = _tariff_days_label(row.get("days"))
     remain_mb, remain_label = _tariff_remain_mb_label(
         row_kind=kind,
         real_type=row.get("real_type"),
@@ -1169,6 +1186,10 @@ def _row_to_tariff_history_item(row: Any) -> TariffHistoryItem:
         deactivation_at_label=deact_label,
         price=price,
         price_label=format_money_ru(price),
+        packet_size_mb=packet_mb,
+        packet_size_label=packet_label,
+        days=days_val,
+        days_label=days_label,
         remain_traffic_mb=remain_mb,
         remain_traffic_label=remain_label,
     )

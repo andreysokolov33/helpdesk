@@ -65,6 +65,7 @@ export default function PaymentsHistoryPanel({ userId }: Props) {
   return (
     <div className="up-payments">
       <p className="up-history-tz-note">Дата и время указаны по московскому времени (МСК).</p>
+      <div className="up-stats-table-wrap">
       <table className="dt up-payments-table">
         <thead>
           <tr>
@@ -89,6 +90,7 @@ export default function PaymentsHistoryPanel({ userId }: Props) {
           ))}
         </tbody>
       </table>
+      </div>
       {total > PER_PAGE ? (
         <div className="ch-pager up-payments-pager">
           <button

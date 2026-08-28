@@ -6,28 +6,38 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from starlette.responses import Response
 
-from app.config import BASE_DIR
+from app.config import BASE_DIR, settings
 
 router = APIRouter()
 
-_REACT_INDEX = BASE_DIR / "app" / "static" / "helpdesk" / "index.html"
+_HELPDESK_DIST = BASE_DIR / "frontend" / "dist"
+_REACT_INDEX_BUILT = BASE_DIR / "app" / "static" / "helpdesk" / "index.html"
 _FAVICON = BASE_DIR / "app" / "static" / "images" / "favicon_red.ico"
 
 
+def react_index_path() -> Path:
+    """В DEV отдаём свежую сборку из frontend/dist, если она есть."""
+    dist_index = _HELPDESK_DIST / "index.html"
+    if settings.MODE == "DEV" and dist_index.is_file():
+        return dist_index
+    return _REACT_INDEX_BUILT
+
+
 def _react_shell(title: str) -> HTMLResponse:
-    """SPA-оболочка: ассеты собираются Vite в app/static/helpdesk/."""
-    if not _REACT_INDEX.is_file():
+    """SPA-оболочка: ассеты собираются Vite в app/static/helpdesk/ (или frontend/dist в DEV)."""
+    react_index = react_index_path()
+    if not react_index.is_file():
         return HTMLResponse(
             content=(
                 "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Helpdesk</title></head>"
                 "<body style='font-family:system-ui;padding:2rem'>"
-                "<p>Соберите фронтенд: <code>cd frontend && npm install && npm run build</code></p>"
+                "<p>Соберите фронтенд: <code>cd frontend && npm install && npm run build:local</code></p>"
                 "</body></html>"
             ),
             status_code=503,
             headers={"Cache-Control": "no-store"},
         )
-    html = _REACT_INDEX.read_text(encoding="utf-8")
+    html = react_index.read_text(encoding="utf-8")
     html = re.sub(r"<title>[^<]*</title>", f"<title>{title}</title>", html, count=1)
     # HTML без хеша в URL — иначе браузер держит старую оболочку со старым JS (поллинг /chats/…).
     return HTMLResponse(

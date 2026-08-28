@@ -10,6 +10,26 @@ function typeBadgeClass(row: TariffHistoryItem) {
     : "up-tariff-badge up-tariff-badge--unlim";
 }
 
+function joinParams(parts: Array<string | null | undefined>): string {
+  const filtered = parts.filter((p) => p && p !== "—");
+  return filtered.length ? filtered.join(" · ") : "—";
+}
+
+function tariffParamsPrimary(row: TariffHistoryItem): string | null {
+  const line = joinParams([row.packet_size_label, row.price_label]);
+  return line === "—" ? null : line;
+}
+
+function tariffParamsDays(row: TariffHistoryItem): string | null {
+  return row.days_label && row.days_label !== "—" ? row.days_label : null;
+}
+
+function tariffRemain(row: TariffHistoryItem): string {
+  return row.remain_traffic_label && row.remain_traffic_label !== "—"
+    ? row.remain_traffic_label
+    : "—";
+}
+
 type Props = {
   userId: number;
 };
@@ -62,18 +82,22 @@ export default function TariffsHistoryPanel({ userId }: Props) {
   return (
     <div className="up-tariffs">
       <p className="up-history-tz-note">Дата и время указаны по московскому времени (МСК).</p>
+      <div className="up-stats-table-wrap">
       <table className="dt up-tariffs-table">
         <thead>
           <tr>
             <th className="up-tariffs-th-date">Подключение (МСК)</th>
             <th className="up-tariffs-th-type">Тип</th>
             <th className="up-tariffs-th-date">Отключение (МСК)</th>
-            <th className="up-tariffs-th-remain" title="Остаток пакета">Ост.</th>
-            <th className="up-tariffs-th-amt">Цена</th>
+            <th className="up-tariffs-th-params">Параметры</th>
+            <th className="up-tariffs-th-remain" title="Остаток пакета">Остаток</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((row, i) => (
+          {items.map((row, i) => {
+            const paramsPrimary = tariffParamsPrimary(row);
+            const paramsDays = tariffParamsDays(row);
+            return (
             <tr key={`${row.activated_at}-${row.row_kind}-${i}`}>
               <td className="up-tariffs-date">{row.activated_at_label}</td>
               <td className="up-tariffs-type">
@@ -91,12 +115,26 @@ export default function TariffsHistoryPanel({ userId }: Props) {
                   row.deactivation_at_label ?? "—"
                 )}
               </td>
-              <td className="up-tariffs-remain">{row.remain_traffic_label ?? "—"}</td>
-              <td className="up-tariffs-amt">{row.price_label}</td>
+              <td className="up-tariffs-params">
+                <div className="up-tariffs-params-inner">
+                  {paramsPrimary ? (
+                    <span className="up-tariffs-params-chunk">{paramsPrimary}</span>
+                  ) : null}
+                  {paramsDays ? (
+                    <span className="up-tariffs-params-chunk up-tariffs-params-chunk--days">
+                      {paramsDays}
+                    </span>
+                  ) : null}
+                  {!paramsPrimary && !paramsDays ? "—" : null}
+                </div>
+              </td>
+              <td className="up-tariffs-remain">{tariffRemain(row)}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
+      </div>
       {total > PER_PAGE ? (
         <div className="ch-pager up-tariffs-pager">
           <button

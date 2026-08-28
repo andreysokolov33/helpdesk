@@ -180,6 +180,10 @@ class TariffHistoryItem(BaseModel):
     deactivation_at_label: Optional[str] = None
     price: Optional[float] = None
     price_label: str
+    packet_size_mb: Optional[int] = None
+    packet_size_label: str = "—"
+    days: Optional[int] = None
+    days_label: str = "—"
     remain_traffic_mb: Optional[int] = None
     """Остаток пакета (МБ) — только завершённые лимитные; иначе null."""
     remain_traffic_label: str = "—"

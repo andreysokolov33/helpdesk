@@ -73,6 +73,7 @@ export default function TicketsHistoryPanel({ userId }: Props) {
 
   return (
     <div className="up-appeals">
+      <div className="up-stats-table-wrap">
       <table className="dt up-appeals-table">
         <thead>
           <tr>
@@ -107,6 +108,7 @@ export default function TicketsHistoryPanel({ userId }: Props) {
           ))}
         </tbody>
       </table>
+      </div>
       {total > PER_PAGE ? (
         <div className="ch-pager up-appeals-pager">
           <button

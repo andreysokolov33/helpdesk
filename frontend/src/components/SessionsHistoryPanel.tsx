@@ -55,6 +55,7 @@ export default function SessionsHistoryPanel({ userId }: Props) {
   return (
     <div className="up-sessions-hist">
       <p className="up-history-tz-note">Дата и время указаны по московскому времени (МСК).</p>
+      <div className="up-stats-table-wrap">
       <table className="dt up-sessions-hist-table">
         <thead>
           <tr>
@@ -95,6 +96,7 @@ export default function SessionsHistoryPanel({ userId }: Props) {
           ))}
         </tbody>
       </table>
+      </div>
       {total > PER_PAGE ? (
         <div className="ch-pager up-sessions-hist-pager">
           <button

@@ -130,6 +130,13 @@ def create_app() -> FastAPI:
     media_dir = Path(settings.MEDIA_DIR)
     static_dir.mkdir(parents=True, exist_ok=True)
     media_dir.mkdir(parents=True, exist_ok=True)
+    helpdesk_dist = BASE_DIR / "frontend" / "dist"
+    if settings.MODE == "DEV" and (helpdesk_dist / "index.html").is_file():
+        app.mount(
+            "/static/helpdesk",
+            StaticFiles(directory=str(helpdesk_dist)),
+            name="helpdesk-dev",
+        )
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
 

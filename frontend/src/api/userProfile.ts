@@ -283,6 +283,10 @@ export type TariffHistoryItem = {
   deactivation_at_label: string | null;
   price: number | null;
   price_label: string;
+  packet_size_mb: number | null;
+  packet_size_label: string;
+  days: number | null;
+  days_label: string;
   remain_traffic_mb: number | null;
   remain_traffic_label: string;
 };
