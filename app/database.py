@@ -29,8 +29,14 @@ else:
         "pool_pre_ping": settings.DB_POOL_PRE_PING,
     }
 
+# ── application_name для pg_stat_activity ──
+# Удобно отличать соединения этого приложения от других, ходящих в ту же БД.
+CONNECT_ARGS = {
+    "server_settings": {"application_name": f"helpdesk-{settings.MODE.lower()}"},
+}
+
 # ── Движок ──
-engine = create_async_engine(DATABASE_URL, **DATABASE_PARAMS)
+engine = create_async_engine(DATABASE_URL, connect_args=CONNECT_ARGS, **DATABASE_PARAMS)
 
 # ── Сессия ──
 async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
