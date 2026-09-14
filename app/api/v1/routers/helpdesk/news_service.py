@@ -20,15 +20,17 @@ _BELL_DIGEST_CACHE_TTL = 8
 _BELL_LIST_LIMIT = 30
 _BELL_UNREAD_MAX_AGE_DAYS = 14
 
-_VISIBLE_NEWS_SQL = """
+_EFFECTIVE_PUBLISHED_AT = "COALESCE(n.published_at, n.scheduled_publish_at)"
+
+_VISIBLE_NEWS_SQL = f"""
     n.is_active IS TRUE
-    AND n.published_at <= NOW()
+    AND {_EFFECTIVE_PUBLISHED_AT} <= NOW()
     AND (n.expires_at IS NULL OR n.expires_at > NOW())
 """
 
 def _history_access_sql() -> str:
     return f"""
-    n.published_at <= NOW()
+    {_EFFECTIVE_PUBLISHED_AT} <= NOW()
     AND (
         ({_VISIBLE_NEWS_SQL.strip()})
         OR EXISTS (
@@ -53,7 +55,7 @@ _UNREAD_NEWS_SQL = f"""
 # В колокольчике — только непрочитанные не старше 14 суток (на /news остаются «Новое»).
 _BELL_UNREAD_NEWS_SQL = f"""
     {_UNREAD_NEWS_SQL}
-    AND n.published_at > NOW() - INTERVAL '{_BELL_UNREAD_MAX_AGE_DAYS} days'
+    AND {_EFFECTIVE_PUBLISHED_AT} > NOW() - INTERVAL '{_BELL_UNREAD_MAX_AGE_DAYS} days'
 """
 
 
@@ -77,10 +79,10 @@ async def fetch_operator_news_bell(
                     n.kind::text AS kind,
                     n.importance::text AS importance,
                     n.link_path,
-                    n.published_at
+                    {_EFFECTIVE_PUBLISHED_AT} AS published_at
                 FROM {_T_NEWS} n
                 WHERE {_BELL_UNREAD_NEWS_SQL}
-                ORDER BY n.published_at DESC, n.id DESC
+                ORDER BY {_EFFECTIVE_PUBLISHED_AT} DESC, n.id DESC
                 LIMIT :limit
                 """
             ),
@@ -181,7 +183,7 @@ async def fetch_operator_news_history(
                     n.kind::text AS kind,
                     n.importance::text AS importance,
                     n.link_path,
-                    n.published_at,
+                    {_EFFECTIVE_PUBLISHED_AT} AS published_at,
                     EXISTS (
                         SELECT 1
                         FROM {_T_NEWS_READ} r
@@ -197,7 +199,7 @@ async def fetch_operator_news_history(
                     ) AS read_at
                 FROM {_T_NEWS} n
                 WHERE {history_sql}
-                ORDER BY n.published_at DESC, n.id DESC
+                ORDER BY {_EFFECTIVE_PUBLISHED_AT} DESC, n.id DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),
@@ -274,7 +276,7 @@ async def fetch_operator_news_detail(
                     n.kind::text AS kind,
                     n.importance::text AS importance,
                     n.link_path,
-                    n.published_at,
+                    {_EFFECTIVE_PUBLISHED_AT} AS published_at,
                     EXISTS (
                         SELECT 1
                         FROM {_T_NEWS_READ} r

@@ -45,6 +45,12 @@ class HelpdeskOperatorNews(Base):
     __table_args__ = (
         Index("idx_helpdesk_operator_news_published", "published_at", "id"),
         Index("idx_helpdesk_operator_news_kind", "kind"),
+        Index(
+            "idx_helpdesk_operator_news_visible",
+            "published_at",
+            "scheduled_publish_at",
+            postgresql_where=text("is_active"),
+        ),
         {"schema": "notification"},
     )
 
@@ -63,10 +69,14 @@ class HelpdeskOperatorNews(Base):
     )
     link_path: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
-    published_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    # Фактическое время начала показа. NULL, пока новость ждёт scheduled_publish_at.
+    # Видимость = COALESCE(published_at, scheduled_publish_at) <= now().
+    published_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=text("NOW()")
     )
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Плановая дата/время публикации. Пока не наступит — published_at остаётся NULL.
+    scheduled_publish_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("users.skystream_users.id", ondelete="SET NULL")
     )

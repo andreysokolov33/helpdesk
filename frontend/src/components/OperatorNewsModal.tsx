@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { OperatorNewsDetail } from "@/api/news";
-import { sanitizeMessageHtml } from "@/utils/messageHtml";
+import { messageContentToHtml, sanitizeMessageHtml } from "@/utils/messageHtml";
 
 type Props = {
   open: boolean;
@@ -31,7 +31,9 @@ export default function OperatorNewsModal({
 
   if (!open) return null;
 
-  const bodyHtml = detail?.body_html ? sanitizeMessageHtml(detail.body_html) : "";
+  const bodyHtml = detail?.body_html
+    ? sanitizeMessageHtml(messageContentToHtml(detail.body_html))
+    : "";
 
   return (
     <div
