@@ -10,8 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.routers.auth.dao import SkystreamUsersDAO
 from app.api.v1.routers.helpdesk.deps import require_tracker_user
 from app.api.v1.routers.helpdesk import admin_quiz_stats_service as admin_quiz_svc
+from app.api.v1.routers.helpdesk import operator_quiz_review_service as quiz_review_svc
+from app.api.v1.routers.helpdesk import operator_quiz_stats_service as quiz_stats_svc
 from app.api.v1.routers.helpdesk import stats_service as stats_svc
+from app.api.v1.routers.helpdesk.operator_quiz_schemas import OperatorQuizAttemptReviewResponse
 from app.api.v1.routers.helpdesk.stats_schemas import (
+    AdminQuizAttemptsPageResponse,
     QuizTrainingDashboardResponse,
     StatsDashboardResponse,
     StatsSummaryResponse,
@@ -144,3 +148,78 @@ async def stats_quiz_training(
         detail_operator_id=operator_id,
     )
     return QuizTrainingDashboardResponse(**data)
+
+
+async def _require_admin_and_operator(
+    db: AsyncSession, user: dict[str, Any], operator_id: int
+) -> str:
+    level = await _viewer_level(db, user)
+    admin = stats_svc.is_support_admin(role=user.get("role"), level=level)
+    if not admin:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    op_row = await SkystreamUsersDAO.find_one_or_none(db, id=operator_id)
+    if not op_row or op_row.get("role") != "support":
+        raise HTTPException(status_code=404, detail="Оператор не найден")
+    return (op_row.get("full_name") or op_row.get("login") or "").strip() or f"#{operator_id}"
+
+
+@router.get(
+    "/quiz-training/operators/{operator_id}/attempts",
+    response_model=AdminQuizAttemptsPageResponse,
+)
+async def stats_quiz_training_operator_attempts(
+    operator_id: int,
+    attempt_type: str = Query(
+        "daily_warmup",
+        pattern="^(daily_warmup|kb_topic)$",
+        description="Тип попыток: ежедневные тесты или тесты по статьям БЗ",
+    ),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> AdminQuizAttemptsPageResponse:
+    """Постраничный список попыток оператора данного типа (от новых к старым) — для админа."""
+    operator_name = await _require_admin_and_operator(db, user, operator_id)
+
+    data = await quiz_stats_svc.fetch_operator_attempts_page(
+        db,
+        operator_id=operator_id,
+        attempt_type=attempt_type,
+        page=page,
+        per_page=per_page,
+    )
+    return AdminQuizAttemptsPageResponse(
+        operator_id=operator_id,
+        operator_name=operator_name,
+        attempt_type=attempt_type,
+        page=page,
+        per_page=per_page,
+        total=data["total"],
+        passed_count=data["passed_count"],
+        avg_mistakes=data["avg_mistakes"],
+        avg_score_percent=data["avg_score_percent"],
+        attempts=data["items"],
+    )
+
+
+@router.get(
+    "/quiz-training/operators/{operator_id}/attempts/{attempt_id}/review",
+    response_model=OperatorQuizAttemptReviewResponse,
+)
+async def stats_quiz_training_operator_attempt_review(
+    operator_id: int,
+    attempt_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> OperatorQuizAttemptReviewResponse:
+    """Полный разбор одной попытки (вопросы, варианты, выбор оператора) — для админа."""
+    await _require_admin_and_operator(db, user, operator_id)
+
+    data = await quiz_review_svc.fetch_attempt_review(
+        db,
+        operator_id=operator_id,
+        attempt_id=attempt_id,
+    )
+    return OperatorQuizAttemptReviewResponse(**data)

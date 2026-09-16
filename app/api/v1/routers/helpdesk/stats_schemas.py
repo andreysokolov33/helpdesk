@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from app.api.v1.routers.helpdesk.operator_quiz_schemas import (
+    OperatorQuizAttemptItem,
     OperatorQuizCategoryStat,
     OperatorQuizOverallStats,
 )
@@ -105,3 +106,16 @@ class QuizTrainingDashboardResponse(BaseModel):
     summary: QuizTrainingSummary
     operators: list[QuizTrainingOperatorRow] = Field(default_factory=list)
     operator_detail: QuizTrainingOperatorDetail | None = None
+
+
+class AdminQuizAttemptsPageResponse(BaseModel):
+    operator_id: int
+    operator_name: str
+    attempt_type: str
+    page: int
+    per_page: int
+    total: int
+    passed_count: int = 0
+    avg_mistakes: float = 0.0
+    avg_score_percent: float = 0.0
+    attempts: list[OperatorQuizAttemptItem] = Field(default_factory=list)

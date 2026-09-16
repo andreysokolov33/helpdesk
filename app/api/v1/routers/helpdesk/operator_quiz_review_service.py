@@ -287,7 +287,7 @@ async def start_practice_attempt(
                     daily_policy_id, daily_policy_snapshot
                 ) VALUES (
                     :operator_id, :quiz_id, :article_id,
-                    :attempt_type::helpdesk.kb_quiz_attempt_type,
+                    CAST(:attempt_type AS helpdesk.kb_quiz_attempt_type),
                     'in_progress'::helpdesk.kb_quiz_attempt_status,
                     :total_questions, :version, :session_date,
                     :policy_id, CAST(:snapshot AS jsonb)

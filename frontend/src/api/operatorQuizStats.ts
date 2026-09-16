@@ -56,3 +56,36 @@ export async function fetchOperatorQuizStats(): Promise<OperatorQuizStats> {
 export function isOperatorQuizTrainee(me: { role?: string | null; level?: number | null }): boolean {
   return (me.role ?? "").toLowerCase() === "support" && me.level === 1;
 }
+
+export type OperatorQuizAttemptType = "daily_warmup" | "kb_topic";
+
+export type OperatorQuizAttemptsPage = {
+  attempt_type: OperatorQuizAttemptType;
+  page: number;
+  per_page: number;
+  total: number;
+  passed_count: number;
+  avg_mistakes: number;
+  avg_score_percent: number;
+  attempts: OperatorQuizAttemptItem[];
+};
+
+export async function fetchMyQuizAttemptsPage(
+  attemptType: OperatorQuizAttemptType,
+  page: number,
+  perPage: number,
+): Promise<OperatorQuizAttemptsPage> {
+  const q = new URLSearchParams({
+    attempt_type: attemptType,
+    page: String(page),
+    per_page: String(perPage),
+  });
+  const res = await fetch(`/api/v1/helpdesk/operators/me/quiz-attempts?${q.toString()}`, {
+    credentials: "include",
+  });
+  const data = (await res.json().catch(() => ({}))) as { detail?: string } & Partial<OperatorQuizAttemptsPage>;
+  if (!res.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`);
+  }
+  return data as OperatorQuizAttemptsPage;
+}

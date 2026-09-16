@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   fetchOperatorQuizStats,
   type OperatorQuizStats,
@@ -126,6 +127,11 @@ export default function OperatorQuizStatsSection() {
             onSelect={setSelectedAttemptId}
             emptyMessage="Пока нет завершённых ежедневных тестов"
           />
+          {stats.daily_overall.attempts_count > 0 ? (
+            <Link to="/account/quiz-attempts?type=daily_warmup" className="stats-quiz-mini-link">
+              Все попытки →
+            </Link>
+          ) : null}
         </div>
 
         <div className="op-quiz-block">
@@ -137,6 +143,11 @@ export default function OperatorQuizStatsSection() {
             onSelect={setSelectedAttemptId}
             emptyMessage="Пока нет завершённых тестов по статьям"
           />
+          {stats.kb_overall.attempts_count > 0 ? (
+            <Link to="/account/quiz-attempts?type=kb_topic" className="stats-quiz-mini-link">
+              Все попытки →
+            </Link>
+          ) : null}
         </div>
       </div>
 

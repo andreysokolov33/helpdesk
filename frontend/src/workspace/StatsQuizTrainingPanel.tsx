@@ -1,18 +1,10 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  quizScoreClass,
-  type QuizTrainingDashboard,
-  type QuizTrainingOperatorRow,
-} from "@/api/statsQuizTraining";
+import { quizScoreClass, type QuizTrainingDashboard } from "@/api/statsQuizTraining";
 import { quizScoreBarStyle } from "@/workspace/dailyQuizScore";
 
 type Props = {
   operatorId: number | "all";
-  onSelectOperator: (id: number) => void;
   data: QuizTrainingDashboard;
-  expandedId: number | null;
-  onExpandedIdChange: (id: number | null) => void;
 };
 
 function formatPercent(v: number): string {
@@ -51,6 +43,14 @@ function OperatorDetailPanel({
             Статей сдано: {detail.kb_overall.articles_passed ?? 0} /{" "}
             {detail.kb_overall.articles_with_quiz ?? 0}
           </div>
+          {(detail.kb_overall.attempts_count ?? 0) > 0 ? (
+            <Link
+              to={`/stats/training/${detail.operator_id}/attempts?type=kb_topic`}
+              className="stats-quiz-mini-link"
+            >
+              Все попытки →
+            </Link>
+          ) : null}
         </div>
         <div className="stats-quiz-mini-card">
           <div className="stats-quiz-mini-label">Ежедневные тесты (период)</div>
@@ -60,6 +60,14 @@ function OperatorDetailPanel({
           <div className="stats-quiz-mini-hint">
             Сдано: {detail.daily_overall.passed_count} / {detail.daily_overall.attempts_count}
           </div>
+          {detail.daily_overall.attempts_count > 0 ? (
+            <Link
+              to={`/stats/training/${detail.operator_id}/attempts?type=daily_warmup`}
+              className="stats-quiz-mini-link"
+            >
+              Все попытки →
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -144,23 +152,8 @@ function OperatorDetailPanel({
   );
 }
 
-export default function StatsQuizTrainingPanel({
-  operatorId,
-  onSelectOperator,
-  data,
-  expandedId,
-  onExpandedIdChange,
-}: Props) {
-  const detailOperatorId = operatorId === "all" ? expandedId : operatorId;
-  const showDetail = data.operator_detail && detailOperatorId != null;
-
-  function toggleOperator(row: QuizTrainingOperatorRow) {
-    if (operatorId !== "all") {
-      onSelectOperator(row.operator_id);
-      return;
-    }
-    onExpandedIdChange(expandedId === row.operator_id ? null : row.operator_id);
-  }
+export default function StatsQuizTrainingPanel({ operatorId, data }: Props) {
+  const showDetail = operatorId !== "all" && data.operator_detail != null;
 
   return (
     <>
@@ -183,25 +176,33 @@ export default function StatsQuizTrainingPanel({
                 {data.operators.map((row) => (
                   <tr
                     key={row.operator_id}
-                    className={
-                      row.needs_attention
-                        ? "stats-table__row--warn"
-                        : expandedId === row.operator_id
-                          ? "stats-table__row--active"
-                          : ""
-                    }
+                    className={row.needs_attention ? "stats-table__row--warn" : ""}
                   >
                     <td>
-                      <button
-                        type="button"
-                        className={`stats-op-link${expandedId === row.operator_id ? " is-active" : ""}`}
-                        onClick={() => toggleOperator(row)}
+                      <Link
+                        to={`/stats/training/${row.operator_id}/attempts?type=${
+                          row.daily_attempts_count > 0 ? "daily_warmup" : "kb_topic"
+                        }`}
+                        className="stats-op-link"
+                        title="Открыть все попытки тестов сотрудника"
                       >
                         {row.operator_name}
-                      </button>
+                      </Link>
                     </td>
                     <td>
-                      {row.kb_articles_passed} / {row.kb_articles_with_quiz}
+                      {row.kb_articles_with_quiz > 0 ? (
+                        <Link
+                          to={`/stats/training/${row.operator_id}/attempts?type=kb_topic`}
+                          className="stats-op-link"
+                          title="Открыть все попытки тестов по базе знаний"
+                        >
+                          {row.kb_articles_passed} / {row.kb_articles_with_quiz}
+                        </Link>
+                      ) : (
+                        <>
+                          {row.kb_articles_passed} / {row.kb_articles_with_quiz}
+                        </>
+                      )}
                     </td>
                     <td>
                       <span className={quizScoreClass(row.kb_avg_score_percent)}>
@@ -210,10 +211,14 @@ export default function StatsQuizTrainingPanel({
                     </td>
                     <td>
                       {row.daily_attempts_count > 0 ? (
-                        <span className={quizScoreClass(row.daily_avg_score_percent)}>
+                        <Link
+                          to={`/stats/training/${row.operator_id}/attempts?type=daily_warmup`}
+                          className={quizScoreClass(row.daily_avg_score_percent)}
+                          title="Открыть все попытки ежедневных тестов"
+                        >
                           {row.daily_passed_count}/{row.daily_attempts_count} ·{" "}
                           {formatPercent(row.daily_avg_score_percent)}
-                        </span>
+                        </Link>
                       ) : (
                         "—"
                       )}

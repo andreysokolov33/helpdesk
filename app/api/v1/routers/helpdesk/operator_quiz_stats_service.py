@@ -35,6 +35,28 @@ def _score_percent(correct: int, total: int) -> int:
     return int(round((correct / total) * 100))
 
 
+def _attempt_item(row: dict[str, Any]) -> dict[str, Any]:
+    correct = int(row.get("correct_count") or 0)
+    total = int(row.get("total_questions") or 0)
+    sd = row.get("session_date")
+    if isinstance(sd, datetime):
+        sd = sd.date()
+    return {
+        "attempt_id": int(row["attempt_id"]),
+        "attempt_type": str(row["attempt_type"]),
+        "finished_at": row.get("finished_at"),
+        "session_date": sd,
+        "day_label": _day_label(session_date=sd, finished_at=row.get("finished_at")),
+        "article_slug": row.get("article_slug"),
+        "article_title": row.get("article_title"),
+        "category_title": row.get("category_title"),
+        "correct_count": correct,
+        "total_questions": total,
+        "score_percent": _score_percent(correct, total),
+        "passed": bool(row.get("passed")),
+    }
+
+
 def _empty_response(*, eligible: bool) -> dict[str, Any]:
     empty = {
         "attempts_count": 0,
@@ -247,27 +269,6 @@ async def fetch_operator_quiz_stats(
         )
     ).mappings().all()
 
-    def _attempt_item(row: dict[str, Any]) -> dict[str, Any]:
-        correct = int(row.get("correct_count") or 0)
-        total = int(row.get("total_questions") or 0)
-        sd = row.get("session_date")
-        if isinstance(sd, datetime):
-            sd = sd.date()
-        return {
-            "attempt_id": int(row["attempt_id"]),
-            "attempt_type": str(row["attempt_type"]),
-            "finished_at": row.get("finished_at"),
-            "session_date": sd,
-            "day_label": _day_label(session_date=sd, finished_at=row.get("finished_at")),
-            "article_slug": row.get("article_slug"),
-            "article_title": row.get("article_title"),
-            "category_title": row.get("category_title"),
-            "correct_count": correct,
-            "total_questions": total,
-            "score_percent": _score_percent(correct, total),
-            "passed": bool(row.get("passed")),
-        }
-
     kb_overall = dict(kb_overall_row or {})
     daily_overall = dict(daily_overall_row or {})
     articles = dict(articles_row or {})
@@ -300,4 +301,83 @@ async def fetch_operator_quiz_stats(
         ],
         "kb_attempts": [_attempt_item(dict(r)) for r in kb_attempt_rows],
         "daily_attempts": [_attempt_item(dict(r)) for r in daily_attempt_rows],
+    }
+
+
+async def fetch_operator_attempts_page(
+    db: AsyncSession,
+    *,
+    operator_id: int,
+    attempt_type: str,
+    page: int,
+    per_page: int,
+) -> dict[str, Any]:
+    """Постраничный список завершённых попыток оператора (от новых к старым),
+    без разбора по вопросам — для просмотра администратором."""
+    where = f"""
+        WHERE qa.operator_id = :operator_id
+          AND qa.attempt_type = CAST(:attempt_type AS helpdesk.kb_quiz_attempt_type)
+          AND qa.status = 'finished'
+          {_PRACTICE_FILTER}
+    """
+    summary_row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    COUNT(*)::int AS total,
+                    COUNT(*) FILTER (WHERE qa.passed IS TRUE)::int AS passed_count,
+                    COALESCE(AVG(qa.total_questions - qa.correct_count), 0) AS avg_mistakes,
+                    COALESCE(
+                        AVG(qa.correct_count::float / NULLIF(qa.total_questions, 0) * 100.0),
+                        0
+                    ) AS avg_score_percent
+                FROM {_SCHEMA}.kb_quiz_attempts qa
+                {where}
+                """
+            ),
+            {"operator_id": operator_id, "attempt_type": attempt_type},
+        )
+    ).mappings().one()
+    total = int(summary_row["total"])
+
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    qa.id AS attempt_id,
+                    qa.attempt_type::text AS attempt_type,
+                    qa.finished_at,
+                    qa.session_date,
+                    qa.correct_count,
+                    qa.total_questions,
+                    qa.passed,
+                    a.slug AS article_slug,
+                    COALESCE(p.title, a.title, 'Ежедневный тест') AS article_title,
+                    c.title AS category_title
+                FROM {_SCHEMA}.kb_quiz_attempts qa
+                LEFT JOIN {_SCHEMA}.kb_articles a ON a.id = qa.article_id
+                LEFT JOIN {_SCHEMA}.kb_categories c ON c.id = a.category_id
+                LEFT JOIN {_SCHEMA}.kb_daily_quiz_policies p ON p.id = qa.daily_policy_id
+                {where}
+                ORDER BY qa.session_date DESC NULLS LAST, qa.finished_at DESC NULLS LAST, qa.id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {
+                "operator_id": operator_id,
+                "attempt_type": attempt_type,
+                "limit": per_page,
+                "offset": (page - 1) * per_page,
+            },
+        )
+    ).mappings().all()
+
+    return {
+        "total": total,
+        "passed_count": int(summary_row["passed_count"]),
+        "avg_mistakes": round(float(summary_row["avg_mistakes"]), 2),
+        "avg_score_percent": round(float(summary_row["avg_score_percent"]), 1),
+        "items": [_attempt_item(dict(r)) for r in rows],
     }

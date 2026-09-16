@@ -79,3 +79,14 @@ class OperatorQuizStatsResponse(BaseModel):
     categories: list[OperatorQuizCategoryStat] = Field(default_factory=list)
     kb_attempts: list[OperatorQuizAttemptItem] = Field(default_factory=list)
     daily_attempts: list[OperatorQuizAttemptItem] = Field(default_factory=list)
+
+
+class OperatorQuizAttemptsPageResponse(BaseModel):
+    attempt_type: str
+    page: int
+    per_page: int
+    total: int
+    passed_count: int = 0
+    avg_mistakes: float = 0.0
+    avg_score_percent: float = 0.0
+    attempts: list[OperatorQuizAttemptItem] = Field(default_factory=list)

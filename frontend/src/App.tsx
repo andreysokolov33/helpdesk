@@ -13,6 +13,8 @@ import NewsTab from "@/workspace/NewsTab";
 import UserProfilePage from "@/workspace/UserProfilePage";
 import OperatorProfilePage from "@/workspace/OperatorProfilePage";
 import TicketPage from "@/workspace/TicketPage";
+import AdminQuizAttemptsPage from "@/workspace/AdminQuizAttemptsPage";
+import OperatorQuizAttemptsPage from "@/workspace/OperatorQuizAttemptsPage";
 
 function RedirectLegacyChatsRoute() {
   const [params] = useSearchParams();
@@ -34,12 +36,14 @@ export default function App() {
             {/* <Route path="chat" element={<ChatSectionPage />} /> */}
             <Route path="chats" element={<RedirectLegacyChatsRoute />} />
             <Route path="stats" element={<StatsTab />} />
+            <Route path="stats/training/:operatorId/attempts" element={<AdminQuizAttemptsPage />} />
             <Route path="kb" element={<KbTab />} />
             <Route path="kb/:slug" element={<KbArticlePage />} />
             <Route path="train" element={<Navigate to="/" replace />} />
             <Route path="news" element={<NewsTab />} />
             <Route path="users/:userId" element={<UserProfilePage />} />
             <Route path="account" element={<OperatorProfilePage />} />
+            <Route path="account/quiz-attempts" element={<OperatorQuizAttemptsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

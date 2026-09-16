@@ -100,7 +100,6 @@ export default function StatsTab() {
   const [trainingData, setTrainingData] = useState<QuizTrainingDashboard | null>(null);
   const [trainingLoading, setTrainingLoading] = useState(false);
   const [trainingError, setTrainingError] = useState<string | null>(null);
-  const [trainingExpandedId, setTrainingExpandedId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,8 +144,7 @@ export default function StatsTab() {
     };
   }, [dateFrom, dateTo, operatorId]);
 
-  const trainingDetailOperatorId =
-    operatorId === "all" ? trainingExpandedId : operatorId;
+  const trainingDetailOperatorId = operatorId === "all" ? null : operatorId;
 
   useEffect(() => {
     if (!isAdmin || statsPane !== "training") return;
@@ -176,14 +174,6 @@ export default function StatsTab() {
       cancelled = true;
     };
   }, [isAdmin, statsPane, dateFrom, dateTo, trainingDetailOperatorId]);
-
-  useEffect(() => {
-    if (operatorId !== "all") {
-      setTrainingExpandedId(operatorId);
-    } else {
-      setTrainingExpandedId(null);
-    }
-  }, [operatorId]);
 
   function applyPreset(preset: Exclude<StatsPeriodPreset, "custom">) {
     const p = statsPeriodForPreset(preset);
@@ -409,13 +399,7 @@ export default function StatsTab() {
         ) : null}
 
         {statsPane === "training" && isAdmin && !trainingLoading && !trainingError && trainingData ? (
-          <StatsQuizTrainingPanel
-            operatorId={operatorId}
-            onSelectOperator={setOperatorId}
-            data={trainingData}
-            expandedId={trainingExpandedId}
-            onExpandedIdChange={setTrainingExpandedId}
-          />
+          <StatsQuizTrainingPanel operatorId={operatorId} data={trainingData} />
         ) : null}
 
         {error && statsPane === "work" ? (

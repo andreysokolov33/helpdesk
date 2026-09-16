@@ -20,6 +20,7 @@ from app.api.v1.routers.helpdesk import ticket_service as ticket_svc
 from app.api.v1.routers.helpdesk import operator_quiz_stats_service as quiz_stats_svc
 from app.api.v1.routers.helpdesk import operator_quiz_review_service as quiz_review_svc
 from app.api.v1.routers.helpdesk.operator_quiz_schemas import (
+    OperatorQuizAttemptsPageResponse,
     OperatorQuizPracticeStartResponse,
     OperatorQuizStatsResponse,
     OperatorQuizAttemptReviewResponse,
@@ -55,6 +56,38 @@ async def operator_quiz_stats(
         level=user.get("level"),
     )
     return OperatorQuizStatsResponse(**data)
+
+
+@router.get("/me/quiz-attempts", response_model=OperatorQuizAttemptsPageResponse)
+async def operator_quiz_attempts_page(
+    attempt_type: str = Query(
+        "daily_warmup",
+        pattern="^(daily_warmup|kb_topic)$",
+        description="Тип попыток: ежедневные тесты или тесты по статьям БЗ",
+    ),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_tracker_user),
+) -> OperatorQuizAttemptsPageResponse:
+    """Постраничный список собственных попыток оператора (от новых к старым)."""
+    data = await quiz_stats_svc.fetch_operator_attempts_page(
+        db,
+        operator_id=int(user["user_id"]),
+        attempt_type=attempt_type,
+        page=page,
+        per_page=per_page,
+    )
+    return OperatorQuizAttemptsPageResponse(
+        attempt_type=attempt_type,
+        page=page,
+        per_page=per_page,
+        total=data["total"],
+        passed_count=data["passed_count"],
+        avg_mistakes=data["avg_mistakes"],
+        avg_score_percent=data["avg_score_percent"],
+        attempts=data["items"],
+    )
 
 
 @router.get("/me/quiz-attempts/{attempt_id}/review", response_model=OperatorQuizAttemptReviewResponse)
