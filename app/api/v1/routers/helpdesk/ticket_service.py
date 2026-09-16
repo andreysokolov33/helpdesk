@@ -4631,7 +4631,7 @@ async def list_ticket_messages(
             after_id=after_id,
             around_id=around_id,
             since_id=since_id,
-            include_initial_body=detail.get("body"),
+            include_initial_body=detail.get("body") or detail.get("title"),
         )
         unread = [
             m["id"]
@@ -4750,7 +4750,7 @@ async def get_message_context(
                         viewer_id,
                         subscriber_display_name=sub_display,
                         around_id=message_id,
-                        include_initial_body=detail.get("body"),
+                        include_initial_body=detail.get("body") or detail.get("title"),
                     )
 
                 if any(int(m["id"]) == message_id for m in raw):

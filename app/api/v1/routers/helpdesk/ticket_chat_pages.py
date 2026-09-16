@@ -328,15 +328,17 @@ async def load_mail_messages_paged(
         )
 
     if (
-        not messages
+        (not messages or messages[0]["side"] != "client")
         and include_initial_body
         and include_initial_body.strip()
         and since_id <= 0
         and before_id is None
         and after_id is None
         and around_id is None
+        and not has_older
     ):
-        messages.append(
+        messages.insert(
+            0,
             {
                 "id": 0,
                 "side": "client",
@@ -350,7 +352,7 @@ async def load_mail_messages_paged(
                 "legacy_file_url": None,
                 "attachments": [],
                 "is_initial": True,
-            }
+            },
         )
 
     return messages, has_older, has_newer

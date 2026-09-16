@@ -1519,7 +1519,7 @@ export default function TicketPage() {
     .replace(/&nbsp;/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const chatMessages = messages.filter((m) => !m.is_initial);
+  const chatMessages = messages;
   const isLkTicket = isLkTicketSource(detail.source);
   const isCommentsPanel = isLkTicket && chatPanel === "comments";
   const subscriberChatReadonly = Boolean(detail.subscriber_chat_readonly) && !isCommentsPanel;
