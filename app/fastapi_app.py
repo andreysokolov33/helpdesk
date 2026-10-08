@@ -35,6 +35,7 @@ from app.api.v1.routers.helpdesk.news import router as helpdesk_news_router
 # from app.api.v1.routers.helpdesk.chats import router as helpdesk_chats_router  # раздел «Чат» скрыт — см. temp/restore-old-chat-version.txt
 from app.api.v1.routers.helpdesk.kb import router as helpdesk_kb_router
 from app.api.v1.routers.helpdesk.daily_quiz import router as helpdesk_daily_quiz_router
+from app.api.v1.routers.helpdesk.training import router as helpdesk_training_router
 from app.config import BASE_DIR, settings
 from app.core.validation_i18n import localize_validation_errors
 from app.database import engine, redis_client
@@ -231,6 +232,7 @@ def create_app() -> FastAPI:
     app.include_router(helpdesk_search_router, prefix="/api")
     app.include_router(helpdesk_kb_router, prefix="/api")
     app.include_router(helpdesk_daily_quiz_router, prefix="/api")
+    app.include_router(helpdesk_training_router, prefix="/api")
     app.include_router(helpdesk_user_profile_router, prefix="/api")
     app.include_router(helpdesk_stats_router, prefix="/api")
     app.include_router(web_router, tags=["Web"])

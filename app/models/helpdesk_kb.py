@@ -1,4 +1,4 @@
-"""Модели схемы helpdesk — база знаний (/kb) и обучение (/train)."""
+"""Модели схемы helpdesk — база знаний (/kb), обучение и тренажёр (/train)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from sqlalchemy import (
     ARRAY,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Computed,
     Date,
     DateTime,
@@ -76,6 +77,17 @@ class KbDailyQuizExemptionAction(str, Enum):
     set_exempt_until = "set_exempt_until"
 
 
+class KbTrainingSourceType(str, Enum):
+    daily = "daily"
+    article = "article"
+
+
+class KbTrainingSessionStatus(str, Enum):
+    in_progress = "in_progress"
+    finished = "finished"
+    abandoned = "abandoned"
+
+
 _kb_progress_status = ENUM(
     KbProgressStatus,
     name="kb_progress_status",
@@ -121,6 +133,18 @@ _kb_daily_quiz_override_mode = ENUM(
 _kb_daily_quiz_exemption_action = ENUM(
     KbDailyQuizExemptionAction,
     name="kb_daily_quiz_exemption_action",
+    schema="helpdesk",
+    create_type=False,
+)
+_kb_training_source_type = ENUM(
+    KbTrainingSourceType,
+    name="kb_training_source_type",
+    schema="helpdesk",
+    create_type=False,
+)
+_kb_training_session_status = ENUM(
+    KbTrainingSessionStatus,
+    name="kb_training_session_status",
     schema="helpdesk",
     create_type=False,
 )
@@ -865,3 +889,122 @@ class KbCourseProgress(Base):
     )
 
     course: Mapped["KbCourse"] = relationship("KbCourse", back_populates="progress_records")
+
+
+class KbTrainingSession(Base):
+    """Тренажёр (/train): бесконечная сессия тренировки. См. sql/migrations/20261008_helpdesk_kb_training.sql."""
+
+    __tablename__ = "kb_training_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "total_answers >= 0 AND correct_count >= 0 AND correct_count <= total_answers",
+            name="chk_kb_training_sessions_counters",
+        ),
+        CheckConstraint(
+            "status = 'in_progress' OR finished_at IS NOT NULL",
+            name="chk_kb_training_sessions_finished",
+        ),
+        Index(
+            "uq_kb_training_sessions_operator_active",
+            "operator_id",
+            unique=True,
+            postgresql_where=text("status = 'in_progress'"),
+        ),
+        Index(
+            "idx_kb_training_sessions_operator_started",
+            "operator_id",
+            text("started_at DESC"),
+        ),
+        Index(
+            "idx_kb_training_sessions_in_progress_activity",
+            text("(COALESCE(last_answer_at, started_at))"),
+            postgresql_where=text("status = 'in_progress'"),
+        ),
+        {"schema": "helpdesk"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    operator_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.skystream_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_type: Mapped[KbTrainingSourceType] = mapped_column(
+        _kb_training_source_type,
+        nullable=False,
+    )
+    quiz_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_quizzes.id", ondelete="SET NULL"),
+    )
+    article_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_articles.id", ondelete="SET NULL"),
+    )
+    category_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_categories.id", ondelete="SET NULL"),
+    )
+    policy_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_daily_quiz_policies.id", ondelete="SET NULL"),
+    )
+    source_title: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    status: Mapped[KbTrainingSessionStatus] = mapped_column(
+        _kb_training_session_status,
+        nullable=False,
+        server_default=text("'in_progress'::helpdesk.kb_training_session_status"),
+    )
+    question_queue: Mapped[list[int]] = mapped_column(
+        ARRAY(BigInteger), nullable=False, server_default=text("'{}'::bigint[]")
+    )
+    current_question_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    round_no: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    last_answer_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    total_answers: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    correct_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    answers: Mapped[list["KbTrainingAnswer"]] = relationship(
+        "KbTrainingAnswer",
+        back_populates="session",
+    )
+
+
+class KbTrainingAnswer(Base):
+    __tablename__ = "kb_training_answers"
+    __table_args__ = (
+        Index("idx_kb_training_answers_answered_at", "answered_at"),
+        Index("idx_kb_training_answers_session", "session_id"),
+        Index("idx_kb_training_answers_question", "question_id"),
+        {"schema": "helpdesk"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_training_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    question_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_questions.id", ondelete="SET NULL"),
+    )
+    article_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("helpdesk.kb_articles.id", ondelete="SET NULL"),
+    )
+    selected_option_ids: Mapped[list[int]] = mapped_column(
+        ARRAY(BigInteger), nullable=False, server_default=text("'{}'::bigint[]")
+    )
+    is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    answered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+    session: Mapped["KbTrainingSession"] = relationship(
+        "KbTrainingSession", back_populates="answers"
+    )

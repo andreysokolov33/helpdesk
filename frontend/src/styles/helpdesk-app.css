@@ -1,5 +1,6 @@
 @import "./helpdesk-prototype.css";
 @import "./kb-content.css";
+@import "./training.css";
 
 /* ── Theme-aware rich-text color variables ── */
 :root {

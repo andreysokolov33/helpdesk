@@ -43,6 +43,7 @@ const tabs: TabDef[] = [
   // { to: "/chat", label: "Чат" }, // скрыт — см. temp/restore-old-chat-version.txt
   { to: "/stats", label: "Статистика" },
   { to: "/kb", label: "База знаний" },
+  { to: "/train", label: "Тренажёр" },
 ];
 
 function IconUser() {
